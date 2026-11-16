@@ -787,39 +787,44 @@
 
     // Media upload icons shown under the message input, driven by the saved
     // modalities for the selected local model. Icons only: no click handling yet.
+    // The document icon is always available (document processing is assumed to
+    // be supported by every model), so it is rendered first in every state.
+    const DOCUMENT_UPLOAD_ICON = { glyph: "📄", label: "Upload document" };
     const MEDIA_UPLOAD_ICONS = [
         { key: "vision", glyph: "📷", label: "Upload image" },
         { key: "video", glyph: "🎥", label: "Upload video" },
         { key: "audio", glyph: "🎤", label: "Upload audio" },
     ];
 
+    const createMediaUploadButton = (item) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "chat-media-icon";
+        button.title = item.label;
+        button.setAttribute("aria-label", item.label);
+        button.disabled = true;
+        const glyph = document.createElement("span");
+        glyph.className = "chat-media-glyph";
+        glyph.setAttribute("aria-hidden", "true");
+        glyph.textContent = item.glyph;
+        const tooltip = document.createElement("span");
+        tooltip.className = "chat-media-tooltip";
+        tooltip.setAttribute("role", "tooltip");
+        tooltip.textContent = item.label;
+        button.append(glyph, tooltip);
+        return button;
+    };
+
     const renderMediaUploads = (modalities) => {
         if (!mediaUploadsEl) return;
         mediaUploadsEl.replaceChildren();
+        // Document upload is always shown, regardless of model modalities.
+        mediaUploadsEl.appendChild(createMediaUploadButton(DOCUMENT_UPLOAD_ICON));
         const active = MEDIA_UPLOAD_ICONS.filter(
             (item) => modalities && modalities[item.key] === true
         );
-        if (!active.length) {
-            mediaUploadsEl.hidden = true;
-            return;
-        }
         active.forEach((item) => {
-            const button = document.createElement("button");
-            button.type = "button";
-            button.className = "chat-media-icon";
-            button.title = item.label;
-            button.setAttribute("aria-label", item.label);
-            button.disabled = true;
-            const glyph = document.createElement("span");
-            glyph.className = "chat-media-glyph";
-            glyph.setAttribute("aria-hidden", "true");
-            glyph.textContent = item.glyph;
-            const tooltip = document.createElement("span");
-            tooltip.className = "chat-media-tooltip";
-            tooltip.setAttribute("role", "tooltip");
-            tooltip.textContent = item.label;
-            button.append(glyph, tooltip);
-            mediaUploadsEl.appendChild(button);
+            mediaUploadsEl.appendChild(createMediaUploadButton(item));
         });
         mediaUploadsEl.hidden = false;
     };
@@ -1102,6 +1107,8 @@
         }
     }
 
+    // Keep the always-available document icon visible from first paint.
+    renderMediaUploads(null);
     setTimeout(updateMoreParamsButtonState, 2000);
 
     if (historyEl) {
