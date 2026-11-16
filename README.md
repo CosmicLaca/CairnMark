@@ -109,6 +109,8 @@ the handle to restore its default width. The browser remembers the layout.
 
 ## Set up models
 
+<img src="manual/setup-models.jpg" width="75%">
+
 Cairnmark supports two local providers and ten hosted providers.
 
 | Provider | Setup |
@@ -126,6 +128,8 @@ For each provider:
 4. Switch on the provider.
 5. For providers with saved catalogs, switch on the models you want to use.
 
+<img src="manual/setup-server.jpg" width="75%">
+
 A model appears elsewhere only when both its provider and model switch are
 enabled. An unreachable provider cannot remain enabled. vLLM is different: its
 loaded model is queried live and has no separate saved model switch.
@@ -134,6 +138,8 @@ API keys are never returned to the browser after saving. They are encrypted in
 `instance/cairnmark.db` using the key in `.secret/`.
 
 ## Use chat
+
+<img src="manual/homepage.jpg" width="75%">
 
 Open **Home**, select an active model, enter a message, and choose **Send**.
 During generation, **Abort** requests cancellation.
@@ -167,6 +173,8 @@ their filenames are stored in chat history.
 
 ## Create a benchmark
 
+<img src="manual/create-benchmark.jpg" width="75%">
+
 Open **Create benchmark JSON** and complete these fields:
 
 1. **Category** — select one or create a new category.
@@ -188,6 +196,8 @@ Benchamrk-prompts-YYYYMMDDHHMM-Category-Difficulty.json
 
 ## Organize and inspect benchmarks
 
+<img src="manual/view-benchmark.jpg" width="75%">
+
 Place imported `.json` files directly in `Benchmark-prompts/` and reload **Run
 benchmark**. Nested directories are not scanned.
 
@@ -201,6 +211,8 @@ metadata appears under **Uncategorized** with **Normal** difficulty.
 - Metadata changes do not move or rewrite the benchmark file.
 
 ## Run a benchmark
+
+<img src="manual/run-benchmark.jpg" width="75%">
 
 Select **Create benchmark** on a benchmark card.
 
