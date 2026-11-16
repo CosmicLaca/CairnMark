@@ -2,9 +2,15 @@
 
 .chat-layout {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(290px, 340px);
+    grid-template-columns: minmax(0, 3fr) minmax(260px, 2fr);
     gap: 20px;
     align-items: start;
+}
+
+@media (min-width: 1920px) {
+    .chat-layout {
+        grid-template-columns: minmax(0, 7fr) minmax(290px, 3fr);
+    }
 }
 
 .chat-main,
@@ -818,6 +824,10 @@
     visibility: visible;
     opacity: 1;
     transform: translate(-50%, 0);
+}
+
+.chat-setup .searchable-select-toggle {
+    font-size: 0.82rem;
 }
 
 /* Help panels near the card edge open leftwards so they stay inside the setup card. */

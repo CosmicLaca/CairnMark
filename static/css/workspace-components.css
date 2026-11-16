@@ -246,6 +246,9 @@
     text-align: left;
     cursor: pointer;
     appearance: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .searchable-select-toggle::after {
@@ -264,6 +267,8 @@
     top: calc(100% + 4px);
     left: 0;
     right: 0;
+    min-width: 360px;
+    max-width: 90vw;
     padding: 8px;
     border: 1px solid var(--line);
     border-radius: 2px 11px 2px 2px;
