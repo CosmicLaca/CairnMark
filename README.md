@@ -52,6 +52,9 @@ benchmarks are plain JSON.
   prompt. The expected response is never sent.
 - **Local-first storage:** API keys are encrypted at rest, and logs never
   contain keys or request contents.
+- **File attachments in chat:** attach images, documents, video and audio
+  files to a request; image previews are stored separately and only their
+  filenames are kept in the chat database.
 
 ## Project status
 
@@ -64,7 +67,6 @@ benchmarks are plain JSON.
 | Evaluate benchmark | Placeholder |
 | Previous benchmarks | Placeholder |
 | Export benchmark results | Placeholder |
-| Accounts | Not implemented |
 
 The Evaluate, Previous benchmarks and Export benchmark results pages are
 informational placeholders. Do not treat them as working features.
@@ -319,6 +321,12 @@ local llama.cpp or vLLM model:
   sampling overrides are forwarded to llama.cpp and vLLM; other providers
   ignore them.
 
+The **Model** label can also show the model's context size as `Model | N ctx: 8192`
+when it is available from the saved parameter data. If the llama.cpp server was
+started with a different configuration, this value can be stale. Use **Set more
+parameters**, then **Delete from local DB**, to re-read all parameters, including
+`n_ctx`, from the server.
+
 The button shows a status sign:
 
 | Sign | Meaning |
@@ -342,6 +350,27 @@ counts, plus:
 
 While the model works, the spinner shows the number of output tokens generated
 so far, and **Abort** cancels the request.
+
+### File attachments
+
+The media icons below the message input let you attach files to a request:
+
+- **Document** is always available and opens a file dialog filtered to
+  `.txt`, `.md`, `.doc`, `.rtf` and `.docx`.
+- **Image**, **video** and **audio** icons appear only when the selected
+  local model reports that capability. Image opens image files, video opens
+  `.mp4` files, and audio opens `.mp3` and `.wav` files.
+
+Selecting a file adds it to the request. Images are resized automatically
+when they are larger than 1.2 megapixels. The attached file is shown as a
+small preview or filename chip next to the message input and is included with
+the request.
+
+In the conversation, an attached image is shown as a small preview on the left
+side of the user message. That preview is saved to `instance/preview/` and
+only its filename is stored in the chat database, so chat history stays
+small. If a preview file is later missing, a broken-link icon is shown
+instead of the image.
 
 ### Saved chats
 
@@ -536,6 +565,7 @@ response time.
 | `instance/cairnmark.db` | Category, difficulty, notes, generation prompt, model name, provider settings, model switch states, encrypted API keys, chat page defaults |
 | `instance/chathistory.db` | Chat history and saved chats; each assistant message also records the request body used for its reply |
 | `instance/parameters.db` | Cached default generation parameters for local provider models |
+| `instance/preview/` | Small JPEG previews for images attached in chat |
 | `.secret/` | Encryption key for API keys; created on first use and excluded from Git |
 
 Online-provider API keys are encrypted at rest with the key in `.secret/`.
