@@ -1,5 +1,6 @@
 Flask==2.3.3
 Markdown==3.7
+Pillow>=10.0.0
 cryptography==50.0.2
 anthropic==2.8.0
 google-genai==3.3.0

@@ -46,7 +46,9 @@
     const moreParamsStateSign = document.querySelector("[data-more-params-state]");
     const moreParamsDeleteBtn = document.querySelector("[data-more-params-delete]");
     const mediaUploadsEl = document.querySelector("[data-chat-media-uploads]");
+    const attachmentsEl = document.querySelector("[data-chat-attachments]");
     let moreParamsModelKey = "";
+    const pendingAttachments = [];
     const renderMarkdown = window.CairnmarkMarkdown.render;
 
     // Toggle state per message
@@ -293,6 +295,13 @@
         if (Object.keys(modelParams).length > 0) {
             requestBody.model_params = modelParams;
         }
+        if (pendingAttachments.length > 0) {
+            requestBody.attachments = pendingAttachments.map((attachment) => ({
+                type: attachment.type,
+                data: attachment.data,
+                mime_type: attachment.mime,
+            }));
+        }
 
         const controller = new AbortController();
         let aborted = false;
@@ -393,6 +402,8 @@
             } else if (accumulated) {
                 appendMessage("assistant", accumulated, {});
             }
+            pendingAttachments.length = 0;
+            renderAttachments();
         } catch (error) {
             if (loadingEl && loadingEl.element) loadingEl.element.remove();
             if (aborted || (error && error.name === "AbortError")) {
@@ -789,11 +800,17 @@
     // modalities for the selected local model. Icons only: no click handling yet.
     // The document icon is always available (document processing is assumed to
     // be supported by every model), so it is rendered first in every state.
-    const DOCUMENT_UPLOAD_ICON = { glyph: "📄", label: "Upload document" };
+    const DOCUMENT_UPLOAD_ICON = {
+        key: "document",
+        glyph: "📄",
+        label: "Upload document",
+        accept: ".txt,.md,.doc,.rtf,.docx",
+        attachmentType: "document",
+    };
     const MEDIA_UPLOAD_ICONS = [
-        { key: "vision", glyph: "📷", label: "Upload image" },
-        { key: "video", glyph: "🎥", label: "Upload video" },
-        { key: "audio", glyph: "🎤", label: "Upload audio" },
+        { key: "vision", glyph: "📷", label: "Upload image", accept: "image/*", attachmentType: "image" },
+        { key: "video", glyph: "🎥", label: "Upload video", accept: ".mp4,video/mp4", attachmentType: "video" },
+        { key: "audio", glyph: "🎤", label: "Upload audio", accept: ".mp3,.wav,audio/mpeg,audio/wav", attachmentType: "audio" },
     ];
 
     const createMediaUploadButton = (item) => {
@@ -802,7 +819,7 @@
         button.className = "chat-media-icon";
         button.title = item.label;
         button.setAttribute("aria-label", item.label);
-        button.disabled = true;
+        button.disabled = false;
         const glyph = document.createElement("span");
         glyph.className = "chat-media-glyph";
         glyph.setAttribute("aria-hidden", "true");
@@ -812,6 +829,7 @@
         tooltip.setAttribute("role", "tooltip");
         tooltip.textContent = item.label;
         button.append(glyph, tooltip);
+        button.addEventListener("click", () => openFilePicker(item));
         return button;
     };
 
@@ -849,6 +867,157 @@
             if (requestSeq !== mediaUploadsSeq) return;
             renderMediaUploads(null);
         }
+    };
+
+    const mimeForName = (name, fallback) => {
+        const lower = String(name || "").toLowerCase();
+        if (lower.endsWith(".txt")) return "text/plain";
+        if (lower.endsWith(".md")) return "text/markdown";
+        if (lower.endsWith(".doc")) return "application/msword";
+        if (lower.endsWith(".rtf")) return "application/rtf";
+        if (lower.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        if (lower.endsWith(".mp4")) return "video/mp4";
+        if (lower.endsWith(".mp3")) return "audio/mpeg";
+        if (lower.endsWith(".wav")) return "audio/wav";
+        return fallback || "application/octet-stream";
+    };
+
+    const readFileAsDataURL = (file) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(reader.error || new Error("File read failed"));
+        reader.readAsDataURL(file);
+    });
+
+    const processImageFile = (file) => new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+            try {
+                const maxPixels = 1.2 * 1000 * 1000;
+                const pixels = img.width * img.height;
+                let width = img.width;
+                let height = img.height;
+                if (pixels > maxPixels) {
+                    const scale = Math.sqrt(maxPixels / pixels);
+                    width = Math.max(1, Math.round(img.width * scale));
+                    height = Math.max(1, Math.round(img.height * scale));
+                }
+                if (width === img.width && height === img.height) {
+                    readFileAsDataURL(file).then((dataUrl) => {
+                        const parts = dataUrl.split(",");
+                        resolve({ data: parts[1] || "", mime: file.type || mimeForName(file.name, "image/png") });
+                    }).catch(reject);
+                    return;
+                }
+                const canvas = document.createElement("canvas");
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext("2d");
+                ctx.drawImage(img, 0, 0, width, height);
+                const mime = "image/jpeg";
+                const dataUrl = canvas.toDataURL(mime, 0.9);
+                resolve({ data: dataUrl.split(",")[1] || "", mime });
+            } catch (error) {
+                reject(error);
+            } finally {
+                URL.revokeObjectURL(url);
+            }
+        };
+        img.onerror = () => {
+            URL.revokeObjectURL(url);
+            reject(new Error("Image load failed"));
+        };
+        img.src = url;
+    });
+
+    const processSelectedFile = async (file, attachmentType) => {
+        if (!file) return null;
+        if (attachmentType === "image") {
+            const processed = await processImageFile(file);
+            return {
+                type: "image",
+                name: file.name,
+                mime: processed.mime,
+                data: processed.data,
+                previewUrl: processed.mime.startsWith("image/")
+                    ? `data:${processed.mime};base64,${processed.data}`
+                    : null,
+            };
+        }
+        const dataUrl = await readFileAsDataURL(file);
+        const parts = dataUrl.split(",");
+        const mime = file.type || mimeForName(file.name);
+        return {
+            type: attachmentType,
+            name: file.name,
+            mime,
+            data: parts[1] || "",
+            previewUrl: null,
+        };
+    };
+
+    const renderAttachments = () => {
+        if (!attachmentsEl) return;
+        attachmentsEl.replaceChildren();
+        if (pendingAttachments.length === 0) {
+            attachmentsEl.hidden = true;
+            return;
+        }
+        pendingAttachments.forEach((attachment, index) => {
+            const item = document.createElement("div");
+            item.className = "chat-attachment";
+            item.setAttribute("data-chat-attachment", attachment.type);
+            if (attachment.type === "image" && attachment.previewUrl) {
+                const img = document.createElement("img");
+                img.className = "chat-attachment-preview";
+                img.src = attachment.previewUrl;
+                img.alt = attachment.name;
+                item.appendChild(img);
+            }
+            const name = document.createElement("span");
+            name.className = "chat-attachment-name";
+            name.textContent = attachment.name;
+            name.title = attachment.name;
+            item.appendChild(name);
+            const removeBtn = document.createElement("button");
+            removeBtn.type = "button";
+            removeBtn.className = "chat-attachment-remove";
+            removeBtn.textContent = "×";
+            removeBtn.title = "Remove attachment";
+            removeBtn.addEventListener("click", () => {
+                pendingAttachments.splice(index, 1);
+                renderAttachments();
+            });
+            item.appendChild(removeBtn);
+            attachmentsEl.appendChild(item);
+        });
+        attachmentsEl.hidden = false;
+    };
+
+    const openFilePicker = (icon) => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = icon.accept;
+        input.style.display = "none";
+        document.body.appendChild(input);
+        input.addEventListener("change", async () => {
+            const file = input.files && input.files[0];
+            try {
+                if (file) {
+                    const attachment = await processSelectedFile(file, icon.attachmentType);
+                    if (attachment) {
+                        pendingAttachments.push(attachment);
+                        renderAttachments();
+                    }
+                }
+            } catch (error) {
+                window.alert(`File could not be attached: ${error}`);
+            } finally {
+                input.remove();
+            }
+        });
+        input.click();
     };
 
     const openMoreParamsModal = async () => {

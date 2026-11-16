@@ -1,5 +1,7 @@
 """Chat interface context and message handling for the home page."""
 
+import base64
+import io
 import json
 import re
 import time
@@ -72,6 +74,11 @@ MODEL_PARAMETER_NAME = re.compile(r"[A-Za-z0-9_.]{1,64}")
 MODEL_PARAMETER_LIMIT = 128
 MODEL_PARAMETER_TEXT_LIMIT = 4096
 
+ATTACHMENT_TYPES = {"image", "document", "video", "audio"}
+ATTACHMENT_LIMIT = 8
+ATTACHMENT_DATA_LIMIT = 20 * 1024 * 1024
+MAX_IMAGE_PIXELS = 1_200_000
+
 
 def _model_parameter_values(value):
     """Validate model parameters submitted from the chat parameter modal."""
@@ -109,12 +116,117 @@ def _model_parameter_value(item):
     raise ValueError("Model parameter values must be simple JSON values.")
 
 
-def _build_chat_request_body(service, provider, model, messages, request_parameters, extra_parameters):
+def _mime_for_name(name):
+    lower = str(name or "").lower()
+    if lower.endswith(".txt"):
+        return "text/plain"
+    if lower.endswith(".md"):
+        return "text/markdown"
+    if lower.endswith(".doc"):
+        return "application/msword"
+    if lower.endswith(".rtf"):
+        return "application/rtf"
+    if lower.endswith(".docx"):
+        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    if lower.endswith(".mp4"):
+        return "video/mp4"
+    if lower.endswith(".mp3"):
+        return "audio/mpeg"
+    if lower.endswith(".wav"):
+        return "audio/wav"
+    return "application/octet-stream"
+
+
+def _attachment_values(value):
+    """Validate and normalize chat attachments submitted by the browser."""
+    if value in (None, ""):
+        return []
+    if not isinstance(value, list):
+        raise ValueError("Attachments must be a list.")
+    if len(value) > ATTACHMENT_LIMIT:
+        raise ValueError("Too many attachments were supplied.")
+    cleaned = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise ValueError("Attachments must be objects.")
+        attachment_type = str(item.get("type") or "").strip().lower()
+        if attachment_type not in ATTACHMENT_TYPES:
+            raise ValueError("Attachment type must be image, document, video, or audio.")
+        data = item.get("data")
+        if not isinstance(data, str) or not data.strip():
+            raise ValueError("Attachment data is required.")
+        data = data.strip()
+        try:
+            decoded = base64.b64decode(data, validate=True)
+        except Exception as error:  # noqa: BLE001
+            raise ValueError("Attachment data must be valid base64.") from error
+        if not decoded or len(decoded) > ATTACHMENT_DATA_LIMIT:
+            raise ValueError("Attachment data is too large.")
+        mime_type = str(item.get("mime_type") or "").strip()
+        if not mime_type:
+            mime_type = _mime_for_name(item.get("name"))
+        cleaned.append(
+            {
+                "type": attachment_type,
+                "data": data,
+                "mime_type": mime_type,
+            }
+        )
+    return cleaned
+
+
+def _resize_image_attachment(attachment):
+    """Resize an image attachment above 1.2 megapixels when Pillow is available."""
+    if not isinstance(attachment, dict) or attachment.get("type") != "image":
+        return attachment
+    try:
+        from PIL import Image
+    except ImportError:
+        return attachment
+    try:
+        decoded = base64.b64decode(attachment["data"], validate=True)
+        with Image.open(io.BytesIO(decoded)) as image:
+            pixels = image.width * image.height
+            if pixels <= MAX_IMAGE_PIXELS:
+                return attachment
+            scale = (MAX_IMAGE_PIXELS / pixels) ** 0.5
+            size = (
+                max(1, int(image.width * scale)),
+                max(1, int(image.height * scale)),
+            )
+            resized = image.resize(size, Image.LANCZOS)
+            if resized.mode in ("RGBA", "P"):
+                resized = resized.convert("RGB")
+            output = io.BytesIO()
+            resized.save(output, format="JPEG", quality=90)
+            return {
+                "type": "image",
+                "data": base64.b64encode(output.getvalue()).decode("ascii"),
+                "mime_type": "image/jpeg",
+            }
+    except Exception:  # noqa: BLE001
+        return attachment
+
+
+def _resize_attachments(attachments):
+    return [_resize_image_attachment(item) for item in (attachments or [])]
+
+
+def _build_chat_request_body(service, provider, model, messages, request_parameters, extra_parameters, attachments=None):
     """Return the JSON-serializable body sent for an assistant chat turn."""
     body = {"model": model, "messages": messages}
     body.update({key: value for key, value in (request_parameters or {}).items() if value is not None})
     filtered_extra = service.local_extra_parameters(provider, extra_parameters)
     body.update(filtered_extra)
+    if attachments:
+        body["attachments"] = [
+            {
+                "type": item["type"],
+                "data": item["data"],
+                "mime_type": item["mime_type"],
+            }
+            for item in attachments
+        ]
     return body
 
 
@@ -162,6 +274,7 @@ class ChatController:
             saved_name,
             _parameter_values(data),
             _model_parameter_values(data.get("model_params")),
+            _resize_attachments(_attachment_values(data.get("attachments"))),
         )
 
     def send(self):
@@ -174,6 +287,7 @@ class ChatController:
                 saved_name,
                 parameters,
                 extra_parameters,
+                attachments,
             ) = self._parse_request()
         except ValueError as error:
             return jsonify({"error": str(error)}), 400
@@ -242,6 +356,7 @@ class ChatController:
             messages,
             request_parameters,
             extra_parameters,
+            attachments=attachments,
         )
 
         if not stream_requested:
@@ -254,6 +369,7 @@ class ChatController:
                     messages,
                     **request_parameters,
                     extra_parameters=extra_parameters,
+                    attachments=attachments,
                 )
             except Exception as error:  # noqa: BLE001
                 current_app.logger.exception(
@@ -301,6 +417,7 @@ class ChatController:
                     messages,
                     **request_parameters,
                     extra_parameters=extra_parameters,
+                    attachments=attachments,
                 ):
                     if event.get("type") == "chunk":
                         response_text += event.get("text", "")

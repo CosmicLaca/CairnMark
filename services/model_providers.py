@@ -1,5 +1,6 @@
 """Provider catalog access and provider-configuration business rules."""
 
+import base64
 import json
 import urllib.parse
 import urllib.request
@@ -538,6 +539,70 @@ class ProviderSdkClient:
         return str(content or "")
 
     @staticmethod
+    def _openai_messages_with_attachments(messages, attachments):
+        images = [item for item in (attachments or []) if item.get("type") == "image"]
+        if not images:
+            return messages
+        converted = [dict(message) if isinstance(message, dict) else message for message in (messages or [])]
+        last_user = None
+        for index in range(len(converted) - 1, -1, -1):
+            if isinstance(converted[index], dict) and converted[index].get("role") == "user":
+                last_user = index
+                break
+        if last_user is None:
+            converted.append({"role": "user", "content": ""})
+            last_user = len(converted) - 1
+        original = converted[last_user].get("content", "")
+        if not isinstance(original, str):
+            original = str(original or "")
+        content = [{"type": "text", "text": original}]
+        for item in images:
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{item['mime_type']};base64,{item['data']}"
+                    },
+                }
+            )
+        converted[last_user]["content"] = content
+        return converted
+
+    @staticmethod
+    def _anthropic_messages_with_attachments(conversation, attachments):
+        images = [item for item in (attachments or []) if item.get("type") == "image"]
+        if not images:
+            return conversation
+        converted = [dict(message) if isinstance(message, dict) else message for message in (conversation or [])]
+        last_user = None
+        for index in range(len(converted) - 1, -1, -1):
+            if isinstance(converted[index], dict) and converted[index].get("role") == "user":
+                last_user = index
+                break
+        if last_user is None:
+            converted.append({"role": "user", "content": ""})
+            last_user = len(converted) - 1
+        original = converted[last_user].get("content", "")
+        blocks = []
+        if isinstance(original, list):
+            blocks.extend(original)
+        elif isinstance(original, str) and original.strip():
+            blocks.append({"type": "text", "text": original})
+        for item in images:
+            blocks.append(
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": item["mime_type"],
+                        "data": item["data"],
+                    },
+                }
+            )
+        converted[last_user]["content"] = blocks
+        return converted
+
+    @staticmethod
     def _provided_parameters(parameters, mapping):
         """Return only parameters explicitly supplied by the caller."""
         if not parameters:
@@ -556,7 +621,7 @@ class ProviderSdkClient:
 
     def _openai_completion(
         self, spec, api_key, model, messages, parameters, timeout, base_url,
-        extra_body=None,
+        extra_body=None, attachments=None,
     ):
         kwargs = self._provided_parameters(
             parameters,
@@ -572,6 +637,8 @@ class ProviderSdkClient:
         }
         if body_parameters:
             kwargs["extra_body"] = body_parameters
+        if attachments:
+            messages = self._openai_messages_with_attachments(messages, attachments)
         with self.openai_factory(
             api_key=api_key or "not-needed",
             base_url=base_url,
@@ -593,7 +660,7 @@ class ProviderSdkClient:
         }
 
     def _mistral_completion(
-        self, api_key, model, messages, parameters, timeout
+        self, api_key, model, messages, parameters, timeout, attachments=None
     ):
         kwargs = self._provided_parameters(
             parameters,
@@ -604,6 +671,8 @@ class ProviderSdkClient:
                 "max_tokens": "max_tokens",
             },
         )
+        if attachments:
+            messages = self._openai_messages_with_attachments(messages, attachments)
         with self.mistral_factory(
             api_key=api_key,
             timeout_ms=int(timeout * 1000),
@@ -623,9 +692,11 @@ class ProviderSdkClient:
         }
 
     def _anthropic_completion(
-        self, api_key, model, messages, parameters, timeout
+        self, api_key, model, messages, parameters, timeout, attachments=None
     ):
         system_text, conversation = self._system_and_messages(messages)
+        if attachments:
+            conversation = self._anthropic_messages_with_attachments(conversation, attachments)
         kwargs = self._provided_parameters(
             parameters,
             {
@@ -658,22 +729,42 @@ class ProviderSdkClient:
         }
 
     def _google_completion(
-        self, api_key, model, messages, parameters, timeout
+        self, api_key, model, messages, parameters, timeout, attachments=None
     ):
         system_text, conversation = self._system_and_messages(messages)
-        contents = [
-            google_types.Content(
-                role=(
-                    "model" if message.get("role") == "assistant" else "user"
-                ),
-                parts=[
-                    google_types.Part.from_text(
-                        text=str(message.get("content", ""))
-                    )
-                ],
-            )
-            for message in conversation
+        image_attachments = [
+            item for item in (attachments or []) if item.get("type") == "image"
         ]
+        contents = []
+        for index, message in enumerate(conversation):
+            is_last_user = (
+                message.get("role") != "assistant"
+                and index == len(conversation) - 1
+            )
+            parts = [
+                google_types.Part.from_text(
+                    text=str(message.get("content", ""))
+                )
+            ]
+            if is_last_user and image_attachments:
+                for item in image_attachments:
+                    try:
+                        parts.append(
+                            google_types.Part.from_bytes(
+                                data=base64.b64decode(item["data"], validate=True),
+                                mime_type=item["mime_type"],
+                            )
+                        )
+                    except Exception:  # noqa: BLE001
+                        continue
+            contents.append(
+                google_types.Content(
+                    role=(
+                        "model" if message.get("role") == "assistant" else "user"
+                    ),
+                    parts=parts,
+                )
+            )
         config_data = {"system_instruction": system_text}
         config_data.update(
             self._provided_parameters(
@@ -707,7 +798,7 @@ class ProviderSdkClient:
         }
 
     def _openrouter_completion(
-        self, api_key, model, messages, parameters, timeout
+        self, api_key, model, messages, parameters, timeout, attachments=None
     ):
         kwargs = self._provided_parameters(
             parameters,
@@ -718,6 +809,8 @@ class ProviderSdkClient:
                 "max_tokens": "max_tokens",
             },
         )
+        if attachments:
+            messages = self._openai_messages_with_attachments(messages, attachments)
         with self.openrouter_factory(
             api_key=api_key,
             timeout_ms=int(timeout * 1000),
@@ -738,7 +831,7 @@ class ProviderSdkClient:
         }
 
     def _xai_completion(
-        self, api_key, model, messages, parameters, timeout
+        self, api_key, model, messages, parameters, timeout, attachments=None
     ):
         factories = {
             "system": xai_system,
@@ -786,6 +879,7 @@ class ProviderSdkClient:
         parameters=None,
         timeout=300,
         extra_body=None,
+        attachments=None,
     ):
         """Send messages through the provider SDK and normalize the result."""
         try:
@@ -799,26 +893,27 @@ class ProviderSdkClient:
                     timeout,
                     base_url,
                     extra_body=extra_body,
+                    attachments=attachments,
                 )
             if spec.sdk_client == "anthropic":
                 return self._anthropic_completion(
-                    api_key, model, messages, parameters, timeout
+                    api_key, model, messages, parameters, timeout, attachments=attachments
                 )
             if spec.sdk_client == "google":
                 return self._google_completion(
-                    api_key, model, messages, parameters, timeout
+                    api_key, model, messages, parameters, timeout, attachments=attachments
                 )
             if spec.sdk_client == "openrouter":
                 return self._openrouter_completion(
-                    api_key, model, messages, parameters, timeout
+                    api_key, model, messages, parameters, timeout, attachments=attachments
                 )
             if spec.sdk_client == "mistral":
                 return self._mistral_completion(
-                    api_key, model, messages, parameters, timeout
+                    api_key, model, messages, parameters, timeout, attachments=attachments
                 )
             if spec.sdk_client == "xai":
                 return self._xai_completion(
-                    api_key, model, messages, parameters, timeout
+                    api_key, model, messages, parameters, timeout, attachments=attachments
                 )
         except SDK_ERRORS as error:
             status = self._error_status(error)
@@ -1508,6 +1603,7 @@ class ModelProviderService:
         self, provider, model, messages, temperature, top_p, top_k, max_tokens=None,
         min_p=None, repeat_penalty=None, repeat_last_n=None,
         dry_multiplier=None, seed=None, timeout=300, extra_parameters=None,
+        attachments=None,
     ):
         """Send a chat history with provider-specific parameter handling."""
         spec, configuration, base_url = self._completion_context(provider)
@@ -1531,12 +1627,14 @@ class ModelProviderService:
             parameters=parameters,
             timeout=timeout,
             extra_body=self.local_extra_parameters(provider, extra_parameters),
+            attachments=attachments,
         )
 
     def chat_completion_with_params_stream(
         self, provider, model, messages, temperature, top_p, top_k, max_tokens=None,
         min_p=None, repeat_penalty=None, repeat_last_n=None,
         dry_multiplier=None, seed=None, timeout=300, extra_parameters=None,
+        attachments=None,
     ):
         """Yield chat response chunks as they are produced by the provider."""
         spec, configuration, base_url = self._completion_context(provider)
@@ -1570,6 +1668,10 @@ class ModelProviderService:
 
         # OpenAI-compatible providers.
         if spec.sdk_client == "openai":
+            if attachments:
+                messages = self.catalog_client.sdk_client._openai_messages_with_attachments(
+                    messages, attachments
+                )
             kwargs = self.catalog_client.sdk_client._provided_parameters(
                 parameters,
                 {
@@ -1651,11 +1753,18 @@ class ModelProviderService:
                     timeout=timeout,
                 ) as client:
                     usage = {"prompt_tokens": 0, "completion_tokens": 0}
+                    stream_conversation = conversation
+                    if attachments:
+                        stream_conversation = (
+                            self.catalog_client.sdk_client._anthropic_messages_with_attachments(
+                                conversation, attachments
+                            )
+                        )
                     with client.messages.stream(
                         model=model,
                         max_tokens=8192 if max_tokens is None else max_tokens,
                         system=system_text,
-                        messages=conversation,
+                        messages=stream_conversation,
                         **kwargs,
                     ) as stream:
                         for text in stream.text_stream:
@@ -1714,11 +1823,25 @@ class ModelProviderService:
                                     if m.get("role") == "assistant"
                                     else "user"
                                 ),
-                                parts=[
-                                    google_types.Part.from_text(
-                                        text=str(m.get("content", ""))
+                                parts=(
+                                    [google_types.Part.from_text(text=str(m.get("content", "")))]
+                                    + (
+                                        [
+                                            google_types.Part.from_bytes(
+                                                data=base64.b64decode(
+                                                    item["data"], validate=True
+                                                ),
+                                                mime_type=item["mime_type"],
+                                            )
+                                            for item in (attachments or [])
+                                            if item.get("type") == "image"
+                                            and m.get("role") != "assistant"
+                                            and m is conversation[-1]
+                                        ]
+                                        if True
+                                        else []
                                     )
-                                ],
+                                ),
                             )
                             for m in conversation
                         ],
@@ -1756,6 +1879,10 @@ class ModelProviderService:
                     },
                 )
                 usage = {"prompt_tokens": 0, "completion_tokens": 0}
+                if attachments:
+                    messages = self.catalog_client.sdk_client._openai_messages_with_attachments(
+                        messages, attachments
+                    )
                 with self.catalog_client.sdk_client.mistral_factory(
                     api_key=api_key,
                     timeout_ms=int(timeout * 1000),
@@ -1804,6 +1931,10 @@ class ModelProviderService:
                     },
                 )
                 usage = {"prompt_tokens": 0, "completion_tokens": 0}
+                if attachments:
+                    messages = self.catalog_client.sdk_client._openai_messages_with_attachments(
+                        messages, attachments
+                    )
                 with self.catalog_client.sdk_client.openrouter_factory(
                     api_key=api_key,
                     timeout_ms=int(timeout * 1000),
