@@ -5,6 +5,8 @@ import io
 import json
 import re
 import time
+import uuid
+from pathlib import Path
 
 import markdown
 from flask import (
@@ -12,6 +14,7 @@ from flask import (
     current_app,
     jsonify,
     request,
+    send_from_directory,
     stream_with_context,
 )
 
@@ -235,6 +238,39 @@ def render_markdown_html(text):
     return markdown.markdown(str(text or ""), extensions=MARKDOWN_EXTENSIONS)
 
 
+def _preview_directory():
+    database_path = Path(current_app.config.get("CHAT_DATABASE_PATH", ""))
+    if not database_path.is_absolute():
+        database_path = Path(current_app.root_path).parent / database_path
+    directory = database_path.parent / "preview"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
+def _save_preview_image(data):
+    """Create a 100px-high JPEG preview and return its randomized filename."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return None
+    try:
+        decoded = base64.b64decode(data, validate=True)
+        with Image.open(io.BytesIO(decoded)) as image:
+            if image.height <= 0:
+                return None
+            scale = 100 / image.height
+            width = max(1, int(image.width * scale))
+            resized = image.resize((width, 100), Image.LANCZOS)
+            if resized.mode in ("RGBA", "P"):
+                resized = resized.convert("RGB")
+            filename = f"preview-{uuid.uuid4().hex}.jpg"
+            resized.save(_preview_directory() / filename, format="JPEG", quality=60)
+            return filename
+    except Exception:  # noqa: BLE001
+        current_app.logger.exception("Preview image could not be saved")
+        return None
+
+
 class ChatController:
     """Provide chat context and handle chat messages."""
 
@@ -301,7 +337,13 @@ class ChatController:
         except ProviderOfflineError as error:
             return jsonify({"error": str(error)}), 503
 
-        add_chat_message("user", user_message)
+        preview_images = []
+        for attachment in attachments or []:
+            if attachment.get("type") == "image":
+                filename = _save_preview_image(attachment.get("data", ""))
+                if filename:
+                    preview_images.append(filename)
+        add_chat_message("user", user_message, preview_images=preview_images)
 
         stream_requested = (
             request.args.get("stream") == "1"
@@ -462,6 +504,16 @@ class ChatController:
             stream_with_context(generate()),
             mimetype="text/event-stream",
         )
+
+    def preview(self, filename):
+        directory = _preview_directory()
+        safe_name = Path(filename).name
+        if not safe_name or safe_name != filename:
+            return ("", 404)
+        file_path = directory / safe_name
+        if not file_path.is_file():
+            return ("", 404)
+        return send_from_directory(directory, safe_name)
 
     def save_settings(self):
         """Persist only the model, system prompt, and generation controls.

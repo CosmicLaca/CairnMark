@@ -196,8 +196,39 @@
             actions.appendChild(copyBtn);
             div.appendChild(actions);
         } else {
-            contentDiv.textContent = content;
-            div.appendChild(contentDiv);
+            const previewImages =
+                meta && Array.isArray(meta.preview_images)
+                    ? meta.preview_images
+                    : [];
+            if (previewImages.length) {
+                const body = document.createElement("div");
+                body.className = "chat-user-body";
+                const previews = document.createElement("div");
+                previews.className = "chat-user-previews";
+                previewImages.forEach((src) => {
+                    const img = document.createElement("img");
+                    img.className = "chat-user-preview";
+                    img.alt = "Attached image preview";
+                    img.src = String(src).startsWith("data:")
+                        ? src
+                        : `/chat/preview/${encodeURIComponent(src)}`;
+                    img.addEventListener("error", () => {
+                        const broken = document.createElement("span");
+                        broken.className = "chat-user-preview--broken";
+                        broken.textContent = "🔗";
+                        broken.title = "Preview image missing";
+                        img.replaceWith(broken);
+                    });
+                    previews.appendChild(img);
+                });
+                body.appendChild(previews);
+                contentDiv.textContent = content;
+                body.appendChild(contentDiv);
+                div.appendChild(body);
+            } else {
+                contentDiv.textContent = content;
+                div.appendChild(contentDiv);
+            }
         }
 
         historyEl.appendChild(div);
@@ -218,6 +249,7 @@
                 output_tokens: m.output_tokens,
                 saved_system_prompt_name: m.saved_system_prompt_name,
                 system_prompt: m.system_prompt,
+                preview_images: m.preview_images || [],
             });
         });
         syncEmptyState();
@@ -286,7 +318,12 @@
             window.alert("Model is required.");
             return;
         }
-        const userMessageEl = appendMessage("user", message);
+        const userPreviewImages = pendingAttachments
+            .filter((attachment) => attachment.type === "image" && attachment.previewUrl)
+            .map((attachment) => attachment.previewUrl);
+        const userMessageEl = appendMessage("user", message, {
+            preview_images: userPreviewImages,
+        });
         if (inputEl) inputEl.value = "";
         if (sendBtn) sendBtn.disabled = true;
 

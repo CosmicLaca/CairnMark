@@ -98,7 +98,18 @@
               {% endif %}
             </span>
           {% endif %}
+          {% if message.role == 'user' and message.preview_images %}
+          <div class="chat-user-body">
+            <div class="chat-user-previews">
+              {% for preview in message.preview_images %}
+              <img class="chat-user-preview" src="{{ url_for('chat_preview', filename=preview) }}" alt="Attached image preview" onerror="this.outerHTML='<span class=\\'chat-user-preview--broken\\'>🔗</span>'">
+              {% endfor %}
+            </div>
+            <div class="chat-content" data-raw="{{ message.content|e }}">{{ message.content }}</div>
+          </div>
+          {% else %}
           <div class="chat-content markdown-content" data-raw="{{ message.content|e }}">{{ message.content|markdown }}</div>
+          {% endif %}
         </div>
       {% endfor %}
     </div>

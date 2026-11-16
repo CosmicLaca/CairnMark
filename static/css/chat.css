@@ -225,6 +225,40 @@
     background: rgba(111, 214, 195, 0.1);
 }
 
+.chat-user-body {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.chat-user-previews {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    flex: 0 0 auto;
+}
+
+.chat-user-preview {
+    width: 60px;
+    height: 60px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.5);
+}
+
+.chat-user-preview--broken {
+    display: grid;
+    width: 60px;
+    height: 60px;
+    place-items: center;
+    border: 1px dashed rgba(176, 74, 57, 0.45);
+    border-radius: 4px;
+    color: #b04a39;
+    font-size: 1.2rem;
+    background: rgba(176, 74, 57, 0.06);
+}
+
 .chat-role {
     overflow: hidden;
     color: #6f7c77;

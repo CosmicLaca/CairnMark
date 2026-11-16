@@ -12,6 +12,8 @@ from pathlib import Path
 
 from flask import current_app
 
+import json as _json
+
 from config import PROJECT_ROOT
 
 
@@ -94,6 +96,22 @@ CREATE TABLE IF NOT EXISTS saved_system_prompts (
 """
 
 
+def _parse_preview_images(value):
+    if not value:
+        return []
+    if isinstance(value, list):
+        return value
+    try:
+        parsed = _json.loads(value)
+    except (ValueError, TypeError):
+        return [part for part in str(value).split(",") if part.strip()]
+    if isinstance(parsed, list):
+        return parsed
+    if isinstance(parsed, str):
+        return [parsed] if parsed else []
+    return []
+
+
 def _database_path():
     configured = current_app.config.get("CHAT_DATABASE_PATH")
     if configured:
@@ -119,6 +137,7 @@ CHAT_MESSAGE_COLUMNS = {
     "system_prompt": "TEXT NOT NULL DEFAULT ''",
     "saved_system_prompt_name": "TEXT NOT NULL DEFAULT ''",
     "request_body": "TEXT NOT NULL DEFAULT ''",
+    "preview_images": "TEXT NOT NULL DEFAULT ''",
 }
 
 
@@ -294,7 +313,7 @@ def list_chat_messages():
         rows = connection.execute(
             "SELECT id, role, content, model_name, provider, response_time, "
             "input_tokens, output_tokens, system_prompt, saved_system_prompt_name, "
-            "request_body, created_at FROM chat_messages ORDER BY id"
+            "request_body, preview_images, created_at FROM chat_messages ORDER BY id"
         ).fetchall()
     return [
         {
@@ -309,7 +328,8 @@ def list_chat_messages():
             "system_prompt": row[8] or "",
             "saved_system_prompt_name": row[9] or "",
             "request_body": row[10] or "",
-            "created_at": row[11],
+            "preview_images": _parse_preview_images(row[11] or ""),
+            "created_at": row[12],
         }
         for row in rows
     ]
@@ -326,13 +346,21 @@ def add_chat_message(
     system_prompt="",
     saved_system_prompt_name="",
     request_body="",
+    preview_images=None,
 ):
     with closing(_connect()) as connection:
+        if isinstance(preview_images, (list, tuple)):
+            preview_value = _json.dumps(list(preview_images), ensure_ascii=False)
+        elif preview_images in (None, ""):
+            preview_value = ""
+        else:
+            preview_value = str(preview_images)
         cursor = connection.execute(
             "INSERT INTO chat_messages "
             "(role, content, model_name, provider, response_time, input_tokens, "
-            "output_tokens, system_prompt, saved_system_prompt_name, request_body) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "output_tokens, system_prompt, saved_system_prompt_name, request_body, "
+            "preview_images) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 role,
                 content,
@@ -344,6 +372,7 @@ def add_chat_message(
                 system_prompt,
                 saved_system_prompt_name,
                 request_body,
+                preview_value,
             ),
         )
         connection.commit()
@@ -486,11 +515,15 @@ def load_saved_chat(name):
     with closing(_connect()) as connection:
         connection.execute("DELETE FROM chat_messages")
         for m in messages:
+            preview_images = m.get("preview_images", [])
+            if isinstance(preview_images, str):
+                preview_images = _parse_preview_images(preview_images)
             connection.execute(
                 "INSERT INTO chat_messages "
                 "(role, content, model_name, provider, response_time, input_tokens, "
-                "output_tokens, system_prompt, saved_system_prompt_name, request_body) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "output_tokens, system_prompt, saved_system_prompt_name, request_body, "
+                "preview_images) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     m.get("role", "user"),
                     m.get("content", ""),
@@ -502,6 +535,9 @@ def load_saved_chat(name):
                     m.get("system_prompt", "") or "",
                     m.get("saved_system_prompt_name", "") or "",
                     m.get("request_body", "") or "",
+                    _json.dumps(preview_images, ensure_ascii=False)
+                    if isinstance(preview_images, (list, tuple))
+                    else str(preview_images or ""),
                 ),
             )
         connection.commit()

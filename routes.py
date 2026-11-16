@@ -45,6 +45,12 @@ APPLICATION_ROUTES = (
         ("POST",),
     ),
     (
+        "/chat/preview/<path:filename>",
+        "chat_preview",
+        chat_controller.preview,
+        ("GET",),
+    ),
+    (
         "/chat/saved",
         "chat_saved_list",
         chat_controller.list_saved,
