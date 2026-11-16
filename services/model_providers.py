@@ -1327,10 +1327,13 @@ class ModelProviderService:
             )
         parameter_key = f"{provider}::{model}"
         saved_params = get_model_parameters(parameter_key)
-        if saved_params is not None:
+        if saved_params is not None and ModelProviderService._display_n_ctx(
+            saved_params
+        ) is not None:
             return {
                 "params": ModelProviderService._display_params(saved_params),
                 "modalities": ModelProviderService._display_field(saved_params, "modalities"),
+                "n_ctx": ModelProviderService._display_n_ctx(saved_params),
                 "source": "database",
             }
 
@@ -1349,6 +1352,13 @@ class ModelProviderService:
             with urllib.request.urlopen(url) as response:
                 payload = json.loads(response.read().decode("utf-8"))
         except Exception as error:  # noqa: BLE001
+            if saved_params is not None:
+                return {
+                    "params": ModelProviderService._display_params(saved_params),
+                    "modalities": ModelProviderService._display_field(saved_params, "modalities"),
+                    "n_ctx": ModelProviderService._display_n_ctx(saved_params),
+                    "source": "database",
+                }
             raise ProviderCatalogError(
                 "Could not read model parameters"
             ) from error
@@ -1360,6 +1370,11 @@ class ModelProviderService:
         # New capability fields.
         modalities = payload.get("modalities") if isinstance(payload, dict) else None
         chat_template_caps = payload.get("chat_template_caps") if isinstance(payload, dict) else None
+        n_ctx = None
+        if isinstance(settings, dict):
+            n_ctx = settings.get("n_ctx")
+        if n_ctx is None and isinstance(payload, dict):
+            n_ctx = payload.get("n_ctx")
 
         # Store everything together so callers can read any subset.
         full = {}
@@ -1369,6 +1384,8 @@ class ModelProviderService:
             full["modalities"] = modalities
         if chat_template_caps is not None:
             full["chat_template_caps"] = chat_template_caps
+        if n_ctx is not None:
+            full["n_ctx"] = n_ctx
 
         if not full:
             raise ProviderCatalogError("Unexpected parameter response")
@@ -1377,6 +1394,7 @@ class ModelProviderService:
         return {
             "params": params if isinstance(params, dict) else {},
             "modalities": modalities if isinstance(modalities, dict) else {},
+            "n_ctx": n_ctx,
             "source": "provider",
         }
 
@@ -1401,6 +1419,22 @@ class ModelProviderService:
         if isinstance(saved_params, dict) and isinstance(saved_params.get(field), dict):
             return saved_params[field]
         return {}
+
+    @staticmethod
+    def _display_n_ctx(saved_params):
+        """Return the saved context size, if present."""
+        if isinstance(saved_params, dict):
+            value = saved_params.get("n_ctx")
+            if isinstance(value, bool):
+                return None
+            if isinstance(value, (int, float)):
+                return int(value)
+            if isinstance(value, str) and value.strip():
+                try:
+                    return int(float(value.strip()))
+                except ValueError:
+                    return None
+        return None
 
     @staticmethod
     def _attach_saved_modalities(models):

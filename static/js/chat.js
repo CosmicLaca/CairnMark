@@ -47,6 +47,7 @@
     const moreParamsDeleteBtn = document.querySelector("[data-more-params-delete]");
     const mediaUploadsEl = document.querySelector("[data-chat-media-uploads]");
     const attachmentsEl = document.querySelector("[data-chat-attachments]");
+    const modelNctxEl = document.querySelector("[data-chat-model-nctx]");
     let moreParamsModelKey = "";
     const pendingAttachments = [];
     const renderMarkdown = window.CairnmarkMarkdown.render;
@@ -824,10 +825,11 @@
             );
             setMoreParamsLoading(false);
             renderMoreParams((payload && payload.params) || {});
-            setMoreParamsDeleteVisible(payload && payload.source === "database");
+            setMoreParamsDeleteVisible(true);
             moreParamsModelKey = `${provider}::${model}`;
         } catch (error) {
             setMoreParamsLoading(false);
+            setMoreParamsDeleteVisible(false);
             showMoreParamsNote(`Failed to load parameters: ${error}`);
             updateMoreParamsSign();
         }
@@ -890,6 +892,9 @@
         const requestSeq = ++mediaUploadsSeq;
         // Clear icons first: without saved modalities the default is false.
         renderMediaUploads(null);
+        if (modelNctxEl) {
+            modelNctxEl.textContent = "";
+        }
         const isLocal = provider === "llama.cpp" || provider === "vllm";
         if (!isLocal || !model) {
             return;
@@ -900,9 +905,15 @@
             );
             if (requestSeq !== mediaUploadsSeq) return;
             renderMediaUploads(payload && payload.modalities);
+            if (modelNctxEl && payload && payload.n_ctx != null) {
+                modelNctxEl.textContent = `| N ctx: ${payload.n_ctx}`;
+            }
         } catch (error) {
             if (requestSeq !== mediaUploadsSeq) return;
             renderMediaUploads(null);
+            if (modelNctxEl) {
+                modelNctxEl.textContent = "";
+            }
         }
     };
 
