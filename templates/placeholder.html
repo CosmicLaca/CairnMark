@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('index') }}">Home</a> &gt;
+  <a href="{{ url_for('index') }}">Benchmark</a> &gt;
+  {{ page.title }}
+</div>
+
+<div class="content-header">
+  <span class="section-index">Prototype waypoint</span>
+  <h1>{{ page.title }}</h1>
+  <p class="section-lede">Interface marker reserved for the next development stage.</p>
+</div>
+
+<div class="content">
+  <span class="panel-kicker">Field note</span>
+  <p>Placeholder page for "{{ page.title }}".</p>
+  <p>This is a minimalist placeholder for the {{ page.title }} functionality.</p>
+</div>
+{% endblock %}

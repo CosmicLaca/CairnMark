@@ -1,0 +1,43 @@
+"""Application configuration for Cairnmark."""
+
+import os
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+
+
+class Config:
+    """Settings shared by every environment."""
+
+    SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key")
+    DATABASE_PATH = PROJECT_ROOT / "instance" / "cairnmark.db"
+    PARAMETER_DATABASE_PATH = PROJECT_ROOT / "instance" / "parameters.db"
+    LOG_LEVEL = os.environ.get("CAIRNMARK_LOG_LEVEL", "INFO").upper()
+    # Enabled by the --dev launcher flag; public launches hide unfinished pages.
+    DEV_MODE = False
+
+
+class DevelopmentConfig(Config):
+    """Local development settings."""
+
+    DEBUG = True
+
+
+class ProductionConfig(Config):
+    """Production settings."""
+
+    DEBUG = False
+
+
+class TestingConfig(Config):
+    """Automated-test settings."""
+
+    TESTING = True
+
+
+CONFIGS = {
+    "development": DevelopmentConfig,
+    "production": ProductionConfig,
+    "testing": TestingConfig,
+}

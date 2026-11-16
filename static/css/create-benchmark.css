@@ -1,0 +1,316 @@
+/* Benchmark setup panel for the benchmark creator. */
+
+.benchmark-title-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+#create-benchmark-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+#create-benchmark-status[hidden] {
+    display: none;
+}
+
+/* Reset the shared .save-confirmation span circle styling inside this
+   container so only explicit icon spans are circles. */
+#create-benchmark-status span {
+    display: inline;
+    width: auto;
+    height: auto;
+    margin-right: 0;
+    color: inherit;
+    background: transparent;
+    border-radius: 0;
+    font-size: inherit;
+    line-height: inherit;
+}
+
+#create-benchmark-status .status-icon {
+    display: inline-grid;
+    width: 21px;
+    height: 21px;
+    margin-right: 8px;
+    place-items: center;
+    color: #eff7e8;
+    border-radius: 50%;
+    background: #4f9e70;
+    font-size: 0.78rem;
+    flex: none;
+}
+
+/* The generic span reset above outranks a bare class selector, so the
+   spinner must be scoped to keep its own size. */
+#create-benchmark-status .status-spinner {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(37, 107, 96, 0.25);
+    border-top-color: #256b60;
+    border-radius: 50%;
+    animation: create-benchmark-spin 0.8s linear infinite;
+    flex: none;
+}
+
+@keyframes create-benchmark-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.model-selector-panel {
+    margin-bottom: 24px;
+}
+
+.model-selector-heading {
+    margin-bottom: 20px;
+}
+
+.benchmark-setup-fields,
+.category-form {
+    display: grid;
+    gap: 18px;
+}
+
+.new-category-field .save-metadata-button {
+    margin-top: 14px;
+}
+
+.topic-field {
+    padding-top: 2px;
+}
+
+.topic-field > legend {
+    padding: 0;
+    margin-bottom: 5px;
+    color: var(--ink);
+    font-size: 0.8rem;
+    font-weight: 800;
+    letter-spacing: 0.035em;
+}
+
+.topic-columns,
+.topic-row {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) 86px 38px;
+    gap: 9px;
+}
+
+.topic-columns {
+    padding: 0 10px;
+    margin-bottom: 6px;
+    color: #6f7c77;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.54rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.topic-columns span:nth-child(3) {
+    text-align: center;
+}
+
+.topic-list {
+    display: grid;
+    gap: 8px;
+}
+
+.topic-row {
+    min-width: 0;
+    align-items: center;
+    padding: 9px 10px;
+    border: 1px solid var(--line);
+    border-radius: 2px 12px 2px 2px;
+    background: rgba(255, 255, 255, 0.32);
+    transition: border-color var(--motion), background var(--motion);
+}
+
+.topic-row:focus-within {
+    border-color: rgba(37, 107, 96, 0.42);
+    background: rgba(111, 214, 195, 0.06);
+}
+
+.topic-order {
+    display: grid;
+    width: 26px;
+    height: 26px;
+    place-items: center;
+    color: #6c7974;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.52rem;
+}
+
+.topic-row > * {
+    min-width: 0;
+}
+
+.topic-pairs-input {
+    padding-inline: 6px;
+}
+
+.topic-remove-button {
+    display: grid;
+    width: 38px;
+    height: 38px;
+    place-items: center;
+    padding: 0;
+    color: #7b6259;
+    border: 1px solid var(--line);
+    border-radius: 2px 9px 2px 2px;
+    background: #fffdf7;
+    cursor: pointer;
+    transition: color var(--motion), border-color var(--motion), background var(--motion), opacity var(--motion);
+}
+
+.topic-remove-button svg {
+    width: 15px;
+    height: 15px;
+}
+
+.topic-remove-button:hover,
+.topic-remove-button:focus-visible {
+    color: #b04a39;
+    border-color: rgba(176, 74, 57, 0.38);
+    background: rgba(176, 74, 57, 0.07);
+}
+
+.topic-remove-button:disabled {
+    color: #a8b0ac;
+    cursor: not-allowed;
+    opacity: 0.45;
+}
+
+.topic-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.topic-add-button {
+    display: inline-flex;
+    min-height: 38px;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px 0 8px;
+    color: #256b60;
+    border: 1px dashed rgba(37, 107, 96, 0.42);
+    border-radius: 2px 9px 2px 2px;
+    background: rgba(111, 214, 195, 0.06);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.68rem;
+    font-weight: 750;
+    transition: border-color var(--motion), background var(--motion), transform var(--motion);
+}
+
+.topic-add-button > span {
+    display: grid;
+    width: 22px;
+    height: 22px;
+    place-items: center;
+    color: var(--sidebar);
+    border-radius: 50%;
+    background: var(--aqua);
+    font-size: 0.95rem;
+    line-height: 1;
+}
+
+.topic-add-button:hover,
+.topic-add-button:focus-visible {
+    border-color: #4c8d81;
+    background: rgba(111, 214, 195, 0.12);
+    transform: translateY(-1px);
+}
+
+.topic-total {
+    color: #6f7c77;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.58rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.topic-total strong {
+    color: #315d54;
+    font-size: 0.7rem;
+}
+
+.topic-note {
+    margin: 11px 0 0;
+    color: #7b8882;
+    font-size: 0.69rem;
+    line-height: 1.5;
+}
+
+.model-selector-empty {
+    display: grid;
+    min-height: 150px;
+    place-items: center;
+    align-content: center;
+    gap: 7px;
+    padding: 24px;
+    color: var(--ink-soft);
+    border: 1px dashed var(--line);
+    background: rgba(255, 255, 255, 0.24);
+    text-align: center;
+}
+
+.model-selector-empty > span {
+    color: var(--ember);
+    font-size: 1.5rem;
+}
+
+.model-selector-empty small {
+    color: #74807b;
+    line-height: 1.6;
+}
+
+.model-selector-empty a {
+    color: #256b60;
+    font-weight: 700;
+    text-underline-offset: 3px;
+}
+
+@media (max-width: 720px) {
+    .topic-columns {
+        display: none;
+    }
+
+    .topic-row {
+        grid-template-columns: 26px minmax(0, 1fr) 38px;
+        grid-template-areas:
+            "order name remove"
+            "order pairs remove";
+        row-gap: 7px;
+    }
+
+    .topic-order {
+        grid-area: order;
+        align-self: start;
+        margin-top: 4px;
+    }
+
+    .topic-name-input {
+        grid-area: name;
+    }
+
+    .topic-pairs-input {
+        grid-area: pairs;
+        max-width: 120px;
+    }
+
+    .topic-remove-button {
+        grid-area: remove;
+        align-self: start;
+    }
+}

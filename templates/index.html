@@ -1,0 +1,360 @@
+{% extends "base.html" %}
+
+{% block styles %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/workspace-components.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/about.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}">
+{% endblock %}
+
+{% macro chat_parameter_label(for_id, label, help, end=False) -%}
+<div class="chat-parameter-label{% if end %} chat-parameter-label--end{% endif %}">
+  <label for="{{ for_id }}">{{ label }}</label>
+  <button type="button" class="chat-info" aria-label="{{ label }} help: {{ help }}">
+    <span aria-hidden="true">i</span>
+    <span class="chat-info-tooltip" role="tooltip">{{ help }}</span>
+  </button>
+</div>
+{%- endmacro %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('index') }}">Home</a>
+</div>
+
+<div class="content-header">
+  <span class="section-index">Live console</span>
+  <h1>{{ page.title }}</h1>
+  <p class="section-lede">A quiet workspace for testing an active model, tuning its instructions, and keeping useful conversations close at hand.</p>
+</div>
+
+<div class="chat-layout">
+  <section class="chat-main content" aria-labelledby="chat-title">
+    <header class="chat-panel-header">
+      <div>
+        <span class="panel-kicker">Conversation stream</span>
+        <div class="chat-panel-title-row">
+          <h2 id="chat-title">Model dialogue</h2>
+          <span class="chat-live-status"><i aria-hidden="true"></i> Local session</span>
+        </div>
+        <p>Send a prompt to the selected model. Replies are kept in this local workspace until you clear or save the chat.</p>
+      </div>
+      <div class="chat-panel-index" aria-hidden="true">01</div>
+    </header>
+
+    <div class="chat-saved-bar chat-history-toolbar">
+      <div>
+        <span class="chat-toolbar-kicker">Saved conversations</span>
+        <label for="chat-saved-select">Resume a local chat</label>
+      </div>
+      <div class="chat-saved-row">
+        <select id="chat-saved-select" data-chat-saved>
+          <option value="">— select a saved chat —</option>
+          {% for name in saved_chats %}
+            <option value="{{ name }}">{{ name }}</option>
+          {% endfor %}
+        </select>
+        <button type="button" class="chat-delete-button" data-chat-delete>
+          <span aria-hidden="true">×</span>
+          Delete
+        </button>
+      </div>
+    </div>
+
+    <div class="chat-history" data-chat-history>
+      <div class="chat-empty-state" data-chat-empty{% if chat_messages %} hidden{% endif %}>
+        <span class="chat-empty-mark" aria-hidden="true">◇</span>
+        <strong>Conversation ready</strong>
+        <p>Choose an active model in the setup panel, then write the first message below.</p>
+      </div>
+      {% for message in chat_messages %}
+        <div class="chat-message chat-message--{{ message.role }}">
+          <span class="chat-role">
+            {% if message.role == 'assistant' and message.provider %}
+              assistant::{{ message.provider }}::{{ message.model_name }}{% if message.saved_system_prompt_name %}::{{ message.saved_system_prompt_name }}{% endif %}
+            {% else %}
+              {{ message.role }}
+            {% endif %}
+          </span>
+          {% if message.role == 'assistant' %}
+            <span class="chat-meta-row">
+              {% if message.response_time or message.input_tokens or message.output_tokens %}
+                <span class="chat-meta">{{ message.response_time }} sec, {{ message.input_tokens }}/{{ message.output_tokens }}</span>
+              {% endif %}
+              {% if message.saved_system_prompt_name %}
+                <span class="chat-saved-prompt-name">{{ message.saved_system_prompt_name }}</span>
+              {% endif %}
+              <span class="chat-prompt-icon" data-system-prompt="{{ message.system_prompt|e }}" data-action="system-prompt" title="Show system prompt">
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                  <path fill="currentColor" d="M3 2h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zm1 2v8h8V4H4zm1 1h6v1H5V5zm0 2h6v1H5V7zm0 2h4v1H5V9z"/>
+                </svg>
+              </span>
+              {% if message.request_body %}
+              <span class="chat-prompt-icon" data-action="request-body" data-request-body="{{ message.request_body|e }}" title="Show API request body">
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                  <circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                  <path fill="currentColor" d="M6 9l3 3 3-3"/>
+                </svg>
+              </span>
+              {% endif %}
+            </span>
+          {% endif %}
+          <div class="chat-content markdown-content" data-raw="{{ message.content|e }}">{{ message.content|markdown }}</div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <form class="chat-input-form" data-chat-form>
+      <div class="chat-composer-heading">
+        <label for="chat-user-input">New message</label>
+        <span>Enter to send · Shift+Enter for a new line</span>
+      </div>
+      <textarea
+        id="chat-user-input"
+        class="chat-user-input"
+        name="message"
+        rows="3"
+        placeholder="Type a message…"
+        data-chat-input
+      ></textarea>
+      <div class="chat-media-uploads" data-chat-media-uploads hidden aria-label="Media uploads"></div>
+      <div class="chat-actions">
+        <button class="save-metadata-button chat-send-button" type="button" data-chat-send>
+          <span aria-hidden="true">▶</span>
+          Send
+        </button>
+        <button class="save-metadata-button chat-secondary-button" type="button" data-chat-save-open>
+          <span aria-hidden="true">◆</span>
+          Save chat
+        </button>
+      </div>
+    </form>
+  </section>
+
+  <aside class="chat-setup content" aria-labelledby="chat-setup-title">
+    <header class="chat-setup-header">
+      <div>
+        <span class="panel-kicker">Signal controls</span>
+        <h2 id="chat-setup-title">Chat setup</h2>
+      </div>
+      <span class="chat-panel-index" aria-hidden="true">02</span>
+    </header>
+    <p class="chat-setup-lede">Choose the active model and shape the request parameters for this session.</p>
+
+    <div class="field-group chat-model-field">
+      <label for="chat-model">Model</label>
+      <span class="field-hint">Active model for the chat.</span>
+      {% if active_models %}
+        <div class="select-shell">
+          <select id="chat-model" name="model" data-chat-model data-saved-model="{{ chat_settings.model_name }}">
+            {% for model in active_models %}
+              <option value="{{ model.provider }}::{{ model.model }}"
+                {% if chat_settings.model_name|trim == (model.provider ~ "::" ~ model.model)|trim %}selected{% endif %}>
+                {{ model.label }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+      {% else %}
+        <div class="model-selector-empty">
+          <span aria-hidden="true">◇</span>
+          <strong>No active models</strong>
+          <small>Turn on a provider in <a href="{{ url_for('setup_models') }}">Setup models</a>.</small>
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="field-group chat-prompt-field">
+      <div class="chat-saved-bar">
+        <label for="chat-saved-sp">Saved system prompts</label>
+        <select id="chat-saved-sp" data-chat-saved-sp>
+          <option value="">— select —</option>
+          {% for name in saved_system_prompts %}
+            <option value="{{ name }}">{{ name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <label for="chat-system-prompt">System prompt</label>
+      <span class="field-hint">Instructions for the model.</span>
+      <textarea
+        id="chat-system-prompt"
+        name="system_prompt"
+        rows="4"
+        data-chat-system-prompt
+      >{{ chat_settings.system_prompt }}</textarea>
+      <div class="chat-sp-actions">
+        <button type="button" class="save-metadata-button" data-chat-save-sp-open>
+          <span aria-hidden="true">◆</span>
+          Save system prompt
+        </button>
+        <button type="button" class="chat-delete-button" data-chat-delete-sp>
+          <span aria-hidden="true">×</span>
+          Delete system prompt
+        </button>
+      </div>
+    </div>
+
+    <fieldset class="field-group chat-parameters-field">
+      <legend>Generation parameters</legend>
+      <span class="field-hint">Fine-tune how much freedom the model has when replying. Leave a field empty to omit that parameter from the request.</span>
+      <div class="chat-parameter-grid">
+        <div class="field-group">
+          {{ chat_parameter_label("chat-temperature", "Temperature", "Controls randomness. Lower values make replies focused and predictable; higher values make them more varied and creative. Common range: 0.2–1.0.") }}
+          <input type="number" id="chat-temperature" name="temperature" step="0.1" min="0" max="2"
+            value="{{ chat_settings.temperature if chat_settings.temperature is not none else '' }}" data-chat-temperature>
+        </div>
+
+        <div class="field-group">
+          {{ chat_parameter_label("chat-top-p", "Top P", "Nucleus sampling. Keeps the smallest set of likely tokens whose total probability reaches this value. Lower values are more focused; 1.0 considers all tokens.") }}
+          <input type="number" id="chat-top-p" name="top_p" step="0.05" min="0" max="1"
+            value="{{ chat_settings.top_p if chat_settings.top_p is not none else '' }}" data-chat-top-p>
+        </div>
+
+        <div class="field-group">
+          {{ chat_parameter_label("chat-top-k", "Top K", "Limits each step to the K most likely tokens. Lower values are more deterministic; higher values allow more variety. 0 disables the limit.") }}
+          <input type="number" id="chat-top-k" name="top_k" step="1" min="0" max="200"
+            value="{{ chat_settings.top_k if chat_settings.top_k is not none else '' }}" data-chat-top-k>
+        </div>
+
+        <div class="field-group">
+          {{ chat_parameter_label("chat-seed", "Seed", "Random seed for reproducible generation. Use -1 for a random seed.") }}
+          <input type="number" id="chat-seed" name="seed" step="1" min="-1"
+            value="{{ chat_settings.seed if chat_settings.seed is not none else '' }}" data-chat-seed>
+        </div>
+      </div>
+
+      <div class="field-group">
+        {{ chat_parameter_label("chat-history-limit", "Recent messages kept", "How many previous user/assistant message pairs are sent with a new request. Lower values save context window and reduce cost; leave empty to send the full history.", end=True) }}
+        <input type="number" id="chat-history-limit" name="history_limit" step="1" min="0"
+          value="{{ chat_settings.history_limit if chat_settings.history_limit is not none else '' }}" data-chat-history-limit>
+      </div>
+    </fieldset>
+
+    <div class="chat-more-params-row">
+      <button class="save-metadata-button chat-more-params-button" type="button" data-chat-more-params disabled>
+        <span aria-hidden="true">⚙</span>
+        Set more parameters
+        <span class="more-params-disabled-sign" data-more-params-disabled hidden>Disabled</span>
+        <span class="more-params-state-sign" data-more-params-state hidden>UNSET</span>
+      </button>
+    </div>
+
+    <div class="chat-setup-actions">
+      <button class="save-metadata-button" type="button" data-chat-save-settings>
+        <span aria-hidden="true">◆</span>
+        Save setup
+      </button>
+      <button class="topic-remove-button" type="button" data-chat-clear>
+        <span aria-hidden="true">×</span>
+        Clear chat
+      </button>
+    </div>
+  </aside>
+</div>
+
+<div class="modal" id="save-chat-modal" data-save-chat-modal hidden aria-modal="true" role="dialog">
+  <div class="modal-content">
+    <header class="modal-header">
+      <h2>Save chat</h2>
+      <button type="button" class="close-modal-button" data-save-chat-close>&times;</button>
+    </header>
+    <div class="modal-body">
+      <div class="field-group">
+        <label for="save-chat-name">Chat name</label>
+        <input type="text" id="save-chat-name" data-save-chat-name maxlength="120" autocomplete="off" placeholder="e.g. My chat">
+      </div>
+    </div>
+    <footer class="modal-footer">
+      <button type="button" class="modal-cancel-button" data-save-chat-close>Cancel</button>
+      <button type="button" class="modal-save-button" data-save-chat-confirm>
+        <span aria-hidden="true">✓</span> Save
+      </button>
+    </footer>
+  </div>
+</div>
+
+<div class="modal" id="request-body-modal" data-request-body-modal hidden aria-modal="true" role="dialog">
+  <div class="modal-content">
+    <header class="modal-header">
+      <h2>API Body request</h2>
+      <button type="button" class="close-modal-button" data-request-body-close>&times;</button>
+    </header>
+    <div class="modal-body prompt-modal-body">
+      <div class="prompt-modal-text markdown-content" data-request-body-text></div>
+    </div>
+    <footer class="modal-footer">
+      <button type="button" class="modal-cancel-button" data-request-body-close>Close</button>
+    </footer>
+  </div>
+</div>
+
+<div class="modal" id="prompt-modal" data-prompt-modal hidden aria-modal="true" role="dialog">
+  <div class="modal-content prompt-modal-content">
+    <header class="modal-header">
+      <h2>System prompt</h2>
+      <button type="button" class="close-modal-button" data-prompt-close>&times;</button>
+    </header>
+    <div class="modal-body prompt-modal-body">
+      <div class="prompt-modal-text markdown-content" data-prompt-text></div>
+    </div>
+    <footer class="modal-footer">
+      <button type="button" class="modal-cancel-button" data-prompt-close>Close</button>
+    </footer>
+  </div>
+</div>
+
+<div class="modal" id="save-sp-modal" data-save-sp-modal hidden aria-modal="true" role="dialog">
+  <div class="modal-content">
+    <header class="modal-header">
+      <h2>Save system prompt</h2>
+      <button type="button" class="close-modal-button" data-save-sp-close>&times;</button>
+    </header>
+    <div class="modal-body">
+      <div class="field-group">
+        <label for="save-sp-name">Name</label>
+        <input type="text" id="save-sp-name" data-save-sp-name maxlength="120" autocomplete="off" placeholder="e.g. Concise style">
+      </div>
+    </div>
+    <footer class="modal-footer">
+      <button type="button" class="modal-cancel-button" data-save-sp-close>Cancel</button>
+      <button type="button" class="modal-save-button" data-save-sp-confirm>
+        <span aria-hidden="true">✓</span> Save
+      </button>
+    </footer>
+  </div>
+</div>
+
+<div class="modal more-params-modal" id="more-params-modal" data-more-params-modal hidden aria-modal="true" role="dialog">
+  <div class="modal-content">
+    <header class="modal-header">
+      <h2 data-more-params-title>Additional model parameters</h2>
+      <button type="button" class="close-modal-button" data-more-params-close>&times;</button>
+    </header>
+    <div class="modal-body">
+      <div class="more-params-loading" data-more-params-loading hidden>
+        <span class="chat-spinner" aria-hidden="true"></span>
+        <span>Loading parameters…</span>
+      </div>
+      <div data-more-params-content></div>
+    </div>
+    <footer class="modal-footer more-params-footer">
+      <button type="button" class="chat-delete-button more-params-delete-button" data-more-params-delete hidden>
+        <span aria-hidden="true">×</span>
+        Delete from local DB
+      </button>
+      <div class="more-params-footer-actions">
+        <button type="button" class="modal-cancel-button" data-more-params-close>Cancel</button>
+        <button type="button" class="modal-save-button" data-more-params-save>
+          <span aria-hidden="true">✓</span> Save
+        </button>
+      </div>
+    </footer>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/api_client.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/chat_markdown.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/chat.js') }}" defer></script>
+{% endblock %}

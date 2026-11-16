@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+
+{% macro topic_row(index) -%}
+  <div class="topic-row" data-topic-row>
+    <span class="topic-order" data-topic-order aria-hidden="true">{{ "%02d"|format(index) }}</span>
+    <input
+      class="topic-name-input"
+      type="text"
+      name="topic_name"
+      maxlength="120"
+      autocomplete="off"
+      placeholder="e.g. Literary History"
+      aria-label="Topic {{ index }} name"
+      aria-describedby="topic-hint"
+      data-topic-name
+    >
+    <input
+      class="topic-pairs-input"
+      type="number"
+      name="topic_pairs"
+      min="1"
+      max="100"
+      step="1"
+      value="5"
+      inputmode="numeric"
+      aria-label="Topic {{ index }} request-response pairs"
+      aria-describedby="topic-hint"
+      data-topic-pairs
+    >
+    <button
+      class="topic-remove-button"
+      type="button"
+      aria-label="Delete topic {{ index }}"
+      data-topic-remove
+      {% if index == 1 %}disabled{% endif %}
+    >
+      <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+        <path fill="currentColor" d="M6.5 1h3l.6 1.2H14v1.3h-1.1l-.7 10.2a1.4 1.4 0 0 1-1.4 1.3H5.2a1.4 1.4 0 0 1-1.4-1.3L3.1 3.5H2V2.2h3.9L6.5 1Zm-1.3 2.5.6 9.9h5.4l.6-9.9H5.2Z"/>
+      </svg>
+    </button>
+  </div>
+{%- endmacro %}
+
+{% block styles %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/workspace-components.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/create-benchmark.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('index') }}">Home</a> &gt;
+  <a href="{{ url_for('index') }}">Benchmark</a> &gt;
+  {{ page.title }}
+</div>
+
+<div class="content-header">
+  <span class="section-index">Prompt authoring</span>
+  <h1>{{ page.title }}</h1>
+  <p class="section-lede">Set up the category and model for a new benchmark prompt set.</p>
+</div>
+
+<div id="create-benchmark-status" class="save-confirmation" role="status" hidden></div>
+
+{% if created_category %}
+  <div class="save-confirmation" role="status">
+    <span aria-hidden="true">✓</span>
+    Category “{{ created_category }}” is ready for new benchmarks.
+  </div>
+{% endif %}
+
+<section class="content model-selector-panel" aria-labelledby="benchmark-setup-title">
+  <span class="panel-kicker">Benchmark setup</span>
+  <div class="benchmark-heading model-selector-heading">
+    <div>
+      <div class="benchmark-title-row">
+        <h2 id="benchmark-setup-title">Benchmark configuration</h2>
+        <button class="save-metadata-button" type="button" data-create-benchmark>
+          <span aria-hidden="true">◆</span>
+          Create benchmark
+        </button>
+      </div>
+      <p>Choose the difficulty, category, and model for the new benchmark prompt set.</p>
+    </div>
+    <span class="benchmark-count">
+      {{ active_models|length }} {{ "model" if active_models|length == 1 else "models" }} active
+    </span>
+  </div>
+
+  {% if errors %}
+    <div class="form-errors" role="alert">
+      <strong>Check the category details</strong>
+      <ul>
+        {% for error in errors %}<li>{{ error }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <div class="benchmark-setup-fields">
+    <fieldset class="field-group difficulty-fieldset" data-difficulty>
+      <legend>Difficulty level</legend>
+      <span class="field-hint">A fixed scale used consistently across benchmarks.</span>
+      <div class="difficulty-options">
+        {% for level in difficulty_levels %}
+          <label>
+            <input type="radio" name="difficulty" value="{{ level }}"{% if level == "Normal" %} checked{% endif %}>
+            <span>
+              <b aria-hidden="true">{{ loop.index }}</b>
+              <strong>{{ level }}</strong>
+            </span>
+          </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+
+    <form class="category-form" method="post" action="{{ url_for('create_benchmark_category') }}" data-category-form>
+      <div class="field-group">
+        <label for="category">Category</label>
+        <span class="field-hint">Collection this benchmark will belong to. Choose an existing category or add a new one.</span>
+        <div class="select-shell">
+          <select id="category" name="category" data-category-select>
+            <option value="Uncategorized"{% if selected_category == "Uncategorized" %} selected{% endif %}>Uncategorized</option>
+            {% for category in categories %}
+              <option value="{{ category }}"{% if selected_category == category %} selected{% endif %}>{{ category }}</option>
+            {% endfor %}
+            <option value="__new__"{% if selected_category == "__new__" %} selected{% endif %}>＋ Add new category</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field-group new-category-field" data-new-category{% if selected_category != "__new__" %} hidden{% endif %}>
+        <label for="new-category">New category name</label>
+        <span class="field-hint">This collection is saved locally when you create it.</span>
+        <input
+          id="new-category"
+          name="new_category"
+          type="text"
+          maxlength="80"
+          autocomplete="off"
+          placeholder="e.g. Creative reasoning"
+          value="{{ new_category }}"
+        >
+        <button class="save-metadata-button" type="submit">
+          <span aria-hidden="true">◆</span>
+          Create category
+        </button>
+      </div>
+    </form>
+
+    <div class="field-group">
+      <label for="model">Model</label>
+      <span class="field-hint">Active model that will generate the final benchmark JSON.</span>
+      {% if active_models %}
+        <div class="select-shell">
+          <select id="model" name="model">
+            {% for model in active_models %}
+              <option value="{{ model.provider }}::{{ model.model }}">{{ model.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      {% else %}
+        <div class="model-selector-empty">
+          <span aria-hidden="true">◇</span>
+          <strong>No active models</strong>
+          <small>Turn on a provider and enable at least one model in <a href="{{ url_for('setup_models') }}">Setup models</a>.</small>
+        </div>
+      {% endif %}
+    </div>
+
+    <fieldset class="field-group topic-field" data-topics>
+      <legend>Main topics</legend>
+      <span class="field-hint" id="topic-hint">Each topic becomes a first-level section. Set how many request-response pairs to create for it (1–100).</span>
+
+      <div class="topic-columns" aria-hidden="true">
+        <span></span>
+        <span>Main topic</span>
+        <span>Pairs</span>
+        <span></span>
+      </div>
+
+      <div class="topic-list" data-topic-list>
+        {{ topic_row(1) }}
+      </div>
+
+      <div class="topic-actions">
+        <button class="topic-add-button" type="button" data-topic-add>
+          <span aria-hidden="true">+</span>
+          Add topic
+        </button>
+        <span class="topic-total"><strong data-topic-count>1</strong> <span data-topic-count-label>topic</span></span>
+      </div>
+
+      <p class="topic-note">Prompt generation is not implemented yet; these rows describe the intended prompt set.</p>
+
+      <template data-topic-template>
+        {{ topic_row(2) }}
+      </template>
+    </fieldset>
+  </div>
+</section>
+
+<section class="content model-selector-panel" aria-labelledby="prompt-customization-title">
+  <span class="panel-kicker">Optional customization</span>
+  <div class="benchmark-heading model-selector-heading">
+    <div>
+      <h2 id="prompt-customization-title">Prompt customization</h2>
+      <p>Optional prompts that override the built-in defaults. Leave empty to use the defaults.</p>
+    </div>
+  </div>
+
+  <div class="benchmark-setup-fields">
+    <div class="field-group">
+      <label for="system-prompt">System prompt</label>
+      <span class="field-hint">Instructions that shape the tone and behavior of the generated benchmark JSON.</span>
+      <textarea
+        id="system-prompt"
+        name="system_prompt"
+        maxlength="4000"
+        autocomplete="off"
+        placeholder="e.g. You are a careful benchmark author. Produce varied, realistic request-response pairs."
+        data-system-prompt
+      ></textarea>
+    </div>
+
+    <div class="field-group">
+      <label for="request-response-details">Request-response creation details</label>
+      <span class="field-hint">Guidance for how each topic's request-response pairs should be authored.</span>
+      <textarea
+        id="request-response-details"
+        name="request_response_details"
+        maxlength="4000"
+        autocomplete="off"
+        placeholder="e.g. For each pair, write a realistic user request and a concise, helpful reference response."
+        data-request-response-details
+      ></textarea>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/api_client.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/category_select.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/benchmark_topics.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/create_benchmark.js') }}" defer></script>
+  <script id="prompt-templates" type="application/json">
+    {{ {"system": system_prompt_template, "user": user_prompt_template}|tojson }}
+  </script>
+{% endblock %}

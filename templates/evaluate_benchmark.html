@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+
+{% block styles %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/workspace-components.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/benchmark-common.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/benchmark-browser.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('index') }}">Home</a> &gt;
+  <a href="{{ url_for('index') }}">Benchmark</a> &gt;
+  {{ page.title }}
+</div>
+
+<div class="content-header">
+  <span class="section-index">Prototype waypoint</span>
+  <h1>{{ page.title }}</h1>
+  <p class="section-lede">Interface marker reserved for the next development stage.</p>
+</div>
+
+<div id="evaluate-benchmark-status" class="save-confirmation" role="status" hidden></div>
+
+{% if benchmark_groups %}
+  <nav class="category-browser" aria-label="Benchmark categories">
+    <span class="category-browser-label">Collections</span>
+    <div class="category-tabs" role="tablist" aria-label="Choose a benchmark category">
+      {% for group in benchmark_groups %}
+        <button
+          id="category-tab-{{ loop.index }}"
+          class="category-tab{% if loop.first %} is-active{% endif %}"
+          type="button"
+          role="tab"
+          aria-selected="{{ 'true' if loop.first else 'false' }}"
+          aria-controls="category-panel-{{ loop.index }}"
+          tabindex="{{ '0' if loop.first else '-1' }}"
+          data-category-trigger="category-panel-{{ loop.index }}"
+          data-file-count="{{ group.files|length }}"
+        >
+          <span aria-hidden="true">{{ "%02d"|format(loop.index) }}</span>
+          <strong>{{ group.name }}</strong>
+          <small>{{ group.files|length }}</small>
+        </button>
+      {% endfor %}
+    </div>
+  </nav>
+{% endif %}
+
+<div class="content">
+  <span class="panel-kicker">Benchmark Selection</span>
+  <div class="benchmark-heading">
+    <div>
+      <h2>Select a prompt set</h2>
+      <p>Choose a local benchmark definition to continue.</p>
+    </div>
+    <span class="benchmark-count" data-visible-file-count>{{ benchmark_groups[0].files|length if benchmark_groups else 0 }} files ready</span>
+  </div>
+
+  <div class="benchmark-selection">
+    {% if benchmark_groups %}
+      {% for group in benchmark_groups %}
+        {% set category_index = loop.index %}
+        <section
+          id="category-panel-{{ loop.index }}"
+          class="benchmark-category"
+          role="tabpanel"
+          aria-labelledby="category-tab-{{ loop.index }}"
+          data-category-panel
+          {% if not loop.first %}hidden{% endif %}
+        >
+          <header class="benchmark-category-header">
+            <div>
+              <span class="category-marker" aria-hidden="true">{{ "%02d"|format(loop.index) }}</span>
+              <h3 id="category-{{ loop.index }}">{{ group.name }}</h3>
+            </div>
+            <span data-category-file-summary>{{ group.files|length }} {{ "file" if group.files|length == 1 else "files" }}</span>
+          </header>
+
+          <div class="benchmark-difficulty-filter" role="group" aria-label="Filter {{ group.name }} by difficulty">
+            <span class="difficulty-filter-label">Difficulty</span>
+            <button class="difficulty-filter-button is-active" type="button" data-difficulty-filter="All" aria-pressed="true">
+              <span aria-hidden="true">◎</span> All
+            </button>
+            {% for difficulty in group.difficulties %}
+              <button class="difficulty-filter-button" type="button" data-difficulty-filter="{{ difficulty }}" aria-pressed="false">
+                <span aria-hidden="true">{{ loop.index }}</span> {{ difficulty }}
+              </button>
+            {% endfor %}
+          </div>
+
+          <ol class="benchmark-file-list" aria-label="{{ group.name }} benchmark prompt files">
+            {% for file in group.files %}
+              <li data-benchmark-file data-difficulty="{{ file.difficulty }}">
+                <div class="benchmark-file-shell">
+                  <span
+                    class="benchmark-file-link{% if file.metadata %} has-metadata{% endif %}"
+                    {% if file.metadata %}aria-describedby="file-details-{{ category_index }}-{{ loop.index }}"{% endif %}
+                  >
+                    <span class="benchmark-file-index" aria-hidden="true">{{ "%02d"|format(loop.index) }}</span>
+                    <span class="benchmark-file-icon" aria-hidden="true">{ }</span>
+                    <span class="benchmark-file-copy">
+                      <strong>{{ file.name }}</strong>
+                      <small>{{ "Metadata saved" if file.metadata else "Local benchmark prompt set" }}</small>
+                    </span>
+                    <span class="benchmark-file-type">JSON</span>
+                    <span class="benchmark-file-arrow" aria-hidden="true">↗</span>
+                  </span>
+                  <button
+                    class="evaluate-benchmark-button"
+                    type="button"
+                    data-evaluate-benchmark
+                    data-filename="{{ file.name }}"
+                    data-category="{{ group.name }}"
+                    data-difficulty="{{ file.difficulty }}"
+                  >
+                    <span aria-hidden="true">◎</span>
+                    Evaluate benchmark
+                  </button>
+                </div>
+                {% if file.metadata %}
+                  <aside class="benchmark-card-tooltip" id="file-details-{{ category_index }}-{{ loop.index }}" role="tooltip">
+                    <span class="tooltip-kicker">Saved field notes</span>
+                    <dl>
+                      <div><dt>Category</dt><dd>{{ file.metadata.category }}</dd></div>
+                      <div><dt>Difficulty</dt><dd>{{ file.metadata.difficulty }}</dd></div>
+                    </dl>
+                    <p>{{ file.metadata.notes or "No notes saved for this benchmark." }}</p>
+                  </aside>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ol>
+        </section>
+      {% endfor %}
+    {% else %}
+      <div class="benchmark-empty">
+        <span aria-hidden="true">◇</span>
+        <strong>No benchmark JSON files found</strong>
+        <small>Add prompt files to the Benchmark-prompts directory.</small>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<section class="benchmark-preview" id="benchmark-preview" data-benchmark-preview hidden aria-live="polite">
+  <header class="benchmark-preview-header">
+    <div>
+      <span class="panel-kicker">JSON field viewer</span>
+      <h2 data-preview-filename>Benchmark content</h2>
+    </div>
+    <button class="close-preview-button" type="button" data-close-preview>
+      <span aria-hidden="true">×</span>
+      Close viewer
+    </button>
+  </header>
+  <div class="benchmark-preview-body" data-preview-body></div>
+</section>
+
+<section class="benchmark-preview" id="evaluate-benchmark-setup" data-evaluate-benchmark-setup hidden aria-live="polite">
+  <header class="benchmark-preview-header">
+    <div>
+      <span class="panel-kicker">Evaluate benchmark setup</span>
+      <h2 data-evaluate-benchmark-filename>Benchmark setup</h2>
+    </div>
+    <button class="close-preview-button" type="button" data-close-evaluate-benchmark-setup>
+      <span aria-hidden="true">×</span>
+      Close setup
+    </button>
+  </header>
+  <div class="benchmark-preview-body" data-evaluate-benchmark-body>
+    <div class="benchmark-setup-fields">
+      <div class="field-group">
+        <label for="evaluate-benchmark-model">Model</label>
+        <span class="field-hint">Selected model will evaluate all requests.</span>
+        {% if active_models %}
+          <div class="select-shell">
+            <select id="evaluate-benchmark-model" name="model">
+              {% for model in active_models %}
+                <option value="{{ model.provider }}::{{ model.model }}">{{ model.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        {% else %}
+          <div class="model-selector-empty">
+            <span aria-hidden="true">◇</span>
+            <strong>No active models</strong>
+            <small>Turn on a provider and enable at least one model in <a href="{{ url_for('setup_models') }}">Setup models</a>.</small>
+          </div>
+        {% endif %}
+      </div>
+
+      <hr class="create-benchmark-separator">
+
+      <fieldset class="field-group prompt-field" data-prompts>
+        <legend>Optional customization</legend>
+        <span class="field-hint">Optional. Leave empty to use the built-in default prompts.</span>
+
+        <div class="field-group">
+          <label for="evaluate-benchmark-system-prompt">System prompt</label>
+          <span class="field-hint">Instructions that shape the evaluation of the benchmark.</span>
+          <textarea
+            id="evaluate-benchmark-system-prompt"
+            name="system_prompt"
+            maxlength="4000"
+            autocomplete="off"
+            placeholder="e.g. You are a careful evaluator. Score each response."
+            data-system-prompt
+          >{{ run_system_prompt }}</textarea>
+        </div>
+      </fieldset>
+    </div>
+  </div>
+  <footer class="benchmark-preview-footer">
+    <label class="create-log-toggle">
+      <input type="checkbox" data-create-log>
+      <span>Create log</span>
+    </label>
+    <button class="save-metadata-button" type="button" data-evaluate-benchmark-run>
+      <span aria-hidden="true">◎</span>
+      Evaluate benchmark
+    </button>
+  </footer>
+</section>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/benchmark_browser.js') }}" defer></script>
+{% endblock %}

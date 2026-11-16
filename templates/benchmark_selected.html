@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block styles %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/workspace-components.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/benchmark-common.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/benchmark-editor.css') }}">
+{% endblock %}
+
+{% block title %}Organize benchmark - Cairnmark Benchmark Tool{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('index') }}">Home</a> <span>&gt;</span>
+  <a href="{{ url_for('run_benchmark') }}">Run benchmark</a> <span>&gt;</span>
+  Organize
+</div>
+
+<div class="content-header benchmark-editor-header">
+  <span class="section-index">Prompt set metadata</span>
+  <h1>Prepare benchmark</h1>
+  <p class="section-lede">Place this prompt set on the map before running it.</p>
+</div>
+
+{% if saved %}
+  <div class="save-confirmation" role="status">
+    <span aria-hidden="true">✓</span>
+    Metadata saved to the local Cairnmark database.
+  </div>
+{% endif %}
+
+<div class="benchmark-editor-layout">
+  <aside class="selected-file-panel" aria-label="Selected benchmark file">
+    <span class="panel-kicker">Selected JSON</span>
+    <div class="benchmark-file-link benchmark-file-summary">
+      <span class="benchmark-file-icon" aria-hidden="true">{ }</span>
+      <span class="benchmark-file-copy">
+        <strong>{{ filename }}</strong>
+        <small>Ready for organization</small>
+      </span>
+      <span class="benchmark-file-type">JSON</span>
+    </div>
+
+    <dl class="metadata-preview">
+      <div>
+        <dt>Category</dt>
+        <dd>{{ metadata.category }}</dd>
+      </div>
+      <div>
+        <dt>Difficulty</dt>
+        <dd>{{ metadata.difficulty }}</dd>
+      </div>
+    </dl>
+
+    <a class="back-link" href="{{ url_for('run_benchmark') }}">← Choose another file</a>
+  </aside>
+
+  <section class="content benchmark-metadata-panel">
+    <span class="panel-kicker">Classification desk</span>
+    <div class="editor-heading">
+      <h2>Benchmark details</h2>
+      <span>Stored locally</span>
+    </div>
+
+    {% if errors %}
+      <div class="form-errors" role="alert">
+        <strong>Check the highlighted details</strong>
+        <ul>
+          {% for error in errors %}<li>{{ error }}</li>{% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    <form class="benchmark-metadata-form" method="post" data-category-form>
+      <div class="field-group">
+        <label for="category">Category</label>
+        <span class="field-hint">Move the JSON into an existing or new collection.</span>
+        <div class="select-shell">
+          <select id="category" name="category" data-category-select>
+            <option value="Uncategorized"{% if metadata.category == "Uncategorized" %} selected{% endif %}>Uncategorized</option>
+            {% for category in categories %}
+              <option value="{{ category }}"{% if metadata.category == category %} selected{% endif %}>{{ category }}</option>
+            {% endfor %}
+            <option value="__new__"{% if metadata.category == "__new__" %} selected{% endif %}>＋ Add new category</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field-group new-category-field" data-new-category hidden>
+        <label for="new-category">New category name</label>
+        <input
+          id="new-category"
+          name="new_category"
+          type="text"
+          maxlength="80"
+          autocomplete="off"
+          placeholder="e.g. Creative reasoning"
+          value="{{ request.form.get('new_category', '') }}"
+        >
+      </div>
+
+      <fieldset class="field-group difficulty-fieldset">
+        <legend>Difficulty level</legend>
+        <span class="field-hint">A fixed scale used consistently across benchmarks.</span>
+        <div class="difficulty-options">
+          {% for level in difficulty_levels %}
+            <label>
+              <input type="radio" name="difficulty" value="{{ level }}"{% if metadata.difficulty == level %} checked{% endif %}>
+              <span>
+                <b aria-hidden="true">{{ loop.index }}</b>
+                <strong>{{ level }}</strong>
+              </span>
+            </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+
+      <div class="field-group">
+        <label for="generation-prompt">Generation prompt</label>
+        <span class="field-hint">The prompt used to create this JSON prompt set, up to 10,000 characters.</span>
+        <textarea
+          id="generation-prompt"
+          name="generation_prompt"
+          rows="6"
+          maxlength="10000"
+          placeholder="Record the prompt that produced this benchmark."
+        >{{ metadata.generation_prompt }}</textarea>
+      </div>
+
+      <div class="field-group">
+        <label for="model-name">Model name</label>
+        <span class="field-hint">The model that generated this benchmark.</span>
+        <input
+          id="model-name"
+          name="model_name"
+          type="text"
+          maxlength="200"
+          autocomplete="off"
+          placeholder="e.g. llama-3.1-70b-instruct"
+          value="{{ metadata.model_name }}"
+        >
+      </div>
+
+      <div class="field-group">
+        <div class="notes-label">
+          <label for="notes">Notes</label>
+          <span><output data-note-count>{{ metadata.notes|length }}</output> / 2000</span>
+        </div>
+        <span class="field-hint">Record context, constraints, or reminders for this prompt set.</span>
+        <textarea id="notes" name="notes" rows="7" maxlength="2000" data-notes placeholder="What should be remembered about this benchmark?">{{ metadata.notes }}</textarea>
+      </div>
+
+      <div class="form-actions">
+        <span><i aria-hidden="true"></i> SQLite · instance/cairnmark.db</span>
+        <button class="save-metadata-button" type="submit">
+          <span aria-hidden="true">◆</span>
+          Save benchmark details
+        </button>
+      </div>
+    </form>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/category_select.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/benchmark_editor.js') }}" defer></script>
+{% endblock %}

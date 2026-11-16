@@ -1,0 +1,70 @@
+/* Rendered README content on the About page. */
+
+.markdown-content {
+    line-height: 1.7;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3 {
+    color: var(--ink);
+    font-family: Georgia, "Times New Roman", serif;
+    font-weight: 400;
+}
+
+.markdown-content h1 {
+    margin-top: 0;
+    font-size: clamp(2.35rem, 2.8vw, 4rem);
+    letter-spacing: -0.04em;
+    line-height: 1;
+}
+
+.markdown-content h2 {
+    margin-top: 2.4rem;
+    padding-bottom: 0.45rem;
+    border-bottom: 1px solid var(--line);
+    font-size: 1.75rem;
+}
+
+.markdown-content a {
+    color: #256b60;
+    text-decoration-color: var(--aqua);
+    text-underline-offset: 4px;
+}
+
+.markdown-content code {
+    padding: 0.15rem 0.36rem;
+    border: 1px solid rgba(23, 32, 30, 0.08);
+    border-radius: 3px;
+    background: #e4e1d7;
+}
+
+.markdown-content pre {
+    overflow-x: auto;
+    padding: 1.15rem;
+    color: #dce7df;
+    border-left: 3px solid var(--lichen);
+    background: var(--sidebar);
+}
+
+.markdown-content pre code {
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.markdown-content table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.markdown-content th,
+.markdown-content td {
+    padding: 0.65rem;
+    border: 1px solid var(--line);
+    text-align: left;
+}
+
+.markdown-content th {
+    background: #e4e1d7;
+}

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{{ page.title ~ ' - ' if page is defined else '' }}Cairnmark Benchmark Tool{% endblock %}</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block styles %}{% endblock %}
+</head>
+<body>
+    <a class="skip-link" href="#workspace-content">Skip to content</a>
+
+    <aside class="sidebar" id="sidebar" aria-label="Application sidebar">
+        <div class="contour-lines" aria-hidden="true"></div>
+
+        <header class="sidebar-header">
+            <a class="brand" href="{{ url_for('index') }}" aria-label="Cairnmark home">
+                <span class="cairn-mark" aria-hidden="true">
+                    <i></i><i></i><i></i>
+                </span>
+                <span class="brand-copy">
+                    <strong>Cairnmark</strong>
+                    <small>Model field lab</small>
+                </span>
+            </a>
+            <button
+                class="sidebar-toggle"
+                id="sidebar-toggle"
+                type="button"
+                aria-controls="sidebar"
+                aria-expanded="true"
+                title="Collapse to icon rail"
+            >
+                <span class="toggle-glyph" aria-hidden="true">◀</span>
+                <span class="sr-only">Toggle navigation width</span>
+            </button>
+        </header>
+
+        <div class="nav-caption" aria-hidden="true">
+            <span>Waypoints</span>
+            <span class="width-readout" id="width-readout">292 px</span>
+        </div>
+
+        <nav class="sidebar-nav" aria-label="Main navigation">
+            {% for item in navigation %}
+            {% set is_active = request.endpoint == item.endpoint or (request.endpoint == 'run_benchmark_select' and item.endpoint == 'run_benchmark') %}
+            <a
+                class="menu-item{% if is_active %} active{% endif %}"
+                href="{{ url_for(item.endpoint) }}"
+                data-label="{{ item.title }}"
+                title="{{ item.title }}"
+                {% if is_active %}aria-current="page"{% endif %}
+            >
+                <span class="menu-icon" aria-hidden="true">{{ item.icon }}</span>
+                <span class="menu-label">{{ item.title }}</span>
+                <span class="active-stone" aria-hidden="true">◆</span>
+            </a>
+            {% endfor %}
+        </nav>
+
+        <footer class="sidebar-footer">
+            <span class="signal" aria-hidden="true"></span>
+            <span class="footer-copy">
+                <strong>Local node</strong>
+                <small>CM–01 / ready</small>
+            </span>
+        </footer>
+
+        <div
+            class="sidebar-resizer"
+            id="sidebar-resizer"
+            role="separator"
+            aria-label="Resize navigation panel"
+            aria-orientation="vertical"
+            aria-valuemin="232"
+            aria-valuemax="440"
+            aria-valuenow="292"
+            tabindex="0"
+            title="Drag to resize · Double-click to reset"
+        ><span aria-hidden="true"></span></div>
+    </aside>
+
+    <main class="main-content" id="workspace-content">
+        <header class="workspace-bar">
+            <span class="workspace-route">
+                CM / {{ (request.endpoint or 'error')|replace('_', ' ')|upper }}
+            </span>
+            <span class="workspace-status"><i aria-hidden="true"></i> Local workspace</span>
+        </header>
+        <div class="workspace-canvas">
+            {% block content %}{% endblock %}
+        </div>
+    </main>
+
+    <script src="{{ url_for('static', filename='js/sidebar.js') }}" defer></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>
