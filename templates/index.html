@@ -178,17 +178,14 @@
     </div>
 
     <div class="field-group chat-prompt-field">
-      <div class="chat-saved-bar">
-        <label for="chat-saved-sp">Saved system prompts</label>
-        <select id="chat-saved-sp" data-chat-saved-sp>
-          <option value="">— select —</option>
-          {% for name in saved_system_prompts %}
-            <option value="{{ name }}">{{ name }}</option>
-          {% endfor %}
-        </select>
-      </div>
       <label for="chat-system-prompt">System prompt</label>
       <span class="field-hint">Instructions for the model.</span>
+      <select id="chat-saved-sp" class="chat-saved-prompts-select" data-chat-saved-sp data-model-filter>
+        <option value="">— select —</option>
+        {% for name in saved_system_prompts %}
+          <option value="{{ name }}">{{ name }}</option>
+        {% endfor %}
+      </select>
       <textarea
         id="chat-system-prompt"
         name="system_prompt"

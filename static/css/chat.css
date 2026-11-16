@@ -548,6 +548,11 @@
     padding-top: 2px;
 }
 
+.chat-saved-prompts-select {
+    width: 100%;
+    margin-bottom: 8px;
+}
+
 .chat-sp-actions {
     display: grid;
     grid-template-columns: 1fr;
