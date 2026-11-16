@@ -325,6 +325,88 @@
     white-space: normal;
 }
 
+.chat-content.markdown-content h1,
+.chat-content.markdown-content h2,
+.chat-content.markdown-content h3,
+.prompt-modal-text.markdown-content h1,
+.prompt-modal-text.markdown-content h2,
+.prompt-modal-text.markdown-content h3 {
+    margin: 1em 0 0.45em;
+    color: var(--ink);
+    font-family: inherit;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.chat-content.markdown-content h1,
+.prompt-modal-text.markdown-content h1 {
+    font-size: 1.2rem;
+}
+
+.chat-content.markdown-content h2,
+.prompt-modal-text.markdown-content h2 {
+    padding-bottom: 0.25em;
+    border-bottom: 1px solid var(--line);
+    font-size: 1.05rem;
+}
+
+.chat-content.markdown-content h3,
+.prompt-modal-text.markdown-content h3 {
+    font-size: 0.95rem;
+}
+
+.chat-content.markdown-content a,
+.prompt-modal-text.markdown-content a {
+    color: #256b60;
+    text-decoration-color: var(--aqua);
+    text-underline-offset: 3px;
+}
+
+.chat-content.markdown-content code,
+.prompt-modal-text.markdown-content code {
+    padding: 0.1rem 0.28rem;
+    border: 1px solid rgba(23, 32, 30, 0.08);
+    border-radius: 3px;
+    background: #e4e1d7;
+}
+
+.chat-content.markdown-content pre,
+.prompt-modal-text.markdown-content pre {
+    padding: 0.8rem;
+    color: #dce7df;
+    border-left: 3px solid var(--lichen);
+    background: var(--sidebar);
+}
+
+.chat-content.markdown-content pre code,
+.prompt-modal-text.markdown-content pre code {
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.chat-content.markdown-content table,
+.prompt-modal-text.markdown-content table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+}
+
+.chat-content.markdown-content th,
+.chat-content.markdown-content td,
+.prompt-modal-text.markdown-content th,
+.prompt-modal-text.markdown-content td {
+    padding: 0.45rem;
+    border: 1px solid var(--line);
+    text-align: left;
+}
+
+.chat-content.markdown-content th,
+.prompt-modal-text.markdown-content th {
+    background: #e4e1d7;
+}
+
 .chat-content p,
 .chat-content li,
 .chat-content h1,

@@ -25,6 +25,13 @@ from services.benchmark_categories import (
     create_category,
     normalize_new_category,
 )
+from services.benchmark_documents import (
+    BENCHMARK_ITEMS_KEY,
+    DIFFICULTY_LEVELS,
+    BenchmarkRepository,
+    group_benchmarks,
+    has_model_answers,
+)
 from services.model_providers import (
     ModelProviderService,
     ProviderOfflineError,
@@ -32,135 +39,68 @@ from services.model_providers import (
 )
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-BENCHMARK_PROMPTS_PATH = PROJECT_ROOT / "Benchmark-prompts"
-LOGS_PATH = BENCHMARK_PROMPTS_PATH / "logs"
-SYSTEM_PROMPTS_PATH = PROJECT_ROOT / "System-prompts"
-DIFFICULTY_LEVELS = ("Easy", "Normal", "Hard")
 MAX_NOTES_LENGTH = 2000
 MAX_GENERATION_PROMPT_LENGTH = 10000
 MAX_MODEL_NAME_LENGTH = 200
-# Each topic section stores its request-response pairs under this key.
-BENCHMARK_ITEMS_KEY = "benchmarks"
 
 
 class BenchmarkController:
     """Organize benchmark files and render their saved metadata."""
 
-    def __init__(self, service=None):
+    def __init__(self, service=None, repository=None):
         self.service = service or ModelProviderService()
+        self.repository = repository or BenchmarkRepository()
 
-    @staticmethod
-    def list_files():
+    def list_files(self):
         """Return prompt JSON filenames in stable display order."""
         try:
-            return sorted(
-                (
-                    path.name
-                    for path in BENCHMARK_PROMPTS_PATH.iterdir()
-                    if path.is_file() and path.suffix.lower() == ".json"
-                ),
-                key=str.casefold,
-            )
+            return self.repository.list_files()
         except OSError:
             current_app.logger.exception(
                 "Could not read benchmark prompts from %s",
-                BENCHMARK_PROMPTS_PATH,
+                self.repository.directory,
             )
             return []
+
+    @staticmethod
+    def _prompt_template(filename):
+        """Read a configured prompt template, returning empty text on failure."""
+        path = Path(current_app.config["SYSTEM_PROMPT_DIRECTORY"]) / filename
+        try:
+            return path.read_text(encoding="utf-8")
+        except OSError:
+            current_app.logger.warning("Could not read system prompt %s", path)
+            return ""
+
+    def _catalog_context(self, filenames, prompt_filename):
+        """Build the shared selector context for run and evaluation pages."""
+        metadata = get_metadata_for_files(filenames)
+        return {
+            "benchmark_files": filenames,
+            "benchmark_groups": group_benchmarks(filenames, metadata),
+            "active_models": self.service.active_models(),
+            "run_system_prompt": self._prompt_template(prompt_filename),
+        }
 
     def selection_context(self):
         """Build categorized benchmark data for the selection page."""
         benchmark_files = self.list_files()
-        metadata = get_metadata_for_files(benchmark_files)
-        grouped_files = {}
-        for filename in benchmark_files:
-            file_metadata = metadata.get(filename)
-            category = (
-                file_metadata.get("category", UNCATEGORIZED)
-                if file_metadata
-                else UNCATEGORIZED
-            )
-            grouped_files.setdefault(category, []).append(
-                {
-                    "name": filename,
-                    "metadata": file_metadata,
-                    "difficulty": (
-                        file_metadata.get("difficulty", "Normal")
-                        if file_metadata
-                        else "Normal"
-                    ),
-                }
-            )
-
-        category_names = sorted(
-            grouped_files,
-            key=lambda name: (name == UNCATEGORIZED, name.casefold()),
+        return self._catalog_context(
+            benchmark_files,
+            "run_benchmark-SYSTEM.md",
         )
-        benchmark_groups = []
-        for name in category_names:
-            category_files = grouped_files[name]
-            available_difficulties = {
-                file_data["difficulty"] for file_data in category_files
-            }
-            benchmark_groups.append(
-                {
-                    "name": name,
-                    "files": category_files,
-                    "difficulties": [
-                        level
-                        for level in DIFFICULTY_LEVELS
-                        if level in available_difficulties
-                    ],
-                }
-            )
-        system_prompt_template = ""
-        try:
-            system_prompt_template = (
-                SYSTEM_PROMPTS_PATH / "run_benchmark-SYSTEM.md"
-            ).read_text(encoding="utf-8")
-        except OSError:
-            pass
 
-        return {
-            "benchmark_files": benchmark_files,
-            "benchmark_groups": benchmark_groups,
-            "active_models": self.service.active_models(),
-            "run_system_prompt": system_prompt_template,
-        }
-
-    @staticmethod
-    def _has_model_answers(filename):
+    def _has_model_answers(self, filename):
         """Return True when a benchmark file contains runnable model answers."""
         try:
-            content = benchmark_controller.load_content(filename)
-        except Exception:  # noqa: BLE001
+            content = self.repository.load(filename)
+        except (OSError, json.JSONDecodeError):
+            current_app.logger.warning(
+                "Skipping unreadable benchmark %s during evaluation scan",
+                filename,
+            )
             return False
-        if not isinstance(content, list):
-            return False
-        for section in content:
-            if not isinstance(section, dict):
-                continue
-            for section_content in section.values():
-                items = (
-                    section_content.get(BENCHMARK_ITEMS_KEY, [])
-                    if isinstance(section_content, dict)
-                    else []
-                )
-                for item in items:
-                    if not isinstance(item, dict):
-                        continue
-                    answers = item.get("answers")
-                    if not isinstance(answers, list):
-                        continue
-                    for answer in answers:
-                        if (
-                            isinstance(answer, dict)
-                            and answer.get("model_answer")
-                            and answer.get("model_name")
-                        ):
-                            return True
-        return False
+        return has_model_answers(content)
 
     def evaluate_context(self):
         """Build selection data only for benchmark files that have model answers."""
@@ -169,75 +109,22 @@ class BenchmarkController:
             for filename in self.list_files()
             if self._has_model_answers(filename)
         ]
-        metadata = get_metadata_for_files(benchmark_files)
-        grouped_files = {}
-        for filename in benchmark_files:
-            file_metadata = metadata.get(filename)
-            category = (
-                file_metadata.get("category", UNCATEGORIZED)
-                if file_metadata
-                else UNCATEGORIZED
-            )
-            grouped_files.setdefault(category, []).append(
-                {
-                    "name": filename,
-                    "metadata": file_metadata,
-                    "difficulty": (
-                        file_metadata.get("difficulty", "Normal")
-                        if file_metadata
-                        else "Normal"
-                    ),
-                }
-            )
-
-        category_names = sorted(
-            grouped_files,
-            key=lambda name: (name == UNCATEGORIZED, name.casefold()),
+        return self._catalog_context(
+            benchmark_files,
+            "evaluate_benchmark-SYSTEM.md",
         )
-        benchmark_groups = []
-        for name in category_names:
-            category_files = grouped_files[name]
-            available_difficulties = {
-                file_data["difficulty"] for file_data in category_files
-            }
-            benchmark_groups.append(
-                {
-                    "name": name,
-                    "files": category_files,
-                    "difficulties": [
-                        level
-                        for level in DIFFICULTY_LEVELS
-                        if level in available_difficulties
-                    ],
-                }
-            )
-
-        system_prompt_template = ""
-        try:
-            system_prompt_template = (
-                SYSTEM_PROMPTS_PATH / "evaluate_benchmark-SYSTEM.md"
-            ).read_text(encoding="utf-8")
-        except OSError:
-            pass
-
-        return {
-            "benchmark_files": benchmark_files,
-            "benchmark_groups": benchmark_groups,
-            "active_models": self.service.active_models(),
-            "run_system_prompt": system_prompt_template,
-        }
 
     def load_content(self, filename):
         """Load one validated JSON document from the prompt directory."""
         if filename not in self.list_files():
             abort(404)
-        benchmark_path = BENCHMARK_PROMPTS_PATH / filename
         try:
-            with benchmark_path.open(encoding="utf-8") as benchmark_file:
-                return json.load(benchmark_file)
+            return self.repository.load(filename)
+        except FileNotFoundError:
+            abort(404)
         except (OSError, json.JSONDecodeError):
             current_app.logger.exception(
-                "Could not load benchmark JSON from %s", benchmark_path
+                "Could not load benchmark JSON %s", filename
             )
             abort(500)
 
@@ -378,10 +265,11 @@ class BenchmarkController:
         if not isinstance(content, (dict, list)):
             return jsonify({"error": "Invalid content."}), 400
 
-        benchmark_path = BENCHMARK_PROMPTS_PATH / filename
-        benchmark_path.write_text(
-            json.dumps(content, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        try:
+            self.repository.save(filename, content)
+        except OSError:
+            current_app.logger.exception("Could not save benchmark %s", filename)
+            return jsonify({"error": "Could not save benchmark results."}), 500
 
         category = data.get("category", "Uncategorized")
         difficulty = data.get("difficulty", "Normal")
@@ -398,9 +286,14 @@ class BenchmarkController:
             log_text = self._build_log_markdown(
                 filename, content, system_prompt
             )
-            LOGS_PATH.mkdir(parents=True, exist_ok=True)
             log_filename = Path(filename).stem + ".md"
-            (LOGS_PATH / log_filename).write_text(log_text, encoding="utf-8")
+            try:
+                self.repository.save_log(log_filename, log_text)
+            except OSError:
+                current_app.logger.exception(
+                    "Could not save benchmark log for %s", filename
+                )
+                return jsonify({"error": "Could not save benchmark log."}), 500
 
         save_benchmark_metadata(
             filename=filename,
@@ -511,10 +404,11 @@ class BenchmarkController:
 
         items[request_index]["response"] = new_response
 
-        benchmark_path = BENCHMARK_PROMPTS_PATH / filename
-        benchmark_path.write_text(
-            json.dumps(content, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        try:
+            self.repository.save(filename, content)
+        except OSError:
+            current_app.logger.exception("Could not update benchmark %s", filename)
+            return jsonify({"error": "Could not update the response."}), 500
         return jsonify({"message": "Response updated.", "filename": filename})
 
     def content(self, filename):

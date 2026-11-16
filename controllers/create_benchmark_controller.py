@@ -16,7 +16,6 @@ from flask import (
     url_for,
 )
 
-from controllers.benchmark_controller import DIFFICULTY_LEVELS, BENCHMARK_PROMPTS_PATH
 from models.benchmark_metadata import save_benchmark_metadata
 from services.benchmark_categories import (
     UNCATEGORIZED,
@@ -24,15 +23,13 @@ from services.benchmark_categories import (
     create_category,
     normalize_new_category,
 )
+from services.benchmark_documents import DIFFICULTY_LEVELS, BenchmarkRepository
 from services.benchmark_progress import BenchmarkStreamParser
 from services.model_providers import (
     ModelProviderService,
     ProviderOfflineError,
     ProviderValidationError,
 )
-
-
-SYSTEM_PROMPTS_PATH = Path(__file__).resolve().parents[1] / "System-prompts"
 
 
 class BenchmarkGenerationError(Exception):
@@ -46,8 +43,19 @@ class BenchmarkGenerationError(Exception):
 class CreateBenchmarkController:
     """Provide model choices and category creation for the creator."""
 
-    def __init__(self, service=None):
+    def __init__(self, service=None, repository=None):
         self.service = service or ModelProviderService()
+        self.repository = repository or BenchmarkRepository()
+
+    @staticmethod
+    def _prompt_template(filename):
+        """Read one configured prompt template and log missing files."""
+        path = Path(current_app.config["SYSTEM_PROMPT_DIRECTORY"]) / filename
+        try:
+            return path.read_text(encoding="utf-8")
+        except OSError:
+            current_app.logger.warning("Could not read system prompt %s", path)
+            return ""
 
     def context(self):
         """Return selector options and the current category selection."""
@@ -60,29 +68,18 @@ class CreateBenchmarkController:
         if created_category not in categories:
             created_category = None
 
-        system_prompt_template = ""
-        user_prompt_template = ""
-        try:
-            system_prompt_template = (
-                SYSTEM_PROMPTS_PATH / "create_benchmark-SYSTEM.md"
-            ).read_text(encoding="utf-8")
-        except OSError:
-            pass
-        try:
-            user_prompt_template = (
-                SYSTEM_PROMPTS_PATH / "create_benchmark-USER.md"
-            ).read_text(encoding="utf-8")
-        except OSError:
-            pass
-
         return {
             "active_models": self.service.active_models(),
             "categories": categories,
             "selected_category": selected_category,
             "created_category": created_category,
             "difficulty_levels": DIFFICULTY_LEVELS,
-            "system_prompt_template": system_prompt_template,
-            "user_prompt_template": user_prompt_template,
+            "system_prompt_template": self._prompt_template(
+                "create_benchmark-SYSTEM.md"
+            ),
+            "user_prompt_template": self._prompt_template(
+                "create_benchmark-USER.md"
+            ),
             "new_category": "",
             "errors": [],
         }
@@ -193,18 +190,20 @@ class CreateBenchmarkController:
         if not filled_topics:
             errors.append("At least one main topic is required.")
         for topic in filled_topics:
+            topic_name = topic["name"]
             pairs = (topic.get("pairs") or "").strip()
             if pairs:
                 try:
                     value = int(pairs)
                 except ValueError:
                     errors.append(
-                        f"Request-response pairs for '{topic['name']}' must be a number."
+                        f"Request-response pairs for '{topic_name}' must be a number."
                     )
                     continue
                 if value < 1 or value > 100:
                     errors.append(
-                        f"Request-response pairs for '{topic['name']}' must be between 1 and 100."
+                        f"Request-response pairs for '{topic_name}' must be "
+                        "between 1 and 100."
                     )
 
         if errors:
@@ -310,23 +309,16 @@ class CreateBenchmarkController:
 
         timestamp = datetime.now().strftime("%Y%m%d%H%M")
         safe_category = self._sanitize_filename_part(category)
-        filename = (
-            f"Benchamrk-prompts-{timestamp}-{safe_category}-{difficulty}.json"
+        filename = self.repository.unique_filename(
+            f"Benchamrk-prompts-{timestamp}-{safe_category}-{difficulty}"
         )
-        target = BENCHMARK_PROMPTS_PATH / filename
-        counter = 1
-        while target.exists():
-            filename = (
-                f"Benchamrk-prompts-{timestamp}-{safe_category}-"
-                f"{difficulty}-{counter}.json"
-            )
-            target = BENCHMARK_PROMPTS_PATH / filename
-            counter += 1
-
-        BENCHMARK_PROMPTS_PATH.mkdir(parents=True, exist_ok=True)
-        target.write_text(
-            json.dumps(parsed, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        try:
+            self.repository.create(filename, parsed)
+        except OSError as error:
+            current_app.logger.exception("Could not save generated benchmark")
+            raise BenchmarkGenerationError(
+                "The benchmark was generated but could not be saved."
+            ) from error
 
         save_benchmark_metadata(
             filename=filename,

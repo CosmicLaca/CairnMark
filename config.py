@@ -12,7 +12,10 @@ class Config:
 
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key")
     DATABASE_PATH = PROJECT_ROOT / "instance" / "cairnmark.db"
+    CHAT_DATABASE_PATH = PROJECT_ROOT / "instance" / "chathistory.db"
     PARAMETER_DATABASE_PATH = PROJECT_ROOT / "instance" / "parameters.db"
+    BENCHMARK_DIRECTORY = PROJECT_ROOT / "Benchmark-prompts"
+    SYSTEM_PROMPT_DIRECTORY = PROJECT_ROOT / "System-prompts"
     LOG_LEVEL = os.environ.get("CAIRNMARK_LOG_LEVEL", "INFO").upper()
     # Enabled by the --dev launcher flag; public launches hide unfinished pages.
     DEV_MODE = False

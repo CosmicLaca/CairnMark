@@ -188,11 +188,10 @@
         );
 
         try {
-            const response = await fetch("/create_benchmark/generate?stream=1", {
+            const events = api.eventStream("/create_benchmark/generate?stream=1", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                    Accept: "text/event-stream",
                 },
                 body: JSON.stringify({
                     category: categorySelect?.value || "",
@@ -204,49 +203,16 @@
                     topics: topics,
                 }),
             });
-            if (!response.ok) {
-                const payload = await response.json().catch(() => ({}));
-                throw new api.ApiError(
-                    payload.error || `HTTP ${response.status}`,
-                    response.status,
-                    payload
-                );
-            }
-            if (!response.body) {
-                throw new Error("Streaming is not supported by this browser.");
-            }
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = "";
             let result = null;
             let failure = "";
 
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                buffer += decoder.decode(value, { stream: true });
-                const events = buffer.split("\n\n");
-                buffer = events.pop() || "";
-                for (const event of events) {
-                    for (const line of event.split("\n")) {
-                        if (!line.startsWith("data:")) continue;
-                        const raw = line.slice(5).trim();
-                        if (!raw) continue;
-                        let message;
-                        try {
-                            message = JSON.parse(raw);
-                        } catch (error) {
-                            continue;
-                        }
-                        if (message.type === "progress") {
-                            setStatus(progressMessage(message), false, true);
-                        } else if (message.type === "result") {
-                            result = message;
-                        } else if (message.type === "error") {
-                            failure = message.error || "Request failed";
-                        }
-                    }
+            for await (const message of events) {
+                if (message.type === "progress") {
+                    setStatus(progressMessage(message), false, true);
+                } else if (message.type === "result") {
+                    result = message;
+                } else if (message.type === "error") {
+                    failure = message.error || "Request failed";
                 }
             }
 

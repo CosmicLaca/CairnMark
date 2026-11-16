@@ -1283,12 +1283,16 @@
         }
     });
 
-    // Reset saved system prompt dropdown when the textarea is manually edited.
-    systemPromptEl?.addEventListener("input", () => {
+    const clearSavedSystemPrompt = () => {
         if (savedSpSelect && savedSpSelect.value !== "") {
             savedSpSelect.value = "";
+            savedSpSelect.dispatchEvent(new Event("change", { bubbles: true }));
         }
-    });
+    };
+
+    // A manual edit is no longer associated with the loaded saved prompt.
+    systemPromptEl?.addEventListener("input", clearSavedSystemPrompt);
+    systemPromptEl?.addEventListener("change", clearSavedSystemPrompt);
 
     // Open prompt/request-body modals on icon click (delegated).
     historyEl?.addEventListener("click", (event) => {

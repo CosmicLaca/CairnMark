@@ -1,6 +1,8 @@
 /* Rendered README content on the About page. */
 
 .markdown-content {
+    max-width: 980px;
+    margin-inline: auto;
     line-height: 1.7;
 }
 
@@ -24,6 +26,37 @@
     padding-bottom: 0.45rem;
     border-bottom: 1px solid var(--line);
     font-size: 1.75rem;
+    scroll-margin-top: 1rem;
+}
+
+.markdown-content h3 {
+    margin-top: 1.7rem;
+    font-size: 1.2rem;
+}
+
+.markdown-content blockquote {
+    margin: 1.5rem 0;
+    padding: 0.8rem 1rem;
+    border-left: 3px solid var(--lichen);
+    background: rgba(255, 255, 255, 0.45);
+}
+
+.markdown-content blockquote > :first-child {
+    margin-top: 0;
+}
+
+.markdown-content blockquote > :last-child {
+    margin-bottom: 0;
+}
+
+.markdown-content li + li {
+    margin-top: 0.35rem;
+}
+
+.markdown-content hr {
+    margin: 2rem 0;
+    border: 0;
+    border-top: 1px solid var(--line);
 }
 
 .markdown-content a {
@@ -54,7 +87,9 @@
 }
 
 .markdown-content table {
+    display: block;
     width: 100%;
+    overflow-x: auto;
     border-collapse: collapse;
 }
 
@@ -67,4 +102,16 @@
 
 .markdown-content th {
     background: #e4e1d7;
+}
+
+@media (max-width: 720px) {
+    .markdown-content h1 {
+        font-size: 2.2rem;
+    }
+
+    .markdown-content th,
+    .markdown-content td {
+        min-width: 9rem;
+        padding: 0.5rem;
+    }
 }
