@@ -1321,6 +1321,7 @@
         const option = [...modelSelect.options].find((o) => o.value.trim() === savedModel);
         if (option) {
             modelSelect.value = savedModel;
+            modelSelect.dispatchEvent(new Event("change", { bubbles: true }));
         }
     }
 

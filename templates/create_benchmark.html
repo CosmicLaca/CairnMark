@@ -151,7 +151,7 @@
       <span class="field-hint">Active model that will generate the final benchmark JSON.</span>
       {% if active_models %}
         <div class="select-shell">
-          <select id="model" name="model">
+          <select id="model" name="model" data-model-filter>
             {% for model in active_models %}
               <option value="{{ model.provider }}::{{ model.model }}">{{ model.label }}</option>
             {% endfor %}
@@ -239,6 +239,7 @@
 
 {% block scripts %}
   <script src="{{ url_for('static', filename='js/api_client.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/model_select_filter.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/category_select.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/benchmark_topics.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/create_benchmark.js') }}" defer></script>

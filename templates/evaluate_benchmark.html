@@ -174,7 +174,7 @@
         <span class="field-hint">Selected model will evaluate all requests.</span>
         {% if active_models %}
           <div class="select-shell">
-            <select id="evaluate-benchmark-model" name="model">
+            <select id="evaluate-benchmark-model" name="model" data-model-filter>
               {% for model in active_models %}
                 <option value="{{ model.provider }}::{{ model.model }}">{{ model.label }}</option>
               {% endfor %}
@@ -224,5 +224,7 @@
 {% endblock %}
 
 {% block scripts %}
+  <script src="{{ url_for('static', filename='js/api_client.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/model_select_filter.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/benchmark_browser.js') }}" defer></script>
 {% endblock %}

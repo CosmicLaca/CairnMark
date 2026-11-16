@@ -159,7 +159,7 @@
       <span class="field-hint">Active model for the chat.</span>
       {% if active_models %}
         <div class="select-shell">
-          <select id="chat-model" name="model" data-chat-model data-saved-model="{{ chat_settings.model_name }}">
+          <select id="chat-model" name="model" data-chat-model data-saved-model="{{ chat_settings.model_name }}" data-model-filter>
             {% for model in active_models %}
               <option value="{{ model.provider }}::{{ model.model }}"
                 {% if chat_settings.model_name|trim == (model.provider ~ "::" ~ model.model)|trim %}selected{% endif %}>
@@ -370,5 +370,6 @@
 {% block scripts %}
   <script src="{{ url_for('static', filename='js/api_client.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/chat_markdown.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/model_select_filter.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/chat.js') }}" defer></script>
 {% endblock %}

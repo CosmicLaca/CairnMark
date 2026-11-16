@@ -215,6 +215,109 @@
     cursor: pointer;
 }
 
+.model-filter-input {
+    width: 100%;
+    min-height: 36px;
+    margin-bottom: 8px;
+    padding: 0 14px;
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 2px 11px 2px 2px;
+    outline: 0;
+    background: rgba(255, 255, 255, 0.52);
+    font: inherit;
+    font-size: 0.82rem;
+}
+
+.searchable-select {
+    position: relative;
+    width: 100%;
+}
+
+.searchable-select-toggle {
+    width: 100%;
+    min-height: 48px;
+    padding: 0 44px 0 14px;
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 2px 11px 2px 2px;
+    background: rgba(255, 255, 255, 0.52);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    appearance: none;
+}
+
+.searchable-select-toggle::after {
+    position: absolute;
+    top: 50%;
+    right: 16px;
+    color: #537068;
+    content: "⌄";
+    pointer-events: none;
+    transform: translateY(-56%);
+}
+
+.searchable-select-panel {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-radius: 2px 11px 2px 2px;
+    background: #fffdf7;
+    box-shadow: 0 12px 28px rgba(17, 25, 23, 0.18);
+}
+
+.searchable-select-search {
+    width: 100%;
+    min-height: 34px;
+    margin-bottom: 8px;
+    padding: 0 12px;
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 2px 9px 2px 2px;
+    outline: 0;
+    background: rgba(255, 255, 255, 0.72);
+    font: inherit;
+    font-size: 0.82rem;
+}
+
+.searchable-select-list {
+    max-height: 240px;
+    overflow-y: auto;
+    display: grid;
+    gap: 4px;
+}
+
+.searchable-select-option {
+    width: 100%;
+    padding: 8px 10px;
+    color: var(--ink);
+    border: 1px solid transparent;
+    border-radius: 2px 9px 2px 2px;
+    background: transparent;
+    font: inherit;
+    font-size: 0.82rem;
+    text-align: left;
+    cursor: pointer;
+}
+
+.searchable-select-option:hover,
+.searchable-select-option.is-selected {
+    border-color: rgba(37, 107, 96, 0.28);
+    background: rgba(111, 214, 195, 0.1);
+}
+
+.searchable-select-empty {
+    padding: 8px 10px;
+    color: #6f7c77;
+    font-size: 0.82rem;
+    font-style: italic;
+}
+
 .field-group input[type="text"] {
     min-height: 48px;
     padding: 0 14px;
