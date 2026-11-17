@@ -1177,6 +1177,8 @@
                 item.appendChild(img);
             } else if (attachment.type === "video" && attachment.videoUrl) {
                 item.className = "chat-attachment chat-attachment--video";
+                const videoWrap = document.createElement("div");
+                videoWrap.className = "chat-video-wrap";
                 const video = document.createElement("video");
                 video.className = "chat-attachment-video";
                 video.src = attachment.videoUrl;
@@ -1185,7 +1187,7 @@
                 video.preload = "metadata";
                 video.style.height = "130px";
                 video.style.width = "auto";
-                item.appendChild(video);
+                videoWrap.appendChild(video);
 
                 const controls = document.createElement("div");
                 controls.className = "chat-video-controls";
@@ -1204,7 +1206,8 @@
                     video.currentTime = Math.max(0, (video.currentTime || 0) - 5);
                 });
                 controls.append(playBtn, pauseBtn, backBtn);
-                item.appendChild(controls);
+                videoWrap.appendChild(controls);
+                item.appendChild(videoWrap);
             } else {
                 const name = document.createElement("span");
                 name.className = "chat-attachment-name";
