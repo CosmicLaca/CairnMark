@@ -49,10 +49,12 @@
     const attachmentsEl = document.querySelector("[data-chat-attachments]");
     const audioAttachmentsEl = document.querySelector("[data-chat-audio-attachments]");
     const saveOriginalSwitch = document.querySelector("[data-chat-save-original]");
+    const attachAudioSwitch = document.querySelector("[data-chat-attach-audio]");
     const modelNctxEl = document.querySelector("[data-chat-model-nctx]");
     let moreParamsModelKey = "";
     const pendingAttachments = [];
     let saveOriginalMedia = false;
+    let attachAudioEnabled = false;
     const renderMarkdown = window.CairnmarkMarkdown.render;
 
     // Toggle state per message
@@ -123,6 +125,48 @@
     // Capture phase catches scrolling inside the chat history container too.
     window.addEventListener("scroll", hideHoverPreview, true);
 
+    // Server-rendered preview thumbnails (initial page load) do not get the
+    // per-element hover listeners attached by appendMessage, so delegate.
+    // Attach hover listeners to any server-rendered preview thumbnails.
+    document.querySelectorAll(".chat-user-preview").forEach((img) => {
+        if (img.tagName !== "IMG") return;
+        img.addEventListener("mouseenter", (event) => showHoverPreview(img.src, event));
+        img.addEventListener("mousemove", positionHoverPreview);
+        img.addEventListener("mouseleave", hideHoverPreview);
+    });
+
+    if (historyEl) {
+        historyEl.addEventListener("mouseover", (event) => {
+            const img = event.target && event.target.closest
+                ? event.target.closest(".chat-user-preview")
+                : null;
+            if (img && img.tagName === "IMG") {
+                showHoverPreview(img.src, event);
+            }
+        });
+        historyEl.addEventListener("mousemove", (event) => {
+            const img = event.target && event.target.closest
+                ? event.target.closest(".chat-user-preview")
+                : null;
+            if (img && img.tagName === "IMG") {
+                positionHoverPreview(event);
+            }
+        });
+        historyEl.addEventListener("mouseout", (event) => {
+            const img = event.target && event.target.closest
+                ? event.target.closest(".chat-user-preview")
+                : null;
+            if (img && img.tagName === "IMG") {
+                const related = event.relatedTarget && event.relatedTarget.closest
+                    ? event.relatedTarget.closest(".chat-user-preview")
+                    : null;
+                if (!related) {
+                    hideHoverPreview();
+                }
+            }
+        });
+    }
+
     const setSaveOriginalState = (enabled) => {
         saveOriginalMedia = enabled;
         if (saveOriginalSwitch) {
@@ -133,6 +177,19 @@
     if (saveOriginalSwitch) {
         saveOriginalSwitch.addEventListener("click", () => {
             setSaveOriginalState(!saveOriginalMedia);
+        });
+    }
+
+    const setAttachAudioState = (enabled) => {
+        attachAudioEnabled = enabled;
+        if (attachAudioSwitch) {
+            attachAudioSwitch.setAttribute("aria-checked", enabled ? "true" : "false");
+        }
+    };
+
+    if (attachAudioSwitch) {
+        attachAudioSwitch.addEventListener("click", () => {
+            setAttachAudioState(!attachAudioEnabled);
         });
     }
 
@@ -448,6 +505,7 @@
                 data: attachment.data,
                 mime_type: attachment.mime,
                 preview_data: attachment.previewData || undefined,
+                attach_audio: attachment.type === "video" ? attachAudioEnabled : undefined,
             }));
         }
 
@@ -1214,11 +1272,20 @@
         const hasOriginalMedia = pendingAttachments.some(
             (attachment) => attachment.type === "video" || attachment.type === "audio"
         );
+        const hasVideo = pendingAttachments.some(
+            (attachment) => attachment.type === "video"
+        );
         if (saveOriginalSwitch) {
             saveOriginalSwitch.hidden = !hasOriginalMedia;
         }
+        if (attachAudioSwitch) {
+            attachAudioSwitch.hidden = !hasVideo;
+        }
         if (!hasOriginalMedia) {
             setSaveOriginalState(false);
+        }
+        if (!hasVideo) {
+            setAttachAudioState(false);
         }
         if (pendingAttachments.length === 0) {
             if (attachmentsEl) attachmentsEl.hidden = true;
