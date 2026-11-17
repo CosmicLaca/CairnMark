@@ -743,6 +743,107 @@
     transform: translate(-50%, 0);
 }
 
+.chat-save-original-switch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 34px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+}
+
+.chat-save-original-switch[hidden] {
+    display: none;
+}
+
+.chat-save-original-track {
+    display: flex;
+    align-items: center;
+    width: 38px;
+    height: 22px;
+    padding: 2px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: rgba(120, 130, 126, 0.22);
+    transition: background var(--motion), border-color var(--motion);
+}
+
+.chat-save-original-knob {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(17, 25, 23, 0.28);
+    transition: transform var(--motion);
+}
+
+.chat-save-original-switch[aria-checked="true"] .chat-save-original-track {
+    border-color: #3f9b88;
+    background: #6fd6c3;
+}
+
+.chat-save-original-switch[aria-checked="true"] .chat-save-original-knob {
+    transform: translateX(16px);
+}
+
+.chat-save-original-switch:hover .chat-save-original-track {
+    border-color: #4c8d81;
+}
+
+.chat-save-original-switch:focus-visible {
+    outline: none;
+}
+
+.chat-save-original-switch:focus-visible .chat-save-original-track {
+    outline: 2px solid #315d54;
+    outline-offset: 2px;
+}
+
+.chat-save-original-tooltip {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    width: max-content;
+    max-width: 210px;
+    padding: 5px 8px;
+    border: 1px solid rgba(201, 243, 106, 0.28);
+    border-radius: 3px 10px 3px 3px;
+    background: var(--sidebar);
+    box-shadow: 0 8px 20px rgba(17, 25, 23, 0.24);
+    color: #f5f1e7;
+    font-size: 0.7rem;
+    font-weight: 500;
+    line-height: 1.3;
+    text-align: center;
+    white-space: normal;
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, -4px);
+    transition: opacity var(--motion), transform var(--motion);
+    z-index: 5;
+}
+
+.chat-save-original-tooltip::after {
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    border: 5px solid transparent;
+    border-top-color: var(--sidebar);
+    content: "";
+    transform: translateX(-50%);
+}
+
+.chat-save-original-switch:hover .chat-save-original-tooltip,
+.chat-save-original-switch:focus .chat-save-original-tooltip,
+.chat-save-original-switch:focus-visible .chat-save-original-tooltip {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
 .chat-setup {
     display: grid;
     gap: 16px;

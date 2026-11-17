@@ -48,9 +48,11 @@
     const mediaUploadsEl = document.querySelector("[data-chat-media-uploads]");
     const attachmentsEl = document.querySelector("[data-chat-attachments]");
     const audioAttachmentsEl = document.querySelector("[data-chat-audio-attachments]");
+    const saveOriginalSwitch = document.querySelector("[data-chat-save-original]");
     const modelNctxEl = document.querySelector("[data-chat-model-nctx]");
     let moreParamsModelKey = "";
     const pendingAttachments = [];
+    let saveOriginalMedia = false;
     const renderMarkdown = window.CairnmarkMarkdown.render;
 
     // Toggle state per message
@@ -120,6 +122,19 @@
 
     // Capture phase catches scrolling inside the chat history container too.
     window.addEventListener("scroll", hideHoverPreview, true);
+
+    const setSaveOriginalState = (enabled) => {
+        saveOriginalMedia = enabled;
+        if (saveOriginalSwitch) {
+            saveOriginalSwitch.setAttribute("aria-checked", enabled ? "true" : "false");
+        }
+    };
+
+    if (saveOriginalSwitch) {
+        saveOriginalSwitch.addEventListener("click", () => {
+            setSaveOriginalState(!saveOriginalMedia);
+        });
+    }
 
     const syncEmptyState = () => {
         if (!historyEl || !emptyStateEl) return;
@@ -1169,6 +1184,15 @@
     const renderAttachments = () => {
         if (attachmentsEl) attachmentsEl.replaceChildren();
         if (audioAttachmentsEl) audioAttachmentsEl.replaceChildren();
+        const hasOriginalMedia = pendingAttachments.some(
+            (attachment) => attachment.type === "video" || attachment.type === "audio"
+        );
+        if (saveOriginalSwitch) {
+            saveOriginalSwitch.hidden = !hasOriginalMedia;
+        }
+        if (!hasOriginalMedia) {
+            setSaveOriginalState(false);
+        }
         if (pendingAttachments.length === 0) {
             if (attachmentsEl) attachmentsEl.hidden = true;
             if (audioAttachmentsEl) audioAttachmentsEl.hidden = true;
