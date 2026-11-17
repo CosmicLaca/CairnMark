@@ -6,6 +6,7 @@ import json
 import re
 import time
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 
 import markdown
@@ -83,6 +84,35 @@ ATTACHMENT_TYPES = {"image", "document", "video", "audio"}
 ATTACHMENT_LIMIT = 8
 ATTACHMENT_DATA_LIMIT = 100 * 1024 * 1024
 MAX_IMAGE_PIXELS = 1_200_000
+AUDIO_ANALYSIS_PROMPT = (
+    "Analyze the attached audio: transcribe any spoken words, and if there "
+    "is no speech, describe the audio content (music, sounds, or noise)."
+)
+
+
+@dataclass(frozen=True)
+class ChatRequestData:
+    """Validated values submitted for one chat turn."""
+
+    raw: dict
+    model_spec: str
+    user_message: str
+    system_prompt: str
+    saved_prompt_name: str
+    parameters: dict
+    extra_parameters: dict
+    attachments: list
+
+
+@dataclass(frozen=True)
+class AttachmentRequestPlan:
+    """Converted attachments and messages for one or two model requests."""
+
+    primary_attachments: list
+    primary_messages: list
+    audio_attachments: list
+    audio_messages: list
+    split: bool = False
 
 
 def _model_parameter_values(value):
@@ -156,7 +186,9 @@ def _attachment_values(value):
             raise ValueError("Attachments must be objects.")
         attachment_type = str(item.get("type") or "").strip().lower()
         if attachment_type not in ATTACHMENT_TYPES:
-            raise ValueError("Attachment type must be image, document, video, or audio.")
+            raise ValueError(
+                "Attachment type must be image, document, video, or audio."
+            )
         data = item.get("data")
         if not isinstance(data, str) or not data.strip():
             raise ValueError("Attachment data is required.")
@@ -189,7 +221,9 @@ def _attachment_values(value):
                 "mime_type": mime_type,
                 "preview_data": preview_data,
                 "attach_audio": bool(item.get("attach_audio")),
-                "original_name": str(item.get("original_name") or item.get("name") or "").strip(),
+                "original_name": str(
+                    item.get("original_name") or item.get("name") or ""
+                ).strip(),
             }
         )
     return cleaned
@@ -229,7 +263,7 @@ def _resize_image_attachment(attachment):
 
 
 def _convert_video_attachment(attachment):
-    """Resize/re-encode a video attachment to max 640px side, 2 fps, lower quality, mp4.
+    """Re-encode video to MP4 with a 480px maximum side and 2 fps.
 
     Returns the original attachment unchanged when ffmpeg-python or ffmpeg is
     unavailable or conversion fails, so chat still works without the toolchain.
@@ -281,7 +315,9 @@ def _convert_video_attachment(attachment):
             }
             # Always strip audio: audio is sent separately when attach_audio is on.
             ffmpeg.output(
-                video, output_path, **output_args,
+                video,
+                output_path,
+                **output_args,
             ).overwrite_output().run(quiet=True)
             with open(output_path, "rb") as handle:
                 converted = handle.read()
@@ -326,8 +362,10 @@ def _convert_audio_attachment(attachment):
             audio = stream.audio
             output_path = os.path.join(tmpdir, "output.mp3")
             ffmpeg.output(
-                audio, output_path,
-                acodec="libmp3lame", audio_bitrate="64k",
+                audio,
+                output_path,
+                acodec="libmp3lame",
+                audio_bitrate="64k",
             ).overwrite_output().run(quiet=True)
             with open(output_path, "rb") as handle:
                 converted = handle.read()
@@ -412,8 +450,10 @@ def _extract_video_audio_attachment(attachment):
             audio = stream.audio
             output_path = os.path.join(tmpdir, "output.mp3")
             ffmpeg.output(
-                audio, output_path,
-                acodec="libmp3lame", audio_bitrate="64k",
+                audio,
+                output_path,
+                acodec="libmp3lame",
+                audio_bitrate="64k",
             ).overwrite_output().run(quiet=True)
             with open(output_path, "rb") as handle:
                 converted = handle.read()
@@ -452,8 +492,12 @@ def _merge_video_audio(video_data, audio_data):
             video_stream = ffmpeg.input(video_path).video
             audio_stream = ffmpeg.input(audio_path).audio
             ffmpeg.output(
-                video_stream, audio_stream, output_path,
-                vcodec="copy", acodec="aac", audio_bitrate="64k",
+                video_stream,
+                audio_stream,
+                output_path,
+                vcodec="copy",
+                acodec="aac",
+                audio_bitrate="64k",
                 movflags="+faststart",
             ).overwrite_output().run(quiet=True)
             with open(output_path, "rb") as handle:
@@ -468,7 +512,7 @@ def _merge_video_audio(video_data, audio_data):
 
 def _process_attachments(attachments):
     result = []
-    for item in (attachments or []):
+    for item in attachments or []:
         if isinstance(item, dict) and item.get("type") == "video":
             result.append(_convert_video_attachment(item))
         elif isinstance(item, dict) and item.get("type") == "image":
@@ -480,10 +524,80 @@ def _process_attachments(attachments):
     return result
 
 
-def _build_chat_request_body(service, provider, model, messages, request_parameters, extra_parameters, attachments=None):
+def _requires_split_attachment_request(attachments):
+    """Return whether video and extracted audio need separate requests."""
+    return any(
+        isinstance(item, dict)
+        and item.get("type") == "video"
+        and bool(item.get("attach_audio"))
+        for item in (attachments or [])
+    )
+
+
+def _audio_analysis_messages(messages):
+    """Copy a conversation and replace its final user prompt for audio."""
+    audio_messages = [dict(message) for message in messages]
+    for message in reversed(audio_messages):
+        if message.get("role") == "user":
+            message["content"] = AUDIO_ANALYSIS_PROMPT
+            break
+    return audio_messages
+
+
+def _prepare_attachment_plan(attachments, messages):
+    """Convert attachments into the model request layout they require."""
+    attachments = attachments or []
+    if not _requires_split_attachment_request(attachments):
+        return AttachmentRequestPlan(
+            primary_attachments=_process_attachments(attachments),
+            primary_messages=messages,
+            audio_attachments=[],
+            audio_messages=[],
+        )
+
+    primary_attachments = []
+    audio_attachments = []
+    for item in attachments:
+        if not isinstance(item, dict):
+            primary_attachments.append(item)
+        elif item.get("type") == "video":
+            primary_attachments.append(_convert_video_attachment(item))
+            if item.get("attach_audio") and _video_has_audio(item.get("data", "")):
+                audio_attachment = _extract_video_audio_attachment(item)
+                if audio_attachment is not None:
+                    audio_attachments.append(audio_attachment)
+        elif item.get("type") == "audio":
+            audio_attachments.append(_convert_audio_attachment(item))
+        else:
+            primary_attachments.append(item)
+
+    return AttachmentRequestPlan(
+        primary_attachments=primary_attachments,
+        primary_messages=messages,
+        audio_attachments=audio_attachments,
+        audio_messages=_audio_analysis_messages(messages),
+        split=True,
+    )
+
+
+def _build_chat_request_body(
+    service,
+    provider,
+    model,
+    messages,
+    request_parameters,
+    extra_parameters,
+    attachments=None,
+):
     """Return the JSON-serializable body sent for an assistant chat turn."""
     body = {"model": model, "messages": messages}
-    body.update({key: value for key, value in (request_parameters or {}).items() if value is not None})
+    body.update(
+        {
+            key: value
+            for key, value in (request_parameters or {}).items()
+            if value is not None
+        }
+    )
     filtered_extra = service.local_extra_parameters(provider, extra_parameters)
     body.update(filtered_extra)
     if attachments:
@@ -496,6 +610,126 @@ def _build_chat_request_body(service, provider, model, messages, request_paramet
             for item in attachments
         ]
     return body
+
+
+def _build_plan_request_body(
+    service,
+    provider,
+    model,
+    plan,
+    request_parameters,
+    extra_parameters,
+):
+    """Build the persisted request body for an attachment plan."""
+    primary_body = _build_chat_request_body(
+        service,
+        provider,
+        model,
+        plan.primary_messages,
+        request_parameters,
+        extra_parameters,
+        attachments=plan.primary_attachments,
+    )
+    if not plan.audio_attachments:
+        return primary_body
+    audio_body = _build_chat_request_body(
+        service,
+        provider,
+        model,
+        plan.audio_messages,
+        request_parameters,
+        extra_parameters,
+        attachments=plan.audio_attachments,
+    )
+    return {"video_request": primary_body, "audio_request": audio_body}
+
+
+def _complete_attachment_plan(
+    service,
+    provider,
+    model,
+    plan,
+    request_parameters,
+    extra_parameters,
+):
+    """Run every request in an attachment plan and combine its result."""
+    primary_text, primary_usage = service.chat_completion_with_params(
+        provider,
+        model,
+        plan.primary_messages,
+        **request_parameters,
+        extra_parameters=extra_parameters,
+        attachments=plan.primary_attachments,
+    )
+    audio_text = ""
+    audio_usage = {}
+    if plan.audio_attachments:
+        audio_text, audio_usage = service.chat_completion_with_params(
+            provider,
+            model,
+            plan.audio_messages,
+            **request_parameters,
+            extra_parameters=extra_parameters,
+            attachments=plan.audio_attachments,
+        )
+    response_text = primary_text
+    if audio_text:
+        response_text = f"{primary_text}\n\nAudio transcription:\n{audio_text}"
+    usage = {
+        key: primary_usage.get(key, 0) + audio_usage.get(key, 0)
+        for key in ("prompt_tokens", "completion_tokens")
+    }
+    return response_text, usage
+
+
+def _conversation_messages(system_prompt, history, history_limit):
+    """Build model messages while retaining complete recent chat turns."""
+    messages = []
+    if system_prompt.strip():
+        messages.append({"role": "system", "content": system_prompt})
+    if history_limit is not None:
+        current_turn = history[-1:]
+        previous = history[:-1]
+        if history_limit <= 0:
+            history = current_turn
+        else:
+            kept_previous = history_limit * 2
+            start = max(0, len(previous) - kept_previous)
+            if start % 2:
+                start += 1
+            history = previous[start:] + current_turn
+    messages.extend(
+        {"role": message["role"], "content": message["content"]} for message in history
+    )
+    return messages
+
+
+def _chat_result_payload(
+    response_text,
+    elapsed,
+    usage,
+    provider,
+    model,
+    chat_request,
+    request_body,
+    event_type=None,
+):
+    """Return the shared JSON result for regular and streaming chat."""
+    payload = {
+        "response": response_text,
+        "response_html": render_markdown_html(response_text),
+        "time": elapsed,
+        "input_tokens": usage.get("prompt_tokens", 0),
+        "output_tokens": usage.get("completion_tokens", 0),
+        "provider": provider,
+        "model": model,
+        "saved_system_prompt_name": chat_request.saved_prompt_name,
+        "system_prompt": chat_request.system_prompt,
+        "request_body": json.dumps(request_body),
+    }
+    if event_type:
+        payload["type"] = event_type
+    return payload
 
 
 def render_markdown_html(text):
@@ -537,7 +771,7 @@ def _save_preview_media(data, extension):
 def _preview_filenames_from_messages(messages):
     """Collect preview filenames referenced by a list of message dicts."""
     names = []
-    for message in (messages or []):
+    for message in messages or []:
         if not isinstance(message, dict):
             continue
         value = message.get("preview_images")
@@ -601,7 +835,7 @@ def _delete_preview_files(filenames, in_use=None):
         in_use = _preview_filenames_in_use()
     in_use = {Path(str(name)).name for name in (in_use or set())}
     directory = _preview_directory()
-    for name in (filenames or []):
+    for name in filenames or []:
         safe_name = Path(str(name)).name
         if not safe_name or safe_name in in_use:
             continue
@@ -609,7 +843,9 @@ def _delete_preview_files(filenames, in_use=None):
         try:
             target.unlink(missing_ok=True)
         except OSError:  # noqa: BLE001
-            current_app.logger.exception("Preview file could not be deleted: %s", safe_name)
+            current_app.logger.exception(
+                "Preview file could not be deleted: %s", safe_name
+            )
 
 
 def _save_preview_image(data):
@@ -668,46 +904,37 @@ class ChatController:
                 stored = system_prompt
             if stored == system_prompt:
                 saved_name = saved_name_raw
-        return (
-            data,
-            model_spec,
-            user_message,
-            system_prompt,
-            saved_name,
-            _parameter_values(data),
-            _model_parameter_values(data.get("model_params")),
-            _attachment_values(data.get("attachments")),
+        return ChatRequestData(
+            raw=data,
+            model_spec=model_spec,
+            user_message=user_message,
+            system_prompt=system_prompt,
+            saved_prompt_name=saved_name,
+            parameters=_parameter_values(data),
+            extra_parameters=_model_parameter_values(data.get("model_params")),
+            attachments=_attachment_values(data.get("attachments")),
         )
 
     def send(self):
         try:
-            (
-                _data,
-                model_spec,
-                user_message,
-                system_prompt,
-                saved_name,
-                parameters,
-                extra_parameters,
-                attachments,
-            ) = self._parse_request()
+            chat_request = self._parse_request()
         except ValueError as error:
             return jsonify({"error": str(error)}), 400
 
-        if not user_message:
+        if not chat_request.user_message:
             return jsonify({"error": "Message is required."}), 400
         try:
-            provider, model = self.service.resolve_online_model(model_spec)
+            provider, model = self.service.resolve_online_model(chat_request.model_spec)
         except ProviderValidationError as error:
             return jsonify({"error": str(error)}), 400
         except ProviderOfflineError as error:
             return jsonify({"error": str(error)}), 503
 
-        save_original_media = bool(_data.get("save_original_media"))
+        save_original_media = bool(chat_request.raw.get("save_original_media"))
         preview_images = []
         preview_media = []
         has_audio_attachment = False
-        for attachment in attachments or []:
+        for attachment in chat_request.attachments:
             attachment_type = attachment.get("type")
             if attachment_type == "image":
                 filename = _save_preview_image(attachment.get("data", ""))
@@ -720,69 +947,66 @@ class ChatController:
                     data = converted.get("data", attachment.get("data", ""))
                     filename = _save_preview_media(data, "mp3")
                     if filename:
-                        preview_media.append({"type": "audio", "filename": filename, "original_name": attachment.get("original_name", "")})
+                        preview_media.append(
+                            {
+                                "type": "audio",
+                                "filename": filename,
+                                "original_name": attachment.get("original_name", ""),
+                            }
+                        )
             elif attachment_type == "video":
                 if save_original_media:
                     converted = _convert_video_attachment(attachment)
                     data = converted.get("data", attachment.get("data", ""))
-                    if attachment.get("attach_audio") and _video_has_audio(attachment.get("data", "")):
+                    if attachment.get("attach_audio") and _video_has_audio(
+                        attachment.get("data", "")
+                    ):
                         audio_att = _extract_video_audio_attachment(attachment)
                         if audio_att is not None:
-                            merged = _merge_video_audio(converted.get("data", ""), audio_att.get("data", ""))
+                            merged = _merge_video_audio(
+                                converted.get("data", ""), audio_att.get("data", "")
+                            )
                             if merged:
                                 data = merged
                     filename = _save_preview_media(data, "mp4")
                     if filename:
-                        preview_media.append({"type": "video", "filename": filename, "original_name": attachment.get("original_name", "")})
+                        preview_media.append(
+                            {
+                                "type": "video",
+                                "filename": filename,
+                                "original_name": attachment.get("original_name", ""),
+                            }
+                        )
                 elif attachment.get("preview_data"):
                     filename = _save_preview_image(attachment.get("preview_data", ""))
                     if filename:
                         preview_images.append(filename)
         add_chat_message(
             "user",
-            user_message,
+            chat_request.user_message,
             preview_images=preview_images,
             has_audio=has_audio_attachment and not save_original_media,
             preview_media=preview_media,
         )
 
-        stream_requested = (
-            request.args.get("stream") == "1"
-            or "text/event-stream" in (request.accept_mimetypes or "")
+        stream_requested = request.args.get("stream") == "1" or "text/event-stream" in (
+            request.accept_mimetypes or ""
         )
 
         # Build messages list from the most recent turns kept by the user.
-        messages = []
-        if system_prompt.strip():
-            messages.append({"role": "system", "content": system_prompt})
         history = [
             message
             for message in list_chat_messages()
             if message["role"] in ("user", "assistant")
         ]
-        history_limit = parameters.get("history_limit")
-        if history_limit is not None:
-            current_turn = history[-1:]
-            previous = history[:-1]
-            if history_limit <= 0:
-                history = current_turn
-            else:
-                # "Recent messages kept" counts complete user/assistant pairs,
-                # not individual messages, so a kept unit is two messages.
-                kept_previous = history_limit * 2
-                start = max(0, len(previous) - kept_previous)
-                # Keep pair boundaries: each retained block starts with a
-                # user message rather than an orphaned assistant reply.
-                if start % 2:
-                    start += 1
-                history = previous[start:] + current_turn
-        messages.extend(
-            {"role": message["role"], "content": message["content"]}
-            for message in history
+        messages = _conversation_messages(
+            chat_request.system_prompt,
+            history,
+            chat_request.parameters.get("history_limit"),
         )
 
         request_parameters = {
-            key: parameters.get(key)
+            key: chat_request.parameters.get(key)
             for key in (
                 "temperature",
                 "top_p",
@@ -791,134 +1015,39 @@ class ChatController:
             )
         }
 
-        split_needed = any(
-            isinstance(item, dict)
-            and item.get("type") == "video"
-            and bool(item.get("attach_audio"))
-            for item in (attachments or [])
-        )
-
         needs_conversion = any(
             isinstance(item, dict) and item.get("type") in ("video", "audio")
-            for item in (attachments or [])
+            for item in chat_request.attachments
         )
 
-        audio_request_body = None
-
         if not stream_requested:
-            if split_needed:
-                video_attachments = []
-                audio_attachments = []
-                for item in (attachments or []):
-                    if not isinstance(item, dict):
-                        video_attachments.append(item)
-                        continue
-                    if item.get("type") == "video":
-                        video_attachments.append(_convert_video_attachment(item))
-                        if item.get("attach_audio") and _video_has_audio(item.get("data", "")):
-                            audio_att = _extract_video_audio_attachment(item)
-                            if audio_att is not None:
-                                audio_attachments.append(audio_att)
-                    elif item.get("type") == "audio":
-                        audio_attachments.append(_convert_audio_attachment(item))
-                    else:
-                        video_attachments.append(item)
-                # Build audio_messages (modify user prompt) before building audio_request_body
-                audio_messages = [dict(m) for m in messages]
-                for index in range(len(audio_messages) - 1, -1, -1):
-                    if audio_messages[index].get("role") == "user":
-                        audio_messages[index]["content"] = "Analyze the attached audio: transcribe any spoken words, and if there is no speech, describe the audio content (music, sounds, or noise)."
-                        break
-
-                request_body = _build_chat_request_body(
+            started = time.monotonic()
+            plan = _prepare_attachment_plan(chat_request.attachments, messages)
+            request_body = _build_plan_request_body(
+                self.service,
+                provider,
+                model,
+                plan,
+                request_parameters,
+                chat_request.extra_parameters,
+            )
+            try:
+                response_text, usage = _complete_attachment_plan(
                     self.service,
                     provider,
                     model,
-                    messages,
+                    plan,
                     request_parameters,
-                    extra_parameters,
-                    attachments=video_attachments,
+                    chat_request.extra_parameters,
                 )
-                audio_request_body = None
-                if audio_attachments:
-                    audio_request_body = _build_chat_request_body(
-                        self.service,
-                        provider,
-                        model,
-                        audio_messages,
-                        request_parameters,
-                        extra_parameters,
-                        attachments=audio_attachments,
-                    )
-                started = time.monotonic()
-                usage = {"prompt_tokens": 0, "completion_tokens": 0}
-                try:
-                    text1, usage1 = self.service.chat_completion_with_params(
-                        provider,
-                        model,
-                        messages,
-                        **request_parameters,
-                        extra_parameters=extra_parameters,
-                        attachments=video_attachments,
-                    )
-                    text2 = ""
-                    usage2 = {"prompt_tokens": 0, "completion_tokens": 0}
-                    if audio_attachments:
-                        text2, usage2 = self.service.chat_completion_with_params(
-                            provider,
-                            model,
-                            audio_messages,
-                            **request_parameters,
-                            extra_parameters=extra_parameters,
-                            attachments=audio_attachments,
-                        )
-                    response_text = text1
-                    if text2:
-                        response_text = f"{text1}\n\nAudio transcription:\n{text2}"
-                    usage = {
-                        "prompt_tokens": usage1.get("prompt_tokens", 0) + usage2.get("prompt_tokens", 0),
-                        "completion_tokens": usage1.get("completion_tokens", 0) + usage2.get("completion_tokens", 0),
-                    }
-                except Exception as error:  # noqa: BLE001
-                    current_app.logger.exception(
-                        "Chat request failed for provider=%s model=%s", provider, model
-                    )
-                    return jsonify({"error": str(error)}), 502
-            else:
-                attachments = _process_attachments(attachments)
-                request_body = _build_chat_request_body(
-                    self.service,
+            except Exception as error:  # noqa: BLE001
+                current_app.logger.exception(
+                    "Chat request failed for provider=%s model=%s",
                     provider,
                     model,
-                    messages,
-                    request_parameters,
-                    extra_parameters,
-                    attachments=attachments,
                 )
-                started = time.monotonic()
-                usage = {"prompt_tokens": 0, "completion_tokens": 0}
-                try:
-                    response_text, usage = self.service.chat_completion_with_params(
-                        provider,
-                        model,
-                        messages,
-                        **request_parameters,
-                        extra_parameters=extra_parameters,
-                        attachments=attachments,
-                    )
-                except Exception as error:  # noqa: BLE001
-                    current_app.logger.exception(
-                        "Chat request failed for provider=%s model=%s", provider, model
-                    )
-                    return jsonify({"error": str(error)}), 502
-            if audio_request_body:
-                request_body = {
-                    "video_request": request_body,
-                    "audio_request": audio_request_body,
-                }
-
+                return jsonify({"error": str(error)}), 502
             elapsed = round(time.monotonic() - started, 2)
-
             add_chat_message(
                 "assistant",
                 response_text,
@@ -927,128 +1056,62 @@ class ChatController:
                 response_time=elapsed,
                 input_tokens=usage.get("prompt_tokens", 0),
                 output_tokens=usage.get("completion_tokens", 0),
-                system_prompt=system_prompt,
-                saved_system_prompt_name=saved_name,
+                system_prompt=chat_request.system_prompt,
+                saved_system_prompt_name=chat_request.saved_prompt_name,
                 request_body=json.dumps(request_body),
             )
-            return jsonify(
-                {
-                    "response": response_text,
-                    "response_html": render_markdown_html(response_text),
-                    "time": elapsed,
-                    "input_tokens": usage.get("prompt_tokens", 0),
-                    "output_tokens": usage.get("completion_tokens", 0),
-                    "provider": provider,
-                    "model": model,
-                    "saved_system_prompt_name": saved_name,
-                    "system_prompt": system_prompt,
-                    "request_body": json.dumps(request_body),
-                    "messages": list_chat_messages(),
-                }
+            payload = _chat_result_payload(
+                response_text,
+                elapsed,
+                usage,
+                provider,
+                model,
+                chat_request,
+                request_body,
             )
+            payload["messages"] = list_chat_messages()
+            return jsonify(payload)
 
         def generate():
             started = time.monotonic()
             usage = {"prompt_tokens": 0, "completion_tokens": 0}
             response_text = ""
             try:
-                if split_needed:
-                    yield f"data: {json.dumps({'type': 'status', 'text': 'Converting attachment…'})}\n\n"
-                    video_attachments = []
-                    audio_attachments = []
-                    for item in (attachments or []):
-                        if not isinstance(item, dict):
-                            video_attachments.append(item)
-                            continue
-                        if item.get("type") == "video":
-                            video_attachments.append(_convert_video_attachment(item))
-                            if item.get("attach_audio") and _video_has_audio(item.get("data", "")):
-                                audio_att = _extract_video_audio_attachment(item)
-                                if audio_att is not None:
-                                    audio_attachments.append(audio_att)
-                        elif item.get("type") == "audio":
-                            audio_attachments.append(_convert_audio_attachment(item))
-                        else:
-                            video_attachments.append(item)
-                    yield f"data: {json.dumps({'type': 'status', 'text': 'thinking…'})}\n\n"
-                    audio_messages = [dict(m) for m in messages]
-                    for index in range(len(audio_messages) - 1, -1, -1):
-                        if audio_messages[index].get("role") == "user":
-                            audio_messages[index]["content"] = "Analyze the attached audio: transcribe any spoken words, and if there is no speech, describe the audio content (music, sounds, or noise)."
-                            break
-                    text1, usage1 = self.service.chat_completion_with_params(
-                        provider,
-                        model,
-                        messages,
-                        **request_parameters,
-                        extra_parameters=extra_parameters,
-                        attachments=video_attachments,
-                    )
-                    text2 = ""
-                    usage2 = {"prompt_tokens": 0, "completion_tokens": 0}
-                    if audio_attachments:
-                        text2, usage2 = self.service.chat_completion_with_params(
-                            provider,
-                            model,
-                            audio_messages,
-                            **request_parameters,
-                            extra_parameters=extra_parameters,
-                            attachments=audio_attachments,
-                        )
-                    response_text = text1
-                    if text2:
-                        response_text = f"{text1}\n\nAudio transcription:\n{text2}"
-                    usage = {
-                        "prompt_tokens": usage1.get("prompt_tokens", 0) + usage2.get("prompt_tokens", 0),
-                        "completion_tokens": usage1.get("completion_tokens", 0) + usage2.get("completion_tokens", 0),
+                if needs_conversion:
+                    status = {
+                        "type": "status",
+                        "text": "Converting attachment…",
                     }
-                    request_body = _build_chat_request_body(
+                    yield f"data: {json.dumps(status)}\n\n"
+                plan = _prepare_attachment_plan(chat_request.attachments, messages)
+                if needs_conversion:
+                    status = {"type": "status", "text": "thinking…"}
+                    yield f"data: {json.dumps(status)}\n\n"
+                request_body = _build_plan_request_body(
+                    self.service,
+                    provider,
+                    model,
+                    plan,
+                    request_parameters,
+                    chat_request.extra_parameters,
+                )
+                if plan.split:
+                    response_text, usage = _complete_attachment_plan(
                         self.service,
                         provider,
                         model,
-                        messages,
+                        plan,
                         request_parameters,
-                        extra_parameters,
-                        attachments=video_attachments,
+                        chat_request.extra_parameters,
                     )
-                    audio_request_body = None
-                    if audio_attachments:
-                        audio_request_body = _build_chat_request_body(
-                            self.service,
-                            provider,
-                            model,
-                            audio_messages,
-                            request_parameters,
-                            extra_parameters,
-                            attachments=audio_attachments,
-                        )
-                    if audio_request_body:
-                        request_body = {
-                            "video_request": request_body,
-                            "audio_request": audio_request_body,
-                        }
                 else:
-                    converted_attachments = attachments
-                    if needs_conversion:
-                        yield f"data: {json.dumps({'type': 'status', 'text': 'Converting attachment…'})}\n\n"
-                        converted_attachments = _process_attachments(attachments)
-                        yield f"data: {json.dumps({'type': 'status', 'text': 'thinking…'})}\n\n"
-                    request_body = _build_chat_request_body(
-                        self.service,
-                        provider,
-                        model,
-                        messages,
-                        request_parameters,
-                        extra_parameters,
-                        attachments=converted_attachments,
-                    )
                     for event in self.service.chat_completion_with_params_stream(
                         provider,
                         model,
-                        messages,
+                        plan.primary_messages,
                         **request_parameters,
-                        extra_parameters=extra_parameters,
-                        attachments=converted_attachments,
+                        extra_parameters=chat_request.extra_parameters,
+                        attachments=plan.primary_attachments,
                     ):
                         if event.get("type") == "chunk":
                             response_text += event.get("text", "")
@@ -1065,23 +1128,20 @@ class ChatController:
                     response_time=elapsed,
                     input_tokens=usage.get("prompt_tokens", 0),
                     output_tokens=usage.get("completion_tokens", 0),
-                    system_prompt=system_prompt,
-                    saved_system_prompt_name=saved_name,
+                    system_prompt=chat_request.system_prompt,
+                    saved_system_prompt_name=chat_request.saved_prompt_name,
                     request_body=json.dumps(request_body),
                 )
-                payload = {
-                    "type": "result",
-                    "response": response_text,
-                    "response_html": render_markdown_html(response_text),
-                    "time": elapsed,
-                    "input_tokens": usage.get("prompt_tokens", 0),
-                    "output_tokens": usage.get("completion_tokens", 0),
-                    "provider": provider,
-                    "model": model,
-                    "saved_system_prompt_name": saved_name,
-                    "system_prompt": system_prompt,
-                    "request_body": json.dumps(request_body),
-                }
+                payload = _chat_result_payload(
+                    response_text,
+                    elapsed,
+                    usage,
+                    provider,
+                    model,
+                    chat_request,
+                    request_body,
+                    event_type="result",
+                )
                 yield f"data: {json.dumps(payload)}\n\n"
             except Exception as error:  # noqa: BLE001
                 current_app.logger.exception(
@@ -1120,9 +1180,7 @@ class ChatController:
         try:
             for key, (converter, label) in CHAT_PARAMETER_CONVERTERS.items():
                 if key in data:
-                    settings[key] = _optional_parameter(
-                        data[key], label, converter
-                    )
+                    settings[key] = _optional_parameter(data[key], label, converter)
         except ValueError as error:
             return jsonify({"error": str(error)}), 400
         save_chat_settings(settings)
@@ -1155,7 +1213,11 @@ class ChatController:
     def abort(self):
         messages = list_chat_messages()
         filenames = []
-        if messages and isinstance(messages[-1], dict) and messages[-1].get("role") == "user":
+        if (
+            messages
+            and isinstance(messages[-1], dict)
+            and messages[-1].get("role") == "user"
+        ):
             filenames = _preview_filenames_from_messages([messages[-1]])
         in_use = set()
         for message in messages[:-1]:
@@ -1189,7 +1251,9 @@ class ChatController:
             return jsonify({"error": "Chat name is required."}), 400
         if not load_saved_chat(name):
             return jsonify({"error": "Saved chat not found."}), 404
-        return jsonify({"message": "Chat loaded.", "name": name, "messages": list_chat_messages()})
+        return jsonify(
+            {"message": "Chat loaded.", "name": name, "messages": list_chat_messages()}
+        )
 
     def delete_chat(self):
         data = request.get_json(silent=True) or {}
@@ -1233,7 +1297,9 @@ class ChatController:
         content = get_saved_system_prompt(name)
         if content is None:
             return jsonify({"error": "Saved system prompt not found."}), 404
-        return jsonify({"message": "System prompt loaded.", "name": name, "content": content})
+        return jsonify(
+            {"message": "System prompt loaded.", "name": name, "content": content}
+        )
 
     def delete_system_prompt(self):
         data = request.get_json(silent=True) or {}

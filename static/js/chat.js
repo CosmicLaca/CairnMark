@@ -52,10 +52,19 @@
     const attachAudioSwitch = document.querySelector("[data-chat-attach-audio]");
     const modelNctxEl = document.querySelector("[data-chat-model-nctx]");
     const attachmentSettings = window.CairnmarkChatAttachmentSettings || {};
+    const attachmentPreferences = new window.CairnmarkChatAttachmentPreferences({
+        api,
+        initial: attachmentSettings,
+        controls: {
+            save_original_media: saveOriginalSwitch,
+            attach_audio: attachAudioSwitch,
+        },
+        onError: (error) => {
+            window.alert(`Attachment preference could not be saved: ${error}`);
+        },
+    });
     let moreParamsModelKey = "";
     const pendingAttachments = [];
-    let saveOriginalMedia = Boolean(attachmentSettings.save_original_media);
-    let attachAudioEnabled = Boolean(attachmentSettings.attach_audio);
     const renderMarkdown = window.CairnmarkMarkdown.render;
 
     // Toggle state per message
@@ -291,46 +300,6 @@
             }
         });
     }
-
-    const setSaveOriginalState = (enabled) => {
-        saveOriginalMedia = enabled;
-        if (saveOriginalSwitch) {
-            saveOriginalSwitch.setAttribute("aria-checked", enabled ? "true" : "false");
-        }
-    };
-
-    const persistAttachmentSettings = (settings) => {
-        api.json("/chat/save_attachment_settings", {
-            method: "POST",
-            body: settings,
-        }).catch((error) => {
-            window.alert(`Attachment preference could not be saved: ${error}`);
-        });
-    };
-
-    if (saveOriginalSwitch) {
-        saveOriginalSwitch.addEventListener("click", () => {
-            setSaveOriginalState(!saveOriginalMedia);
-            persistAttachmentSettings({ save_original_media: saveOriginalMedia });
-        });
-    }
-
-    const setAttachAudioState = (enabled) => {
-        attachAudioEnabled = enabled;
-        if (attachAudioSwitch) {
-            attachAudioSwitch.setAttribute("aria-checked", enabled ? "true" : "false");
-        }
-    };
-
-    if (attachAudioSwitch) {
-        attachAudioSwitch.addEventListener("click", () => {
-            setAttachAudioState(!attachAudioEnabled);
-            persistAttachmentSettings({ attach_audio: attachAudioEnabled });
-        });
-    }
-
-    setSaveOriginalState(saveOriginalMedia);
-    setAttachAudioState(attachAudioEnabled);
 
     const syncEmptyState = () => {
         if (!historyEl || !emptyStateEl) return;
@@ -681,12 +650,12 @@
             return;
         }
         const userPreviewImages = pendingAttachments
-            .filter((attachment) => (attachment.type === "image" || attachment.type === "video") && attachment.previewUrl && !saveOriginalMedia)
+            .filter((attachment) => (attachment.type === "image" || attachment.type === "video") && attachment.previewUrl && !attachmentPreferences.get("save_original_media"))
             .map((attachment) => attachment.previewUrl);
         const hasAudioAttachment = pendingAttachments.some(
             (attachment) => attachment.type === "audio"
         );
-        const immediateMedia = saveOriginalMedia
+        const immediateMedia = attachmentPreferences.get("save_original_media")
             ? pendingAttachments
                 .filter((attachment) => attachment.type === "video" || attachment.type === "audio")
                 .map((attachment) => ({
@@ -697,8 +666,8 @@
             : [];
         const userMessageEl = appendMessage("user", message, {
             preview_images: userPreviewImages,
-            has_audio: hasAudioAttachment && !saveOriginalMedia,
-            save_original_media: saveOriginalMedia,
+            has_audio: hasAudioAttachment && !attachmentPreferences.get("save_original_media"),
+            save_original_media: attachmentPreferences.get("save_original_media"),
             preview_media: immediateMedia,
         });
         if (inputEl) inputEl.value = "";
@@ -715,10 +684,10 @@
                 data: attachment.data,
                 mime_type: attachment.mime,
                 preview_data: attachment.previewData || undefined,
-                attach_audio: attachment.type === "video" ? attachAudioEnabled : undefined,
+                attach_audio: attachment.type === "video" ? attachmentPreferences.get("attach_audio") : undefined,
                 original_name: attachment.name,
             }));
-            requestBody.save_original_media = saveOriginalMedia;
+            requestBody.save_original_media = attachmentPreferences.get("save_original_media");
         }
 
         const controller = new AbortController();

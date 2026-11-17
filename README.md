@@ -1,7 +1,7 @@
 # Cairnmark
 
-> A private, local workspace for chatting with language models and creating,
-> organizing, running, and reviewing benchmark prompt sets.
+> A private, local workspace for chatting with AI models and creating,
+> organizing, and running benchmark prompt sets.
 
 **Preview release · single user · localhost only**
 
@@ -9,43 +9,46 @@ Created by Primere Development · [GitHub repository](https://github.com/CosmicL
 
 ---
 
-## Start here
+## What Cairnmark does
 
-Cairnmark connects local and hosted AI models in one browser interface. It can:
+Cairnmark brings local and hosted model providers into one browser interface.
+You can:
 
-- chat with an enabled model and save conversations and system prompts;
-- generate benchmark JSON from topics and instructions;
-- organize benchmark files by category and difficulty;
-- run every request in a benchmark against a selected model; and
-- save model answers, timing data, and optional Markdown logs locally.
+- chat with an enabled model, attach supported files, and save useful chats;
+- generate benchmark JSON from topics and custom instructions;
+- categorize, filter, inspect, and edit benchmark metadata;
+- run benchmark requests sequentially against a selected model; and
+- store answers, response times, and optional Markdown logs locally.
 
-Benchmark files remain readable JSON. Settings, metadata, and chat history are
-stored in local SQLite databases. Provider API keys are encrypted at rest.
+Benchmark files stay as readable JSON. Application settings and chat data use
+local SQLite databases. Hosted-provider API keys are encrypted at rest.
 
-> **Important:** Evaluation, result history, and export are under development.
-> They are visible only when Cairnmark starts with `--dev` and are not working
-> product features yet.
+> **Preview limitation**
+>
+> Evaluation, result history, and export are under development. Their pages
+> appear only in development mode and are not working product features.
 
-## Contents
+## Quick navigation
 
-- [Install and run](#install-and-run)
-- [First-use workflow](#first-use-workflow)
-- [Set up models](#set-up-models)
-- [Use chat](#use-chat)
-- [Create a benchmark](#create-a-benchmark)
-- [Organize and inspect benchmarks](#organize-and-inspect-benchmarks)
-- [Run a benchmark](#run-a-benchmark)
-- [Benchmark JSON format](#benchmark-json-format)
-- [Files, privacy, and backups](#files-privacy-and-backups)
-- [Troubleshooting](#troubleshooting)
-- [Developer notes](#developer-notes)
-- [Roadmap](#roadmap)
-- [License](#license)
+| I want to… | Go to |
+| --- | --- |
+| Connect a model | [Set up a provider](#1-set-up-a-provider) |
+| Test a model interactively | [Chat on Home](#2-chat-on-home) |
+| Generate a benchmark file | [Create a benchmark](#3-create-a-benchmark) |
+| Find or edit benchmark metadata | [Browse benchmark files](#4-browse-benchmark-files) |
+| Run requests and record answers | [Run a benchmark](#5-run-a-benchmark) |
+| Back up or move local data | [Data, privacy, and backups](#data-privacy-and-backups) |
+| Fix a common problem | [Troubleshooting](#troubleshooting) |
 
-## Install and run
+## Install and start
 
-You need Python 3.14, Git if cloning the repository, and at least one local
-model server or hosted-provider API key.
+### Requirements
+
+- Python 3.14;
+- Git, if you clone the repository;
+- at least one local model server or hosted-provider API key; and
+- FFmpeg on `PATH` for video/audio conversion. Cairnmark still starts without
+  FFmpeg, but media conversion and audio extraction may be unavailable.
 
 ### Windows 11
 
@@ -70,7 +73,7 @@ python -m pip install -r requirements.txt
 ```
 
 Open [http://127.0.0.1:5000](http://127.0.0.1:5000). Keep the launcher terminal
-open; press **Ctrl+C** to stop the application.
+open. Press **Ctrl+C** to stop Cairnmark.
 
 To use another port:
 
@@ -83,155 +86,187 @@ $env:PORT = "5050"
 PORT=5050 ./run.sh
 ```
 
-## First-use workflow
+> Cairnmark intentionally binds only to `127.0.0.1`. It is designed for one
+> user on one computer, not as a network or hosted service.
 
-1. Open **Setup models** and configure a provider.
-2. Enable the provider and at least one discovered model.
-3. Use **Home** to test the model in chat.
-4. Open **Create benchmark JSON**, choose topics, and generate a benchmark.
-5. Open **Run benchmark** to review its metadata and contents.
-6. Select **Create benchmark** on its card, choose a model, and run it.
-7. Inspect the appended `answers` entries or optional Markdown log.
+## First session in five steps
 
-## Interface map
+1. Open **Setup models** and save a provider connection.
+2. Enable the provider and, where shown, enable at least one model.
+3. Open **Home** and send a test message.
+4. Open **Create benchmark JSON** and generate a small benchmark.
+5. Open **Run benchmark**, inspect the file, and run it against an enabled
+   model.
 
-| Page | What it does |
+## Interface overview
+
+| Page | Purpose |
 | --- | --- |
-| **Home** | Chat, attachments, saved chats, prompts, and generation settings |
-| **Create benchmark JSON** | Generate a new benchmark from topics and instructions |
+| **Home** | Chat, attachments, saved chats, system prompts, and generation settings |
+| **Create benchmark JSON** | Generate benchmark JSON from topics and instructions |
 | **Run benchmark** | Filter, inspect, organize, edit, and run benchmark files |
-| **Setup models** | Configure providers and enable models |
-| **About** | Display this manual inside Cairnmark |
+| **Setup models** | Configure providers and choose active models |
+| **About** | Read this manual inside Cairnmark |
 
 The sidebar can collapse to an icon rail. In expanded mode, drag its right edge
-to resize it, use arrow keys while the resize handle is focused, or double-click
-the handle to restore its default width. The browser remembers the layout.
+to resize it. With the resize handle focused, use the arrow keys, or
+double-click the handle to restore its default width. The browser remembers the
+layout.
 
-## Set up models
+---
 
-<img src="manual/setup-models.jpg" width="75%">
+## 1. Set up a provider
+
+<p align="center"><img src="manual/setup-models.jpg" width="78%" alt="Setup models page"></p>
 
 Cairnmark supports two local providers and ten hosted providers.
 
-| Provider | Setup |
+| Provider | Connection and model behavior |
 | --- | --- |
-| llama.cpp | Local address and port; discovers and saves multiple models |
-| vLLM | Local address and port; reads the single loaded model live |
-| OpenRouter, OpenAI, Google Gemini, Anthropic, Mistral | API key and discovered catalog |
-| DeepSeek, OpenCode, OpenCode-ZEN, Z.ai, Grok | API key and discovered catalog |
+| **llama.cpp** | Enter a local address and port; discovers and saves multiple models |
+| **vLLM** | Enter a local address and port; reads its one loaded model live |
+| **OpenRouter, OpenAI, Google Gemini, Anthropic, Mistral** | Enter an API key and fetch the provider catalog |
+| **DeepSeek, OpenCode, OpenCode-ZEN, Z.ai, Grok** | Enter an API key and fetch the provider catalog |
 
-For each provider:
+### Connect and enable
 
-1. Select its card on **Setup models**.
+1. Select a provider card on **Setup models**.
 2. Enter the local endpoint or hosted API key.
-3. Fetch the model catalog and save the configuration.
-4. Switch on the provider.
-5. For providers with saved catalogs, switch on the models you want to use.
+3. Fetch the catalog and save the configuration.
+4. Turn on the provider.
+5. For providers with saved catalogs, turn on each model you want to use.
 
-<img src="manual/setup-server.jpg" width="75%">
+<p align="center"><img src="manual/setup-server.jpg" width="78%" alt="Provider connection dialog"></p>
 
-A model appears elsewhere only when both its provider and model switch are
-enabled. An unreachable provider cannot remain enabled. vLLM is different: its
-loaded model is queried live and has no separate saved model switch.
+A model appears on other pages only when its provider and model are enabled.
+An unreachable provider cannot remain enabled. vLLM is the exception: Cairnmark
+queries its loaded model live, so vLLM has no separate saved model switch.
 
 API keys are never returned to the browser after saving. They are encrypted in
-`instance/cairnmark.db` using the key in `.secret/`.
+`instance/cairnmark.db` with the key stored under `.secret/`.
 
-## Use chat
+---
 
-<img src="manual/homepage.jpg" width="75%">
+## 2. Chat on Home
 
-Open **Home**, select an active model, enter a message, and choose **Send**.
-During generation, **Abort** requests cancellation.
+<p align="center"><img src="manual/homepage.jpg" width="78%" alt="Chat home page"></p>
 
-### Generation controls
+1. Choose an active model in **Chat setup**.
+2. Optionally change the system prompt or generation controls.
+3. Enter a message and select **Send**.
+4. During generation, select **Abort** to request cancellation.
 
-The setup controls include the system prompt, temperature, top p, top k, seed,
-and recent-message limit. **Save setup** stores only these standard fields as
-the next page-load defaults. Additional model parameters are temporary:
+### Standard generation controls
 
-- **Save** in the parameter dialog keeps them for following requests on the
-  current page;
-- **Cancel** removes them; and
-- deleting cached local defaults makes the next dialog open read them again
-  from the local provider.
+The standard fields are system prompt, temperature, top p, top k, seed, and
+recent-message limit. **Save setup** stores only the selected model and these
+standard fields as defaults for the next page load.
 
-Only allowlisted sampling fields are forwarded to llama.cpp and vLLM. Hosted
-providers ignore additional local-model parameter values.
+The additional-parameters dialog is session-only:
 
-### Attachments and saved data
+- **Save** keeps its current inputs for later requests on the same page;
+- **Cancel** removes those inputs; and
+- **Delete from local DB** removes cached defaults for a local model, so the
+  next open reads and caches fresh values from the provider.
 
-Documents are always available. Image, video, and audio controls appear when a
-selected local model reports the matching capability. Large images are resized
-before sending. Attached video is re-encoded to MP4, scaled to a 480-pixel
-maximum side, 2 frames per second, and lower quality before sending. Its audio
-track is dropped by default; use the "Attach audio" switch to keep it. The
-"Save the original attachment" switch stores the converted video/audio in
-instance/preview and shows them as players in the chat bubble. Attached audio is
-converted to a 64 kbit/s MP3 when needed. Attachments up to 100 MB
-are accepted. Small image previews are
-stored in `instance/preview/`; only their filenames are stored in chat history.
+Only allowlisted local sampling fields are forwarded to llama.cpp and vLLM.
+Hosted providers ignore these additional local-model values.
 
-- **Save chat** stores or replaces a named conversation.
-- **Saved chats** loads or deletes stored conversations.
+### Attach files
+
+The document button is always available. Image, video, and audio buttons appear
+when the selected local model reports those capabilities.
+
+| Attachment | Processing |
+| --- | --- |
+| Image | Images above 1.2 megapixels are resized before sending |
+| Video | Re-encoded as MP4, scaled to a 480 px maximum side, reduced to 2 fps, and sent without audio by default |
+| Audio | Converted to a 64 kbit/s MP3 when conversion is available |
+
+The maximum submitted attachment size is 100 MB, with up to eight attachments
+per request.
+
+- **Attach audio** extracts a video's audio and analyzes it in a separate model
+  request when necessary.
+- **Save the original attachment** saves the processed video/audio under
+  `instance/preview/` so a player remains available in chat history.
+
+Both switches remember their last-used values in `instance/cairnmark.db`. Their
+values remain selected after removing or sending an attachment and after
+restarting Cairnmark.
+
+Small image previews are stored in `instance/preview/`; chat history stores only
+their randomized filenames.
+
+### Save chat content
+
+- **Save chat** creates or replaces a named conversation.
+- **Saved chats** loads or deletes a stored conversation.
 - **Clear chat** clears the current conversation.
 - Saved system prompts can be created, loaded, and deleted separately.
 
-## Create a benchmark
+---
 
-<img src="manual/create-benchmark.jpg" width="75%">
+## 3. Create a benchmark
 
-Open **Create benchmark JSON** and complete these fields:
+<p align="center"><img src="manual/create-benchmark.jpg" width="78%" alt="Create benchmark page"></p>
 
-1. **Category** — select one or create a new category.
+Open **Create benchmark JSON**, then configure:
+
+1. **Category** — choose an existing category or create one.
 2. **Difficulty** — choose Easy, Normal, or Hard.
-3. **Model** — select an enabled `provider::model` entry.
-4. **Topics** — add topic names and pair counts (1–100 per topic).
-5. **Prompt customization** — optionally edit the system prompt and creation
-   details shown before generation.
+3. **Model** — choose an enabled `provider::model` entry.
+4. **Topics** — add topic names and request/response pair counts (1–100 per
+   topic).
+5. **Prompt customization** — optionally edit the system prompt and generation
+   details.
 
-Select **Create benchmark**. Progress is reported as the model completes topics
-and pairs. On success, Cairnmark atomically saves the JSON, records its metadata,
-and shows it on **Run benchmark**.
+Select **Create benchmark**. Cairnmark reports progress as the model completes
+topics and pairs. On success it atomically saves the JSON, records metadata,
+and displays the file on **Run benchmark**.
 
-Generated filenames retain the application's historical spelling:
+Generated filenames keep the application's historical spelling:
 
 ```text
 Benchamrk-prompts-YYYYMMDDHHMM-Category-Difficulty.json
 ```
 
-## Organize and inspect benchmarks
+---
 
-<img src="manual/view-benchmark.jpg" width="75%">
+## 4. Browse benchmark files
 
-Place imported `.json` files directly in `Benchmark-prompts/` and reload **Run
-benchmark**. Nested directories are not scanned.
+<p align="center"><img src="manual/view-benchmark.jpg" width="78%" alt="Benchmark browser"></p>
+
+Place imported `.json` files directly in `Benchmark-prompts/`, then reload
+**Run benchmark**. Nested directories are not scanned.
 
 Use category tabs and difficulty controls to filter cards. A file without saved
 metadata appears under **Uncategorized** with **Normal** difficulty.
 
 - Select the filename area to edit category, difficulty, notes, generation
-  prompt, and source model metadata.
-- Select **View benchmark** to open its request-response accordion.
-- Edit a reference response in the preview when correction is needed.
-- Metadata changes do not move or rewrite the benchmark file.
+  prompt, and source-model metadata.
+- Select **View benchmark** to open the request/response accordion.
+- Edit a reference response in the preview when it needs correction.
+- Metadata changes do not move or rewrite the benchmark JSON file.
 
-## Run a benchmark
+---
 
-<img src="manual/run-benchmark.jpg" width="75%">
+## 5. Run a benchmark
 
-Select **Create benchmark** on a benchmark card.
+<p align="center"><img src="manual/run-benchmark.jpg" width="78%" alt="Benchmark runner"></p>
+
+Select **Create benchmark** on a benchmark card to open the runner.
 
 1. Choose an enabled model.
 2. Review the prompt loaded from `System-prompts/run_benchmark-SYSTEM.md`.
 3. Optionally enable **Create log**.
-4. Select **Run benchmark** and leave the page open until it finishes.
+4. Select **Run benchmark** and keep the page open until processing finishes.
 
-Cairnmark processes requests sequentially. It sends only the `request` text and
-processed system prompt. The expected `response` and all other benchmark keys
-are withheld from the model.
+Cairnmark runs requests sequentially. It sends only each `request` and the
+processed system prompt. It never sends the expected `response` or any other
+benchmark key to the model.
 
-Each result is appended to the request's `answers` array:
+Each result is appended to that request's `answers` array:
 
 ```json
 {
@@ -241,14 +276,13 @@ Each result is appended to the request's `answers` array:
 }
 ```
 
-The source JSON is replaced atomically and unrelated keys are preserved. If
-logging is enabled, a readable `.md` file is written under
-`Benchmark-prompts/logs/`.
+The source JSON is replaced atomically, and keys Cairnmark does not use are
+preserved. Optional Markdown logs are written to `Benchmark-prompts/logs/`.
 
 ## Benchmark JSON format
 
-Cairnmark expects a top-level array of named topic objects. Each topic contains
-a `benchmarks` array:
+The expected document is a top-level array of named topic objects. Each topic
+contains a `benchmarks` array:
 
 ```json
 [
@@ -266,43 +300,66 @@ a `benchmarks` array:
 ]
 ```
 
-Extra keys such as `answer_type` are allowed and preserved when results save.
+Extra keys such as `answer_type` are allowed and remain intact when results are
+saved.
 
-## Files, privacy, and backups
+---
+
+## Data, privacy, and backups
 
 | Location | Contents |
 | --- | --- |
 | `Benchmark-prompts/` | Benchmark JSON and appended run answers |
 | `Benchmark-prompts/logs/` | Optional run logs |
 | `System-prompts/` | Editable default prompt templates |
-| `instance/cairnmark.db` | Metadata, providers, encrypted keys, chat defaults |
-| `instance/chathistory.db` | Current and saved chats and system prompts |
+| `instance/cairnmark.db` | Benchmark metadata, providers, encrypted keys, chat defaults, and attachment preferences |
+| `instance/chathistory.db` | Current chat, saved chats, and saved system prompts |
 | `instance/parameters.db` | Cached local-model generation defaults |
-| `instance/preview/` | Image previews used by chat history |
+| `instance/preview/` | Chat image and media previews |
 | `.secret/` | Local API-key encryption key |
 
-Cairnmark binds to `127.0.0.1` and is designed for one user on one machine.
-Content sent to hosted models remains subject to that provider's policies.
+Content sent to hosted models is subject to that provider's terms and privacy
+policy.
 
-For a complete backup, stop Cairnmark and copy `Benchmark-prompts/`,
-`System-prompts/`, `instance/`, and `.secret/` together. The database and
-encryption key must stay paired. Do not publish these directories.
+### Make a complete backup
+
+1. Stop Cairnmark.
+2. Copy `Benchmark-prompts/`, `System-prompts/`, `instance/`, and `.secret/`
+   together.
+3. Keep `instance/cairnmark.db` and `.secret/` paired; saved API keys cannot be
+   decrypted without the matching key.
+
+Do not publish these directories. They may contain prompts, model responses,
+provider configuration, and credentials.
 
 ## Troubleshooting
 
 ### A model does not appear
 
-Confirm the configuration is saved, the provider is reachable and enabled, and
-the model switch is enabled. For vLLM, confirm its server has one model loaded.
+Confirm that the configuration is saved, the provider is reachable and
+enabled, and the model switch is enabled. For vLLM, confirm its server has one
+model loaded.
 
-### A JSON file does not appear or display
+### A benchmark file does not appear
 
-Confirm that it has a `.json` extension, is directly in `Benchmark-prompts/`,
-and contains valid JSON in the documented shape. Reload the page afterward.
+Confirm that it:
+
+- has a `.json` extension;
+- is directly inside `Benchmark-prompts/`, not a nested folder; and
+- contains valid JSON in the documented structure.
+
+Reload the page after correcting the file.
+
+### Video or audio conversion does not work
+
+Install the FFmpeg executable and confirm `ffmpeg` is available on `PATH` from
+the same terminal that starts Cairnmark. The Python package in
+`requirements.txt` is a wrapper and does not install the FFmpeg executable.
 
 ### Port 5000 is already in use
 
-Stop the earlier process or launch on another `PORT`, as shown above.
+Stop the earlier process or start Cairnmark with another `PORT`, as shown in
+[Install and start](#install-and-start).
 
 ### Enable debug logging
 
@@ -317,15 +374,15 @@ CAIRNMARK_LOG_LEVEL=DEBUG ./run.sh
 
 Provider keys and request content are not written to application logs.
 
-## Developer notes
+## Developer reference
 
-Show unfinished pages locally with:
+Show unfinished pages locally:
 
 ```powershell
 .\venv\Scripts\python.exe app.py --dev
 ```
 
-Run tests with isolated databases and benchmark directories:
+Run the isolated automated suite:
 
 ```powershell
 .\venv\Scripts\python.exe -m pytest -q
@@ -335,21 +392,35 @@ Run tests with isolated databases and benchmark directories:
 venv/bin/python -m pytest -q
 ```
 
-`app.py` owns the Flask factory, `routes.py` declares URLs, controllers translate
-HTTP requests, services own business and provider protocol rules, and models own
-SQLite. Benchmark filesystem operations live in
-`services/benchmark_documents.py`.
+### Code map
+
+| Area | Responsibility |
+| --- | --- |
+| `app.py` | Application factory and local launcher |
+| `routes.py` | Declarative public URL mapping |
+| `controllers/` | HTTP validation, responses, and page context |
+| `services/` | Provider protocols and reusable business rules |
+| `models/` | SQLite persistence boundary |
+| `services/benchmark_documents.py` | Benchmark discovery and atomic file operations |
+| `templates/` | Jinja page structure |
+| `static/js/` | Browser behavior |
+| `static/css/` | Shared shell and route-specific styling |
+
+Tests use temporary databases, benchmark directories, and mocked provider
+clients. They must not require live local or hosted model services.
 
 ## Roadmap
 
-The following are planned, not available:
+Planned but not currently available:
 
 - evaluate recorded answers against reference responses;
 - browse previous runs and scores; and
 - export benchmark results.
 
 Authentication, hosted multi-user deployment, and production service mode are
-outside the current local, single-user scope.
+outside Cairnmark's current local, single-user scope.
+
+---
 
 ## License
 

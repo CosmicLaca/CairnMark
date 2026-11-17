@@ -43,9 +43,42 @@ def _database_path():
     return Path(current_app.config["DATABASE_PATH"])
 
 
+def _ensure_schema(connection):
+    """Create or migrate provider tables on an open connection."""
+    connection.execute(SCHEMA)
+    connection.execute(INDEX)
+    connection.execute(PROVIDER_SCHEMA)
+    provider_columns = {
+        row[1]
+        for row in connection.execute(
+            "PRAGMA table_info(provider_configurations)"
+        ).fetchall()
+    }
+    if "api_key" not in provider_columns:
+        connection.execute(
+            "ALTER TABLE provider_configurations ADD COLUMN api_key TEXT"
+        )
+    model_columns = {
+        row[1]
+        for row in connection.execute(
+            "PRAGMA table_info(model_configurations)"
+        ).fetchall()
+    }
+    if "size_gb" not in model_columns:
+        connection.execute(
+            "ALTER TABLE model_configurations ADD COLUMN size_gb INTEGER"
+        )
+    connection.commit()
+
+
 def _connect():
-    """Open the configured SQLite database."""
-    return sqlite3.connect(_database_path())
+    """Open the configured database and restore a missing schema."""
+    database_path = _database_path()
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(database_path)
+    connection.execute("PRAGMA busy_timeout = 5000")
+    _ensure_schema(connection)
+    return connection
 
 
 def init_model_storage(app):
@@ -53,30 +86,8 @@ def init_model_storage(app):
     database_path = Path(app.config["DATABASE_PATH"])
     database_path.parent.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(database_path)) as connection:
-        connection.execute(SCHEMA)
-        connection.execute(INDEX)
-        connection.execute(PROVIDER_SCHEMA)
-        provider_columns = {
-            row[1]
-            for row in connection.execute(
-                "PRAGMA table_info(provider_configurations)"
-            ).fetchall()
-        }
-        if "api_key" not in provider_columns:
-            connection.execute(
-                "ALTER TABLE provider_configurations ADD COLUMN api_key TEXT"
-            )
-        model_columns = {
-            row[1]
-            for row in connection.execute(
-                "PRAGMA table_info(model_configurations)"
-            ).fetchall()
-        }
-        if "size_gb" not in model_columns:
-            connection.execute(
-                "ALTER TABLE model_configurations ADD COLUMN size_gb INTEGER"
-            )
-        connection.commit()
+        connection.execute("PRAGMA busy_timeout = 5000")
+        _ensure_schema(connection)
 
 
 def save_model_list(models, provider_name="llama.cpp"):

@@ -12,8 +12,6 @@ from pathlib import Path
 
 from flask import current_app
 
-import json as _json
-
 from config import PROJECT_ROOT
 
 
@@ -111,7 +109,7 @@ def _parse_preview_images(value):
     if isinstance(value, list):
         return value
     try:
-        parsed = _json.loads(value)
+        parsed = json.loads(value)
     except (ValueError, TypeError):
         return [part for part in str(value).split(",") if part.strip()]
     if isinstance(parsed, list):
@@ -127,7 +125,7 @@ def _parse_preview_media(value):
     if isinstance(value, list):
         return value
     try:
-        parsed = _json.loads(value)
+        parsed = json.loads(value)
     except (ValueError, TypeError):
         return []
     if isinstance(parsed, list):
@@ -180,8 +178,7 @@ def _migrate_chat_messages(connection):
 def _migrate_chat_settings(connection):
     """Rebuild chat settings so every numeric parameter can be unset."""
     existing = {
-        row[1]: row
-        for row in connection.execute("PRAGMA table_info(chat_settings)")
+        row[1]: row for row in connection.execute("PRAGMA table_info(chat_settings)")
     }
     if not existing:
         return
@@ -197,44 +194,31 @@ def _migrate_chat_settings(connection):
         return
 
     select_columns = ", ".join(
-        column
-        if column in existing
-        else CHAT_SETTINGS_DEFAULT_SQL[column]
+        column if column in existing else CHAT_SETTINGS_DEFAULT_SQL[column]
         for column in CHAT_SETTINGS_COLUMNS
     )
     connection.execute("DROP TABLE IF EXISTS chat_settings_new")
-    connection.execute(
-        f"CREATE TABLE chat_settings_new ({CHAT_SETTINGS_COLUMNS_SQL})"
-    )
+    connection.execute(f"CREATE TABLE chat_settings_new ({CHAT_SETTINGS_COLUMNS_SQL})")
     connection.execute(
         f"INSERT INTO chat_settings_new ({', '.join(CHAT_SETTINGS_COLUMNS)}) "
         f"SELECT {select_columns} FROM chat_settings"
     )
     connection.execute("DROP TABLE chat_settings")
-    connection.execute(
-        "ALTER TABLE chat_settings_new RENAME TO chat_settings"
-    )
+    connection.execute("ALTER TABLE chat_settings_new RENAME TO chat_settings")
 
 
-def _connect():
-    database_path = _database_path()
+def _connect(settings=False):
+    """Open and migrate either chat database selected by ``settings``."""
+    database_path = _settings_database_path() if settings else _database_path()
     database_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(database_path)
-    connection.executescript(CHAT_SCHEMA)
-    _migrate_chat_messages(connection)
-    connection.commit()
-    return connection
-
-
-def _settings_connect():
-    """Open the main database and ensure the chat settings table exists."""
-    database_path = _settings_database_path()
-    database_path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(database_path)
-    connection.executescript(
-        CHAT_SETTINGS_SCHEMA + CHAT_ATTACHMENT_SETTINGS_SCHEMA
-    )
-    _migrate_chat_settings(connection)
+    connection.execute("PRAGMA busy_timeout = 5000")
+    if settings:
+        connection.executescript(CHAT_SETTINGS_SCHEMA + CHAT_ATTACHMENT_SETTINGS_SCHEMA)
+        _migrate_chat_settings(connection)
+    else:
+        connection.executescript(CHAT_SCHEMA)
+        _migrate_chat_messages(connection)
     connection.commit()
     return connection
 
@@ -253,9 +237,8 @@ def init_chat_storage(app):
     settings_path = Path(app.config["DATABASE_PATH"])
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(settings_path)) as connection:
-        connection.executescript(
-            CHAT_SETTINGS_SCHEMA + CHAT_ATTACHMENT_SETTINGS_SCHEMA
-        )
+        connection.execute("PRAGMA busy_timeout = 5000")
+        connection.executescript(CHAT_SETTINGS_SCHEMA + CHAT_ATTACHMENT_SETTINGS_SCHEMA)
         _migrate_chat_settings(connection)
         connection.commit()
 
@@ -273,7 +256,7 @@ def get_chat_settings():
     if not database_path.exists():
         return _default_chat_settings()
     parameter_columns = tuple(CHAT_PARAMETER_DEFAULTS)
-    with closing(_settings_connect()) as connection:
+    with closing(_connect(settings=True)) as connection:
         row = connection.execute(
             "SELECT model_name, system_prompt, "
             + ", ".join(parameter_columns)
@@ -307,13 +290,11 @@ def save_chat_settings(settings):
         settings.get("model_name", ""),
         settings.get("system_prompt", ""),
         *(
-            _optional_number(
-                settings.get(key, CHAT_PARAMETER_DEFAULTS[key]), converter
-            )
+            _optional_number(settings.get(key, CHAT_PARAMETER_DEFAULTS[key]), converter)
             for key, converter in CHAT_PARAMETER_CONVERTERS.items()
         ),
     ]
-    with closing(_settings_connect()) as connection:
+    with closing(_connect(settings=True)) as connection:
         connection.execute(
             f"""
             INSERT INTO chat_settings
@@ -339,7 +320,7 @@ def get_chat_attachment_settings():
     database_path = _settings_database_path()
     if not database_path.exists():
         return {"save_original_media": False, "attach_audio": False}
-    with closing(_settings_connect()) as connection:
+    with closing(_connect(settings=True)) as connection:
         row = connection.execute(
             "SELECT save_original_media, attach_audio "
             "FROM chat_attachment_settings WHERE id = 1"
@@ -354,7 +335,7 @@ def get_chat_attachment_settings():
 
 def save_chat_attachment_settings(settings):
     """Persist both media attachment switch values."""
-    with closing(_settings_connect()) as connection:
+    with closing(_connect(settings=True)) as connection:
         connection.execute(
             """
             INSERT INTO chat_attachment_settings
@@ -422,13 +403,13 @@ def add_chat_message(
 ):
     with closing(_connect()) as connection:
         if isinstance(preview_images, (list, tuple)):
-            preview_value = _json.dumps(list(preview_images), ensure_ascii=False)
+            preview_value = json.dumps(list(preview_images), ensure_ascii=False)
         elif preview_images in (None, ""):
             preview_value = ""
         else:
             preview_value = str(preview_images)
         if isinstance(preview_media, (list, tuple)):
-            preview_media_value = _json.dumps(list(preview_media), ensure_ascii=False)
+            preview_media_value = json.dumps(list(preview_media), ensure_ascii=False)
         elif preview_media in (None, ""):
             preview_media_value = ""
         else:
@@ -615,11 +596,11 @@ def load_saved_chat(name):
                     m.get("system_prompt", "") or "",
                     m.get("saved_system_prompt_name", "") or "",
                     m.get("request_body", "") or "",
-                    _json.dumps(preview_images, ensure_ascii=False)
+                    json.dumps(preview_images, ensure_ascii=False)
                     if isinstance(preview_images, (list, tuple))
                     else str(preview_images or ""),
                     1 if m.get("has_audio") else 0,
-                    _json.dumps(m.get("preview_media", []), ensure_ascii=False)
+                    json.dumps(m.get("preview_media", []), ensure_ascii=False)
                     if isinstance(m.get("preview_media"), (list, tuple))
                     else str(m.get("preview_media") or ""),
                 ),

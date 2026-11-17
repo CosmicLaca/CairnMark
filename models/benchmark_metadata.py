@@ -38,8 +38,7 @@ def _add_missing_columns(connection):
     for column, definition in LATER_COLUMNS.items():
         if column not in existing_columns:
             connection.execute(
-                f"ALTER TABLE benchmark_metadata "
-                f"ADD COLUMN {column} {definition}"
+                f"ALTER TABLE benchmark_metadata " f"ADD COLUMN {column} {definition}"
             )
 
 
@@ -48,10 +47,21 @@ def _database_path():
     return Path(current_app.config["DATABASE_PATH"])
 
 
-def _connect():
-    """Open a configured SQLite connection with named-column rows."""
-    connection = sqlite3.connect(_database_path())
+def _ensure_schema(connection):
+    """Create or migrate benchmark metadata tables."""
     connection.row_factory = sqlite3.Row
+    connection.executescript(SCHEMA)
+    _add_missing_columns(connection)
+    connection.commit()
+
+
+def _connect():
+    """Open the configured database and restore a missing schema."""
+    database_path = _database_path()
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(database_path)
+    connection.execute("PRAGMA busy_timeout = 5000")
+    _ensure_schema(connection)
     return connection
 
 
@@ -60,10 +70,8 @@ def init_database(app):
     database_path = Path(app.config["DATABASE_PATH"])
     database_path.parent.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(database_path)) as connection:
-        connection.row_factory = sqlite3.Row
-        connection.executescript(SCHEMA)
-        _add_missing_columns(connection)
-        connection.commit()
+        connection.execute("PRAGMA busy_timeout = 5000")
+        _ensure_schema(connection)
 
 
 def get_benchmark_metadata(filename):
