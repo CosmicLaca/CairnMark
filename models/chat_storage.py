@@ -64,6 +64,15 @@ CHAT_SETTINGS_SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS chat_settings ({CHAT_SETTINGS_COLUMNS_SQL});
 """
 
+CHAT_ATTACHMENT_SETTINGS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS chat_attachment_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    save_original_media INTEGER NOT NULL DEFAULT 0,
+    attach_audio INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+"""
+
 CHAT_SCHEMA = """
 CREATE TABLE IF NOT EXISTS chat_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -222,7 +231,9 @@ def _settings_connect():
     database_path = _settings_database_path()
     database_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(database_path)
-    connection.executescript(CHAT_SETTINGS_SCHEMA)
+    connection.executescript(
+        CHAT_SETTINGS_SCHEMA + CHAT_ATTACHMENT_SETTINGS_SCHEMA
+    )
     _migrate_chat_settings(connection)
     connection.commit()
     return connection
@@ -242,7 +253,9 @@ def init_chat_storage(app):
     settings_path = Path(app.config["DATABASE_PATH"])
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(settings_path)) as connection:
-        connection.executescript(CHAT_SETTINGS_SCHEMA)
+        connection.executescript(
+            CHAT_SETTINGS_SCHEMA + CHAT_ATTACHMENT_SETTINGS_SCHEMA
+        )
         _migrate_chat_settings(connection)
         connection.commit()
 
@@ -317,6 +330,45 @@ def save_chat_settings(settings):
                 updated_at = CURRENT_TIMESTAMP
             """,
             values,
+        )
+        connection.commit()
+
+
+def get_chat_attachment_settings():
+    """Return the last-used media attachment switch values."""
+    database_path = _settings_database_path()
+    if not database_path.exists():
+        return {"save_original_media": False, "attach_audio": False}
+    with closing(_settings_connect()) as connection:
+        row = connection.execute(
+            "SELECT save_original_media, attach_audio "
+            "FROM chat_attachment_settings WHERE id = 1"
+        ).fetchone()
+    if not row:
+        return {"save_original_media": False, "attach_audio": False}
+    return {
+        "save_original_media": bool(row[0]),
+        "attach_audio": bool(row[1]),
+    }
+
+
+def save_chat_attachment_settings(settings):
+    """Persist both media attachment switch values."""
+    with closing(_settings_connect()) as connection:
+        connection.execute(
+            """
+            INSERT INTO chat_attachment_settings
+                (id, save_original_media, attach_audio)
+            VALUES (1, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                save_original_media = excluded.save_original_media,
+                attach_audio = excluded.attach_audio,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                1 if settings.get("save_original_media") else 0,
+                1 if settings.get("attach_audio") else 0,
+            ),
         )
         connection.commit()
 

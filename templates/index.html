@@ -171,7 +171,7 @@
               class="chat-save-original-switch"
               data-chat-save-original
               role="switch"
-              aria-checked="false"
+              aria-checked="{{ 'true' if chat_attachment_settings.save_original_media else 'false' }}"
               aria-label="Save the original attachment for future preview."
               hidden
             >
@@ -185,7 +185,7 @@
               class="chat-save-original-switch"
               data-chat-attach-audio
               role="switch"
-              aria-checked="false"
+              aria-checked="{{ 'true' if chat_attachment_settings.attach_audio else 'false' }}"
               aria-label="Attach audio"
               hidden
             >
@@ -220,7 +220,7 @@
     </header>
     <p class="chat-setup-lede">Choose the active model and shape the request parameters for this session.</p>
 
-    <div class="field-group chat-model-field">
+    <div class="field-group chat-model-field" data-saved-model="{{ chat_settings.model_name }}">
       <label for="chat-model">Model <span class="chat-model-nctx" data-chat-model-nctx></span></label>
       <span class="field-hint">Active model for the chat.</span>
       {% if active_models %}
@@ -431,6 +431,12 @@
 {% endblock %}
 
 {% block scripts %}
+  <script>
+    window.CairnmarkChatAttachmentSettings = {
+      save_original_media: {{ chat_attachment_settings.save_original_media|tojson }},
+      attach_audio: {{ chat_attachment_settings.attach_audio|tojson }}
+    };
+  </script>
   <script src="{{ url_for('static', filename='js/api_client.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/chat_markdown.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/model_select_filter.js') }}" defer></script>

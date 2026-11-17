@@ -33,6 +33,12 @@ APPLICATION_ROUTES = (
         ("POST",),
     ),
     (
+        "/chat/save_attachment_settings",
+        "chat_save_attachment_settings",
+        chat_controller.save_attachment_settings,
+        ("POST",),
+    ),
+    (
         "/chat/clear",
         "chat_clear",
         chat_controller.clear,

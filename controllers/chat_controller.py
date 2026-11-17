@@ -24,6 +24,7 @@ from models.chat_storage import (
     delete_last_chat_message,
     delete_saved_chat,
     delete_saved_system_prompt,
+    get_chat_attachment_settings,
     get_chat_settings,
     get_saved_chat,
     get_saved_system_prompt,
@@ -31,6 +32,7 @@ from models.chat_storage import (
     list_saved_chats,
     list_saved_system_prompts,
     load_saved_chat,
+    save_chat_attachment_settings,
     save_chat_settings,
     save_saved_chat,
     save_saved_system_prompt,
@@ -645,6 +647,7 @@ class ChatController:
         messages = list_chat_messages()
         return {
             "chat_settings": settings,
+            "chat_attachment_settings": get_chat_attachment_settings(),
             "chat_messages": messages,
             "active_models": self.service.active_models(),
             "saved_chats": list_saved_chats(),
@@ -1124,6 +1127,18 @@ class ChatController:
             return jsonify({"error": str(error)}), 400
         save_chat_settings(settings)
         return jsonify({"message": "Settings saved."})
+
+    def save_attachment_settings(self):
+        """Persist last-used media attachment switch values."""
+        data = request.get_json(silent=True) or {}
+        settings = get_chat_attachment_settings()
+        for key in ("save_original_media", "attach_audio"):
+            if key in data:
+                if not isinstance(data[key], bool):
+                    return jsonify({"error": f"{key} must be a boolean."}), 400
+                settings[key] = data[key]
+        save_chat_attachment_settings(settings)
+        return jsonify({"message": "Attachment settings saved."})
 
     def clear(self):
         current_messages = list_chat_messages()

@@ -51,10 +51,11 @@
     const saveOriginalSwitch = document.querySelector("[data-chat-save-original]");
     const attachAudioSwitch = document.querySelector("[data-chat-attach-audio]");
     const modelNctxEl = document.querySelector("[data-chat-model-nctx]");
+    const attachmentSettings = window.CairnmarkChatAttachmentSettings || {};
     let moreParamsModelKey = "";
     const pendingAttachments = [];
-    let saveOriginalMedia = false;
-    let attachAudioEnabled = false;
+    let saveOriginalMedia = Boolean(attachmentSettings.save_original_media);
+    let attachAudioEnabled = Boolean(attachmentSettings.attach_audio);
     const renderMarkdown = window.CairnmarkMarkdown.render;
 
     // Toggle state per message
@@ -298,9 +299,19 @@
         }
     };
 
+    const persistAttachmentSettings = (settings) => {
+        api.json("/chat/save_attachment_settings", {
+            method: "POST",
+            body: settings,
+        }).catch((error) => {
+            window.alert(`Attachment preference could not be saved: ${error}`);
+        });
+    };
+
     if (saveOriginalSwitch) {
         saveOriginalSwitch.addEventListener("click", () => {
             setSaveOriginalState(!saveOriginalMedia);
+            persistAttachmentSettings({ save_original_media: saveOriginalMedia });
         });
     }
 
@@ -314,8 +325,12 @@
     if (attachAudioSwitch) {
         attachAudioSwitch.addEventListener("click", () => {
             setAttachAudioState(!attachAudioEnabled);
+            persistAttachmentSettings({ attach_audio: attachAudioEnabled });
         });
     }
+
+    setSaveOriginalState(saveOriginalMedia);
+    setAttachAudioState(attachAudioEnabled);
 
     const syncEmptyState = () => {
         if (!historyEl || !emptyStateEl) return;
@@ -1488,12 +1503,6 @@
         }
         if (attachAudioSwitch) {
             attachAudioSwitch.hidden = !hasVideo;
-        }
-        if (!hasOriginalMedia) {
-            setSaveOriginalState(false);
-        }
-        if (!hasVideo) {
-            setAttachAudioState(false);
         }
         if (pendingAttachments.length === 0) {
             if (attachmentsEl) attachmentsEl.hidden = true;
