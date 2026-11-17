@@ -47,6 +47,7 @@
     const moreParamsDeleteBtn = document.querySelector("[data-more-params-delete]");
     const mediaUploadsEl = document.querySelector("[data-chat-media-uploads]");
     const attachmentsEl = document.querySelector("[data-chat-attachments]");
+    const audioAttachmentsEl = document.querySelector("[data-chat-audio-attachments]");
     const modelNctxEl = document.querySelector("[data-chat-model-nctx]");
     let moreParamsModelKey = "";
     const pendingAttachments = [];
@@ -440,6 +441,14 @@
             } else if (accumulated) {
                 appendMessage("assistant", accumulated, {});
             }
+            pendingAttachments.forEach((attachment) => {
+                if (attachment.audioUrl) {
+                    try { URL.revokeObjectURL(attachment.audioUrl); } catch (error) {}
+                }
+                if (attachment.videoUrl) {
+                    try { URL.revokeObjectURL(attachment.videoUrl); } catch (error) {}
+                }
+            });
             pendingAttachments.length = 0;
             renderAttachments();
         } catch (error) {
@@ -979,6 +988,47 @@
         img.src = url;
     });
 
+    const processVideoFile = (file) => new Promise((resolve) => {
+        const url = URL.createObjectURL(file);
+        const video = document.createElement("video");
+        video.preload = "metadata";
+        video.muted = true;
+        video.playsInline = true;
+        const cleanup = () => URL.revokeObjectURL(url);
+        video.onloadedmetadata = () => {
+            const middle = (video.duration && Number.isFinite(video.duration))
+                ? video.duration / 2
+                : 0;
+            const onSeeked = () => {
+                try {
+                    const canvas = document.createElement("canvas");
+                    const width = video.videoWidth || 320;
+                    const height = video.videoHeight || 180;
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext("2d");
+                    ctx.drawImage(video, 0, 0, width, height);
+                    resolve(canvas.toDataURL("image/jpeg", 0.7));
+                } catch (error) {
+                    resolve(null);
+                } finally {
+                    cleanup();
+                }
+            };
+            video.onseeked = onSeeked;
+            try {
+                video.currentTime = middle;
+            } catch (error) {
+                onSeeked();
+            }
+        };
+        video.onerror = () => {
+            cleanup();
+            resolve(null);
+        };
+        video.src = url;
+    });
+
     const processSelectedFile = async (file, attachmentType) => {
         if (!file) return null;
         if (attachmentType === "image") {
@@ -991,6 +1041,36 @@
                 previewUrl: processed.mime.startsWith("image/")
                     ? `data:${processed.mime};base64,${processed.data}`
                     : null,
+                audioUrl: null,
+                videoUrl: null,
+            };
+        }
+        if (attachmentType === "video") {
+            const dataUrl = await readFileAsDataURL(file);
+            const parts = dataUrl.split(",");
+            const mime = file.type || mimeForName(file.name);
+            return {
+                type: "video",
+                name: file.name,
+                mime,
+                data: parts[1] || "",
+                previewUrl: null,
+                audioUrl: null,
+                videoUrl: URL.createObjectURL(file),
+            };
+        }
+        if (attachmentType === "audio") {
+            const dataUrl = await readFileAsDataURL(file);
+            const parts = dataUrl.split(",");
+            const mime = file.type || mimeForName(file.name);
+            return {
+                type: "audio",
+                name: file.name,
+                mime,
+                data: parts[1] || "",
+                previewUrl: null,
+                audioUrl: URL.createObjectURL(file),
+                videoUrl: null,
             };
         }
         const dataUrl = await readFileAsDataURL(file);
@@ -1002,17 +1082,90 @@
             mime,
             data: parts[1] || "",
             previewUrl: null,
+            audioUrl: null,
+            videoUrl: null,
         };
     };
 
     const renderAttachments = () => {
-        if (!attachmentsEl) return;
-        attachmentsEl.replaceChildren();
+        if (attachmentsEl) attachmentsEl.replaceChildren();
+        if (audioAttachmentsEl) audioAttachmentsEl.replaceChildren();
         if (pendingAttachments.length === 0) {
-            attachmentsEl.hidden = true;
+            if (attachmentsEl) attachmentsEl.hidden = true;
+            if (audioAttachmentsEl) audioAttachmentsEl.hidden = true;
             return;
         }
+
         pendingAttachments.forEach((attachment, index) => {
+            const removeAttachment = () => {
+                if (attachment.audioUrl) {
+                    try { URL.revokeObjectURL(attachment.audioUrl); } catch (error) {}
+                }
+                if (attachment.videoUrl) {
+                    try { URL.revokeObjectURL(attachment.videoUrl); } catch (error) {}
+                }
+                pendingAttachments.splice(index, 1);
+                renderAttachments();
+            };
+
+            if (attachment.type === "audio") {
+                if (!audioAttachmentsEl) return;
+                const item = document.createElement("div");
+                item.className = "chat-audio-player";
+                item.setAttribute("data-chat-attachment", "audio");
+
+                const audio = document.createElement("audio");
+                audio.src = attachment.audioUrl;
+                audio.preload = "metadata";
+                audio.hidden = true;
+                item.appendChild(audio);
+
+                const playBtn = document.createElement("button");
+                playBtn.type = "button";
+                playBtn.textContent = "▶";
+                playBtn.title = "Play";
+                playBtn.addEventListener("click", () => {
+                    audio.play().catch(() => {});
+                });
+                item.appendChild(playBtn);
+
+                const pauseBtn = document.createElement("button");
+                pauseBtn.type = "button";
+                pauseBtn.textContent = "⏸";
+                pauseBtn.title = "Pause";
+                pauseBtn.addEventListener("click", () => {
+                    audio.pause();
+                });
+                item.appendChild(pauseBtn);
+
+                const backBtn = document.createElement("button");
+                backBtn.type = "button";
+                backBtn.textContent = "⏪";
+                backBtn.title = "Rewind 5 seconds";
+                backBtn.addEventListener("click", () => {
+                    audio.currentTime = Math.max(0, (audio.currentTime || 0) - 5);
+                });
+                item.appendChild(backBtn);
+
+                const name = document.createElement("span");
+                name.className = "chat-attachment-name";
+                name.textContent = attachment.name;
+                name.title = attachment.name;
+                item.appendChild(name);
+
+                const removeBtn = document.createElement("button");
+                removeBtn.type = "button";
+                removeBtn.className = "chat-attachment-remove";
+                removeBtn.textContent = "×";
+                removeBtn.title = "Remove attachment";
+                removeBtn.addEventListener("click", removeAttachment);
+                item.appendChild(removeBtn);
+
+                audioAttachmentsEl.appendChild(item);
+                return;
+            }
+
+            if (!attachmentsEl) return;
             const item = document.createElement("div");
             item.className = "chat-attachment";
             item.setAttribute("data-chat-attachment", attachment.type);
@@ -1022,25 +1175,59 @@
                 img.src = attachment.previewUrl;
                 img.alt = attachment.name;
                 item.appendChild(img);
+            } else if (attachment.type === "video" && attachment.videoUrl) {
+                item.className = "chat-attachment chat-attachment--video";
+                const video = document.createElement("video");
+                video.className = "chat-attachment-video";
+                video.src = attachment.videoUrl;
+                video.height = 130;
+                video.controls = false;
+                video.preload = "metadata";
+                video.style.height = "130px";
+                video.style.width = "auto";
+                item.appendChild(video);
+
+                const controls = document.createElement("div");
+                controls.className = "chat-video-controls";
+                const playBtn = document.createElement("button");
+                playBtn.type = "button";
+                playBtn.textContent = "▶";
+                playBtn.addEventListener("click", () => video.play().catch(() => {}));
+                const pauseBtn = document.createElement("button");
+                pauseBtn.type = "button";
+                pauseBtn.textContent = "⏸";
+                pauseBtn.addEventListener("click", () => video.pause());
+                const backBtn = document.createElement("button");
+                backBtn.type = "button";
+                backBtn.textContent = "⏪";
+                backBtn.addEventListener("click", () => {
+                    video.currentTime = Math.max(0, (video.currentTime || 0) - 5);
+                });
+                controls.append(playBtn, pauseBtn, backBtn);
+                item.appendChild(controls);
+            } else {
+                const name = document.createElement("span");
+                name.className = "chat-attachment-name";
+                name.textContent = attachment.name;
+                name.title = attachment.name;
+                item.appendChild(name);
             }
-            const name = document.createElement("span");
-            name.className = "chat-attachment-name";
-            name.textContent = attachment.name;
-            name.title = attachment.name;
-            item.appendChild(name);
             const removeBtn = document.createElement("button");
             removeBtn.type = "button";
             removeBtn.className = "chat-attachment-remove";
             removeBtn.textContent = "×";
             removeBtn.title = "Remove attachment";
-            removeBtn.addEventListener("click", () => {
-                pendingAttachments.splice(index, 1);
-                renderAttachments();
-            });
+            removeBtn.addEventListener("click", removeAttachment);
             item.appendChild(removeBtn);
             attachmentsEl.appendChild(item);
         });
-        attachmentsEl.hidden = false;
+
+        if (attachmentsEl) {
+            attachmentsEl.hidden = attachmentsEl.children.length === 0;
+        }
+        if (audioAttachmentsEl) {
+            audioAttachmentsEl.hidden = audioAttachmentsEl.children.length === 0;
+        }
     };
 
     const openFilePicker = (icon) => {

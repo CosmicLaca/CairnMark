@@ -119,17 +119,22 @@
         <span>Enter to send · Shift+Enter for a new line</span>
       </div>
       <div class="chat-composer-body">
-        <div class="chat-attachments" data-chat-attachments hidden aria-label="Attached files"></div>
-        <textarea
-          id="chat-user-input"
-          class="chat-user-input"
-          name="message"
-          rows="3"
-          placeholder="Type a message…"
-          data-chat-input
-        ></textarea>
+        <div class="chat-composer-media" data-chat-composer-media>
+          <div class="chat-attachments" data-chat-attachments hidden aria-label="Attached files"></div>
+        </div>
+        <div class="chat-composer-main">
+          <textarea
+            id="chat-user-input"
+            class="chat-user-input"
+            name="message"
+            rows="3"
+            placeholder="Type a message…"
+            data-chat-input
+          ></textarea>
+          <div class="chat-media-uploads" data-chat-media-uploads hidden aria-label="Media uploads"></div>
+          <div class="chat-audio-attachments" data-chat-audio-attachments hidden aria-label="Attached audio"></div>
+        </div>
       </div>
-      <div class="chat-media-uploads" data-chat-media-uploads hidden aria-label="Media uploads"></div>
       <div class="chat-actions">
         <button class="save-metadata-button chat-send-button" type="button" data-chat-send>
           <span aria-hidden="true">▶</span>

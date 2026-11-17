@@ -467,16 +467,83 @@
     gap: 10px;
 }
 
+.chat-composer-media {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    flex: 0 0 auto;
+    max-width: 45%;
+    height: 130px;
+}
+
+.chat-composer-main {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-direction: column;
+    gap: 8px;
+}
+
 .chat-attachments {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    max-width: 42%;
+    align-items: flex-start;
     min-width: 0;
 }
 
 .chat-attachments[hidden] {
     display: none;
+}
+
+.chat-audio-attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    min-width: 0;
+}
+
+.chat-audio-attachments[hidden] {
+    display: none;
+}
+
+.chat-audio-player {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.72);
+    color: var(--ink);
+    font-size: 0.74rem;
+}
+
+.chat-audio-player button {
+    min-width: 28px;
+    height: 28px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: rgba(111, 214, 195, 0.08);
+    color: #2f5a50;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.75rem;
+}
+
+.chat-audio-player button:hover {
+    background: rgba(111, 214, 195, 0.18);
+}
+
+.chat-attachment--video {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+}
+
+.chat-attachment--video .chat-video-controls {
+    display: flex;
 }
 
 .chat-attachment {
@@ -491,12 +558,13 @@
     background: rgba(255, 255, 255, 0.72);
     color: var(--ink);
     font-size: 0.74rem;
+    height: 140px;
 }
 
 .chat-attachment-preview {
-    width: 44px;
-    height: 44px;
-    object-fit: cover;
+    height: 130px;
+    width: auto;
+    object-fit: contain;
     border-radius: 4px;
     border: 1px solid var(--line);
     background: rgba(255, 255, 255, 0.5);
