@@ -138,6 +138,7 @@ CHAT_MESSAGE_COLUMNS = {
     "saved_system_prompt_name": "TEXT NOT NULL DEFAULT ''",
     "request_body": "TEXT NOT NULL DEFAULT ''",
     "preview_images": "TEXT NOT NULL DEFAULT ''",
+    "has_audio": "INTEGER NOT NULL DEFAULT 0",
 }
 
 
@@ -313,7 +314,7 @@ def list_chat_messages():
         rows = connection.execute(
             "SELECT id, role, content, model_name, provider, response_time, "
             "input_tokens, output_tokens, system_prompt, saved_system_prompt_name, "
-            "request_body, preview_images, created_at FROM chat_messages ORDER BY id"
+            "request_body, preview_images, has_audio, created_at FROM chat_messages ORDER BY id"
         ).fetchall()
     return [
         {
@@ -329,7 +330,8 @@ def list_chat_messages():
             "saved_system_prompt_name": row[9] or "",
             "request_body": row[10] or "",
             "preview_images": _parse_preview_images(row[11] or ""),
-            "created_at": row[12],
+            "has_audio": bool(row[12]),
+            "created_at": row[13],
         }
         for row in rows
     ]
@@ -347,6 +349,7 @@ def add_chat_message(
     saved_system_prompt_name="",
     request_body="",
     preview_images=None,
+    has_audio=0,
 ):
     with closing(_connect()) as connection:
         if isinstance(preview_images, (list, tuple)):
@@ -359,8 +362,8 @@ def add_chat_message(
             "INSERT INTO chat_messages "
             "(role, content, model_name, provider, response_time, input_tokens, "
             "output_tokens, system_prompt, saved_system_prompt_name, request_body, "
-            "preview_images) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "preview_images, has_audio) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 role,
                 content,
@@ -373,6 +376,7 @@ def add_chat_message(
                 saved_system_prompt_name,
                 request_body,
                 preview_value,
+                1 if has_audio else 0,
             ),
         )
         connection.commit()
@@ -522,8 +526,8 @@ def load_saved_chat(name):
                 "INSERT INTO chat_messages "
                 "(role, content, model_name, provider, response_time, input_tokens, "
                 "output_tokens, system_prompt, saved_system_prompt_name, request_body, "
-                "preview_images) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "preview_images, has_audio) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     m.get("role", "user"),
                     m.get("content", ""),
@@ -538,6 +542,7 @@ def load_saved_chat(name):
                     _json.dumps(preview_images, ensure_ascii=False)
                     if isinstance(preview_images, (list, tuple))
                     else str(preview_images or ""),
+                    1 if m.get("has_audio") else 0,
                 ),
             )
         connection.commit()

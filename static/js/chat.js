@@ -282,6 +282,7 @@
                 meta && Array.isArray(meta.preview_images)
                     ? meta.preview_images
                     : [];
+            const showAudioIcon = Boolean(meta && meta.has_audio);
             if (previewImages.length) {
                 const body = document.createElement("div");
                 body.className = "chat-user-body";
@@ -310,10 +311,24 @@
                 body.appendChild(previews);
                 contentDiv.textContent = content;
                 body.appendChild(contentDiv);
+                if (showAudioIcon) {
+                    const mic = document.createElement("span");
+                    mic.className = "chat-user-audio-icon";
+                    mic.textContent = "🎤";
+                    mic.title = "Audio attachment";
+                    body.appendChild(mic);
+                }
                 div.appendChild(body);
             } else {
                 contentDiv.textContent = content;
                 div.appendChild(contentDiv);
+                if (showAudioIcon) {
+                    const mic = document.createElement("span");
+                    mic.className = "chat-user-audio-icon";
+                    mic.textContent = "🎤";
+                    mic.title = "Audio attachment";
+                    div.appendChild(mic);
+                }
             }
         }
 
@@ -337,6 +352,7 @@
                 saved_system_prompt_name: m.saved_system_prompt_name,
                 system_prompt: m.system_prompt,
                 preview_images: m.preview_images || [],
+                has_audio: Boolean(m.has_audio),
             });
         });
         syncEmptyState();
@@ -370,7 +386,7 @@
         div.append(roleSpan, spinner, text, tokenCount, abortBtn);
         historyEl.appendChild(div);
         historyEl.scrollTop = historyEl.scrollHeight;
-        return { element: div, tokenCount, abortBtn };
+        return { element: div, tokenCount, loadingText: text, abortBtn };
     };
 
     const optionalNumber = (element, converter) => {
@@ -408,8 +424,12 @@
         const userPreviewImages = pendingAttachments
             .filter((attachment) => (attachment.type === "image" || attachment.type === "video") && attachment.previewUrl)
             .map((attachment) => attachment.previewUrl);
+        const hasAudioAttachment = pendingAttachments.some(
+            (attachment) => attachment.type === "audio"
+        );
         const userMessageEl = appendMessage("user", message, {
             preview_images: userPreviewImages,
+            has_audio: hasAudioAttachment,
         });
         if (inputEl) inputEl.value = "";
         if (sendBtn) sendBtn.disabled = true;
@@ -482,7 +502,11 @@
                         } catch (error) {
                             continue;
                         }
-                        if (data.type === "chunk") {
+                        if (data.type === "status") {
+                            if (loadingEl && loadingEl.loadingText) {
+                                loadingEl.loadingText.textContent = data.text || "thinking…";
+                            }
+                        } else if (data.type === "chunk") {
                             accumulated += data.text || "";
                             if (loadingEl && loadingEl.tokenCount) {
                                 loadingEl.tokenCount.textContent = `${accumulated.length} chars`;

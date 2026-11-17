@@ -292,6 +292,22 @@
     background: rgba(176, 74, 57, 0.06);
 }
 
+.chat-user-audio-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.72);
+    color: #2f5a50;
+    font-size: 1rem;
+    line-height: 1;
+    flex: 0 0 auto;
+    align-self: flex-start;
+}
+
 .chat-role {
     overflow: hidden;
     color: #6f7c77;

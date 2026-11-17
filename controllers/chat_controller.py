@@ -452,7 +452,7 @@ class ChatController:
             saved_name,
             _parameter_values(data),
             _model_parameter_values(data.get("model_params")),
-            _process_attachments(_attachment_values(data.get("attachments"))),
+            _attachment_values(data.get("attachments")),
         )
 
     def send(self):
@@ -480,8 +480,11 @@ class ChatController:
             return jsonify({"error": str(error)}), 503
 
         preview_images = []
+        has_audio_attachment = False
         for attachment in attachments or []:
             attachment_type = attachment.get("type")
+            if attachment_type == "audio":
+                has_audio_attachment = True
             if attachment_type == "image":
                 filename = _save_preview_image(attachment.get("data", ""))
                 if filename:
@@ -490,7 +493,12 @@ class ChatController:
                 filename = _save_preview_image(attachment.get("preview_data", ""))
                 if filename:
                     preview_images.append(filename)
-        add_chat_message("user", user_message, preview_images=preview_images)
+        add_chat_message(
+            "user",
+            user_message,
+            preview_images=preview_images,
+            has_audio=has_audio_attachment,
+        )
 
         stream_requested = (
             request.args.get("stream") == "1"
@@ -537,18 +545,22 @@ class ChatController:
             )
         }
 
-        # Build the JSON-serializable body sent with the assistant turn.
-        request_body = _build_chat_request_body(
-            self.service,
-            provider,
-            model,
-            messages,
-            request_parameters,
-            extra_parameters,
-            attachments=attachments,
+        needs_conversion = any(
+            isinstance(item, dict) and item.get("type") in ("video", "audio")
+            for item in (attachments or [])
         )
 
         if not stream_requested:
+            attachments = _process_attachments(attachments)
+            request_body = _build_chat_request_body(
+                self.service,
+                provider,
+                model,
+                messages,
+                request_parameters,
+                extra_parameters,
+                attachments=attachments,
+            )
             started = time.monotonic()
             usage = {"prompt_tokens": 0, "completion_tokens": 0}
             try:
@@ -600,13 +612,27 @@ class ChatController:
             usage = {"prompt_tokens": 0, "completion_tokens": 0}
             response_text = ""
             try:
+                converted_attachments = attachments
+                if needs_conversion:
+                    yield f"data: {json.dumps({'type': 'status', 'text': 'Converting attachment…'})}\n\n"
+                    converted_attachments = _process_attachments(attachments)
+                    yield f"data: {json.dumps({'type': 'status', 'text': 'thinking…'})}\n\n"
+                request_body = _build_chat_request_body(
+                    self.service,
+                    provider,
+                    model,
+                    messages,
+                    request_parameters,
+                    extra_parameters,
+                    attachments=converted_attachments,
+                )
                 for event in self.service.chat_completion_with_params_stream(
                     provider,
                     model,
                     messages,
                     **request_parameters,
                     extra_parameters=extra_parameters,
-                    attachments=attachments,
+                    attachments=converted_attachments,
                 ):
                     if event.get("type") == "chunk":
                         response_text += event.get("text", "")
