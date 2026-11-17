@@ -168,11 +168,24 @@ def _attachment_values(value):
         mime_type = str(item.get("mime_type") or "").strip()
         if not mime_type:
             mime_type = _mime_for_name(item.get("name"))
+        preview_data = item.get("preview_data")
+        if isinstance(preview_data, str):
+            preview_data = preview_data.strip()
+            if preview_data:
+                try:
+                    base64.b64decode(preview_data, validate=True)
+                except Exception as error:  # noqa: BLE001
+                    raise ValueError("Preview data must be valid base64.") from error
+            else:
+                preview_data = None
+        else:
+            preview_data = None
         cleaned.append(
             {
                 "type": attachment_type,
                 "data": data,
                 "mime_type": mime_type,
+                "preview_data": preview_data,
             }
         )
     return cleaned
@@ -339,8 +352,13 @@ class ChatController:
 
         preview_images = []
         for attachment in attachments or []:
-            if attachment.get("type") == "image":
+            attachment_type = attachment.get("type")
+            if attachment_type == "image":
                 filename = _save_preview_image(attachment.get("data", ""))
+                if filename:
+                    preview_images.append(filename)
+            elif attachment_type == "video" and attachment.get("preview_data"):
+                filename = _save_preview_image(attachment.get("preview_data", ""))
                 if filename:
                     preview_images.append(filename)
         add_chat_message("user", user_message, preview_images=preview_images)

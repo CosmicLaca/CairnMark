@@ -321,7 +321,7 @@
             return;
         }
         const userPreviewImages = pendingAttachments
-            .filter((attachment) => attachment.type === "image" && attachment.previewUrl)
+            .filter((attachment) => (attachment.type === "image" || attachment.type === "video") && attachment.previewUrl)
             .map((attachment) => attachment.previewUrl);
         const userMessageEl = appendMessage("user", message, {
             preview_images: userPreviewImages,
@@ -339,6 +339,7 @@
                 type: attachment.type,
                 data: attachment.data,
                 mime_type: attachment.mime,
+                preview_data: attachment.previewData || undefined,
             }));
         }
 
@@ -1043,20 +1044,26 @@
                     : null,
                 audioUrl: null,
                 videoUrl: null,
+                previewData: null,
             };
         }
         if (attachmentType === "video") {
             const dataUrl = await readFileAsDataURL(file);
             const parts = dataUrl.split(",");
             const mime = file.type || mimeForName(file.name);
+            const previewDataUrl = await processVideoFile(file);
+            const previewBase64 = previewDataUrl
+                ? previewDataUrl.split(",")[1] || null
+                : null;
             return {
                 type: "video",
                 name: file.name,
                 mime,
                 data: parts[1] || "",
-                previewUrl: null,
+                previewUrl: previewDataUrl,
                 audioUrl: null,
                 videoUrl: URL.createObjectURL(file),
+                previewData: previewBase64,
             };
         }
         if (attachmentType === "audio") {
@@ -1071,6 +1078,7 @@
                 previewUrl: null,
                 audioUrl: URL.createObjectURL(file),
                 videoUrl: null,
+                previewData: null,
             };
         }
         const dataUrl = await readFileAsDataURL(file);
@@ -1084,6 +1092,7 @@
             previewUrl: null,
             audioUrl: null,
             videoUrl: null,
+            previewData: null,
         };
     };
 
