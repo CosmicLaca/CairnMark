@@ -79,7 +79,7 @@ MODEL_PARAMETER_TEXT_LIMIT = 4096
 
 ATTACHMENT_TYPES = {"image", "document", "video", "audio"}
 ATTACHMENT_LIMIT = 8
-ATTACHMENT_DATA_LIMIT = 20 * 1024 * 1024
+ATTACHMENT_DATA_LIMIT = 100 * 1024 * 1024
 MAX_IMAGE_PIXELS = 1_200_000
 
 
@@ -347,13 +347,142 @@ def _convert_audio_attachment(attachment):
         return attachment
 
 
+def _probe_audio_duration(path):
+    """Return the audio stream duration in seconds, or None if unavailable."""
+    try:
+        import ffmpeg
+    except ImportError:
+        return None
+    try:
+        probe = ffmpeg.probe(path)
+        streams = probe.get("streams", []) if isinstance(probe, dict) else []
+        audio_stream = next(
+            (s for s in streams if s.get("codec_type") == "audio"), None
+        )
+        if audio_stream is None:
+            return None
+        duration = audio_stream.get("duration")
+        if duration is None and isinstance(probe, dict):
+            duration = probe.get("format", {}).get("duration")
+        if duration is None:
+            return None
+        return float(duration)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _video_has_audio(data):
+    import os
+    import tempfile
+
+    try:
+        decoded = base64.b64decode(data, validate=True)
+    except Exception:  # noqa: BLE001
+        return False
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = os.path.join(tmpdir, "input")
+            with open(input_path, "wb") as handle:
+                handle.write(decoded)
+            return _probe_audio_duration(input_path) is not None
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _extract_video_audio_attachment(attachment):
+    """Extract the audio track of a video as a 64 kbit/s MP3 attachment."""
+    if not isinstance(attachment, dict) or attachment.get("type") != "video":
+        return None
+    try:
+        import ffmpeg
+    except ImportError:
+        return None
+    try:
+        decoded = base64.b64decode(attachment["data"], validate=True)
+    except Exception:  # noqa: BLE001
+        return None
+    import os
+    import tempfile
+
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = os.path.join(tmpdir, "input")
+            with open(input_path, "wb") as handle:
+                handle.write(decoded)
+            if _probe_audio_duration(input_path) is None:
+                return None
+            stream = ffmpeg.input(input_path)
+            audio = stream.audio
+            output_path = os.path.join(tmpdir, "output.mp3")
+            ffmpeg.output(
+                audio, output_path,
+                acodec="libmp3lame", audio_bitrate="64k",
+            ).overwrite_output().run(quiet=True)
+            with open(output_path, "rb") as handle:
+                converted = handle.read()
+            if not converted:
+                return None
+            return {
+                "type": "audio",
+                "data": base64.b64encode(converted).decode("ascii"),
+                "mime_type": "audio/mpeg",
+            }
+    except Exception:  # noqa: BLE001
+        current_app.logger.exception("Video audio could not be extracted")
+        return None
+
+
+def _needs_separate_audio(original_attachment, converted_video_attachment):
+    """Decide whether the in-video audio was preserved at full length."""
+    if not isinstance(original_attachment, dict) or original_attachment.get("type") != "video":
+        return False
+    try:
+        import ffmpeg
+    except ImportError:
+        return False
+    import os
+    import tempfile
+
+    try:
+        # original audio duration
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original_path = os.path.join(tmpdir, "original")
+            with open(original_path, "wb") as handle:
+                handle.write(base64.b64decode(original_attachment["data"], validate=True))
+            original_duration = _probe_audio_duration(original_path)
+            if original_duration is None:
+                return False  # no audio in source
+            # converted video audio duration
+            converted_path = os.path.join(tmpdir, "converted")
+            with open(converted_path, "wb") as handle:
+                handle.write(base64.b64decode(converted_video_attachment["data"], validate=True))
+            converted_duration = _probe_audio_duration(converted_path)
+            if converted_duration is None:
+                return True  # audio lost during conversion
+            # tolerance: 1.0s or 10%
+            tolerance = max(1.0, original_duration * 0.1)
+            return abs(original_duration - converted_duration) > tolerance
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _process_attachments(attachments):
     result = []
     for item in (attachments or []):
-        item = _resize_image_attachment(item)
-        item = _convert_video_attachment(item)
-        item = _convert_audio_attachment(item)
-        result.append(item)
+        if isinstance(item, dict) and item.get("type") == "video":
+            original = item
+            converted_video = _convert_video_attachment(item)
+            result.append(converted_video)
+            if _needs_separate_audio(original, converted_video):
+                separate = _extract_video_audio_attachment(original)
+                if separate is not None:
+                    result.append(separate)
+        elif isinstance(item, dict) and item.get("type") == "image":
+            result.append(_resize_image_attachment(item))
+        elif isinstance(item, dict) and item.get("type") == "audio":
+            result.append(_convert_audio_attachment(item))
+        else:
+            result.append(item)
     return result
 
 

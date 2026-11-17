@@ -165,7 +165,8 @@ Documents are always available. Image, video, and audio controls appear when a
 selected local model reports the matching capability. Large images are resized
 before sending. Attached video is re-encoded to MP4, scaled to a 640-pixel
 maximum side, 2 frames per second, and lower quality before sending; attached
-audio is converted to a 64 kbit/s MP3 when needed. Small image previews are
+audio is converted to a 64 kbit/s MP3 when needed. Attachments up to 100 MB
+are accepted. Small image previews are
 stored in `instance/preview/`; only their filenames are stored in chat history.
 
 - **Save chat** stores or replaces a named conversation.
