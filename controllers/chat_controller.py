@@ -261,8 +261,6 @@ def _convert_video_attachment(attachment):
             height = int(video_stream.get("height") or 0)
             if width <= 0 or height <= 0:
                 return attachment
-            has_audio = any(s.get("codec_type") == "audio" for s in streams)
-            keep_audio = has_audio and bool(attachment.get("attach_audio"))
             stream = ffmpeg.input(input_path)
             video = stream.video
             if max(width, height) > 480:
@@ -279,16 +277,10 @@ def _convert_video_attachment(attachment):
                 "pix_fmt": "yuv420p",
                 "movflags": "+faststart",
             }
-            if keep_audio:
-                audio = stream.audio
-                ffmpeg.output(
-                    video, audio, output_path,
-                    acodec="aac", audio_bitrate="64k", **output_args,
-                ).overwrite_output().run(quiet=True)
-            else:
-                ffmpeg.output(
-                    video, output_path, **output_args,
-                ).overwrite_output().run(quiet=True)
+            # Always strip audio: audio is sent separately when attach_audio is on.
+            ffmpeg.output(
+                video, output_path, **output_args,
+            ).overwrite_output().run(quiet=True)
             with open(output_path, "rb") as handle:
                 converted = handle.read()
             if not converted:
@@ -432,6 +424,43 @@ def _extract_video_audio_attachment(attachment):
             }
     except Exception:  # noqa: BLE001
         current_app.logger.exception("Video audio could not be extracted")
+        return None
+
+
+def _merge_video_audio(video_data, audio_data):
+    """Mux a converted (audio-less) video with a separate audio track into one MP4."""
+    if not video_data or not audio_data:
+        return None
+    try:
+        import ffmpeg
+    except ImportError:
+        return None
+    import os
+    import tempfile
+
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            video_path = os.path.join(tmpdir, "video.mp4")
+            audio_path = os.path.join(tmpdir, "audio.mp3")
+            output_path = os.path.join(tmpdir, "merged.mp4")
+            with open(video_path, "wb") as handle:
+                handle.write(base64.b64decode(video_data, validate=True))
+            with open(audio_path, "wb") as handle:
+                handle.write(base64.b64decode(audio_data, validate=True))
+            video_stream = ffmpeg.input(video_path).video
+            audio_stream = ffmpeg.input(audio_path).audio
+            ffmpeg.output(
+                video_stream, audio_stream, output_path,
+                vcodec="copy", acodec="aac", audio_bitrate="64k",
+                movflags="+faststart",
+            ).overwrite_output().run(quiet=True)
+            with open(output_path, "rb") as handle:
+                merged = handle.read()
+            if not merged:
+                return None
+            return base64.b64encode(merged).decode("ascii")
+    except Exception:  # noqa: BLE001
+        current_app.logger.exception("Video and audio could not be merged")
         return None
 
 
@@ -693,6 +722,12 @@ class ChatController:
                 if save_original_media:
                     converted = _convert_video_attachment(attachment)
                     data = converted.get("data", attachment.get("data", ""))
+                    if attachment.get("attach_audio") and _video_has_audio(attachment.get("data", "")):
+                        audio_att = _extract_video_audio_attachment(attachment)
+                        if audio_att is not None:
+                            merged = _merge_video_audio(converted.get("data", ""), audio_att.get("data", ""))
+                            if merged:
+                                data = merged
                     filename = _save_preview_media(data, "mp4")
                     if filename:
                         preview_media.append({"type": "video", "filename": filename, "original_name": attachment.get("original_name", "")})
@@ -753,38 +788,129 @@ class ChatController:
             )
         }
 
+        split_needed = any(
+            isinstance(item, dict)
+            and item.get("type") == "video"
+            and bool(item.get("attach_audio"))
+            for item in (attachments or [])
+        )
+
         needs_conversion = any(
             isinstance(item, dict) and item.get("type") in ("video", "audio")
             for item in (attachments or [])
         )
 
         if not stream_requested:
-            attachments = _process_attachments(attachments)
-            request_body = _build_chat_request_body(
-                self.service,
-                provider,
-                model,
-                messages,
-                request_parameters,
-                extra_parameters,
-                attachments=attachments,
-            )
-            started = time.monotonic()
-            usage = {"prompt_tokens": 0, "completion_tokens": 0}
-            try:
-                response_text, usage = self.service.chat_completion_with_params(
+            if split_needed:
+                video_attachments = []
+                audio_attachments = []
+                for item in (attachments or []):
+                    if not isinstance(item, dict):
+                        video_attachments.append(item)
+                        continue
+                    if item.get("type") == "video":
+                        video_attachments.append(_convert_video_attachment(item))
+                        if item.get("attach_audio") and _video_has_audio(item.get("data", "")):
+                            audio_att = _extract_video_audio_attachment(item)
+                            if audio_att is not None:
+                                audio_attachments.append(audio_att)
+                    elif item.get("type") == "audio":
+                        audio_attachments.append(_convert_audio_attachment(item))
+                    else:
+                        video_attachments.append(item)
+                # Build audio_messages (modify user prompt) before building audio_request_body
+                audio_messages = [dict(m) for m in messages]
+                for index in range(len(audio_messages) - 1, -1, -1):
+                    if audio_messages[index].get("role") == "user":
+                        audio_messages[index]["content"] = "Analyze the attached audio: transcribe any spoken words, and if there is no speech, describe the audio content (music, sounds, or noise)."
+                        break
+
+                request_body = _build_chat_request_body(
+                    self.service,
                     provider,
                     model,
                     messages,
-                    **request_parameters,
-                    extra_parameters=extra_parameters,
+                    request_parameters,
+                    extra_parameters,
+                    attachments=video_attachments,
+                )
+                audio_request_body = None
+                if audio_attachments:
+                    audio_request_body = _build_chat_request_body(
+                        self.service,
+                        provider,
+                        model,
+                        audio_messages,
+                        request_parameters,
+                        extra_parameters,
+                        attachments=audio_attachments,
+                    )
+                started = time.monotonic()
+                usage = {"prompt_tokens": 0, "completion_tokens": 0}
+                audio_messages = [dict(m) for m in messages]
+                for index in range(len(audio_messages) - 1, -1, -1):
+                    if audio_messages[index].get("role") == "user":
+                        audio_messages[index]["content"] = "Analyze the attached audio: transcribe any spoken words, and if there is no speech, describe the audio content (music, sounds, or noise)."
+                        break
+                try:
+                    text1, usage1 = self.service.chat_completion_with_params(
+                        provider,
+                        model,
+                        messages,
+                        **request_parameters,
+                        extra_parameters=extra_parameters,
+                        attachments=video_attachments,
+                    )
+                    text2 = ""
+                    usage2 = {"prompt_tokens": 0, "completion_tokens": 0}
+                    if audio_attachments:
+                        text2, usage2 = self.service.chat_completion_with_params(
+                            provider,
+                            model,
+                            audio_messages,
+                            **request_parameters,
+                            extra_parameters=extra_parameters,
+                            attachments=audio_attachments,
+                        )
+                    response_text = text1
+                    if text2:
+                        response_text = f"{text1}\n\nAudio transcription:\n{text2}"
+                    usage = {
+                        "prompt_tokens": usage1.get("prompt_tokens", 0) + usage2.get("prompt_tokens", 0),
+                        "completion_tokens": usage1.get("completion_tokens", 0) + usage2.get("completion_tokens", 0),
+                    }
+                except Exception as error:  # noqa: BLE001
+                    current_app.logger.exception(
+                        "Chat request failed for provider=%s model=%s", provider, model
+                    )
+                    return jsonify({"error": str(error)}), 502
+            else:
+                attachments = _process_attachments(attachments)
+                request_body = _build_chat_request_body(
+                    self.service,
+                    provider,
+                    model,
+                    messages,
+                    request_parameters,
+                    extra_parameters,
                     attachments=attachments,
                 )
-            except Exception as error:  # noqa: BLE001
-                current_app.logger.exception(
-                    "Chat request failed for provider=%s model=%s", provider, model
-                )
-                return jsonify({"error": str(error)}), 502
+                started = time.monotonic()
+                usage = {"prompt_tokens": 0, "completion_tokens": 0}
+                try:
+                    response_text, usage = self.service.chat_completion_with_params(
+                        provider,
+                        model,
+                        messages,
+                        **request_parameters,
+                        extra_parameters=extra_parameters,
+                        attachments=attachments,
+                    )
+                except Exception as error:  # noqa: BLE001
+                    current_app.logger.exception(
+                        "Chat request failed for provider=%s model=%s", provider, model
+                    )
+                    return jsonify({"error": str(error)}), 502
             elapsed = round(time.monotonic() - started, 2)
 
             add_chat_message(
@@ -820,34 +946,94 @@ class ChatController:
             usage = {"prompt_tokens": 0, "completion_tokens": 0}
             response_text = ""
             try:
-                converted_attachments = attachments
-                if needs_conversion:
+                if split_needed:
                     yield f"data: {json.dumps({'type': 'status', 'text': 'Converting attachment…'})}\n\n"
-                    converted_attachments = _process_attachments(attachments)
+                    video_attachments = []
+                    audio_attachments = []
+                    for item in (attachments or []):
+                        if not isinstance(item, dict):
+                            video_attachments.append(item)
+                            continue
+                        if item.get("type") == "video":
+                            video_attachments.append(_convert_video_attachment(item))
+                            if item.get("attach_audio") and _video_has_audio(item.get("data", "")):
+                                audio_att = _extract_video_audio_attachment(item)
+                                if audio_att is not None:
+                                    audio_attachments.append(audio_att)
+                        elif item.get("type") == "audio":
+                            audio_attachments.append(_convert_audio_attachment(item))
+                        else:
+                            video_attachments.append(item)
                     yield f"data: {json.dumps({'type': 'status', 'text': 'thinking…'})}\n\n"
-                request_body = _build_chat_request_body(
-                    self.service,
-                    provider,
-                    model,
-                    messages,
-                    request_parameters,
-                    extra_parameters,
-                    attachments=converted_attachments,
-                )
-                for event in self.service.chat_completion_with_params_stream(
-                    provider,
-                    model,
-                    messages,
-                    **request_parameters,
-                    extra_parameters=extra_parameters,
-                    attachments=converted_attachments,
-                ):
-                    if event.get("type") == "chunk":
-                        response_text += event.get("text", "")
-                        yield f"data: {json.dumps(event)}\n\n"
-                    elif event.get("type") == "done":
-                        usage = event.get("usage", usage) or usage
-                        yield f"data: {json.dumps(event)}\n\n"
+                    audio_messages = [dict(m) for m in messages]
+                    for index in range(len(audio_messages) - 1, -1, -1):
+                        if audio_messages[index].get("role") == "user":
+                            audio_messages[index]["content"] = "Analyze the attached audio: transcribe any spoken words, and if there is no speech, describe the audio content (music, sounds, or noise)."
+                            break
+                    text1, usage1 = self.service.chat_completion_with_params(
+                        provider,
+                        model,
+                        messages,
+                        **request_parameters,
+                        extra_parameters=extra_parameters,
+                        attachments=video_attachments,
+                    )
+                    text2 = ""
+                    usage2 = {"prompt_tokens": 0, "completion_tokens": 0}
+                    if audio_attachments:
+                        text2, usage2 = self.service.chat_completion_with_params(
+                            provider,
+                            model,
+                            audio_messages,
+                            **request_parameters,
+                            extra_parameters=extra_parameters,
+                            attachments=audio_attachments,
+                        )
+                    response_text = text1
+                    if text2:
+                        response_text = f"{text1}\n\nAudio transcription:\n{text2}"
+                    usage = {
+                        "prompt_tokens": usage1.get("prompt_tokens", 0) + usage2.get("prompt_tokens", 0),
+                        "completion_tokens": usage1.get("completion_tokens", 0) + usage2.get("completion_tokens", 0),
+                    }
+                    request_body = _build_chat_request_body(
+                        self.service,
+                        provider,
+                        model,
+                        messages,
+                        request_parameters,
+                        extra_parameters,
+                        attachments=video_attachments,
+                    )
+                else:
+                    converted_attachments = attachments
+                    if needs_conversion:
+                        yield f"data: {json.dumps({'type': 'status', 'text': 'Converting attachment…'})}\n\n"
+                        converted_attachments = _process_attachments(attachments)
+                        yield f"data: {json.dumps({'type': 'status', 'text': 'thinking…'})}\n\n"
+                    request_body = _build_chat_request_body(
+                        self.service,
+                        provider,
+                        model,
+                        messages,
+                        request_parameters,
+                        extra_parameters,
+                        attachments=converted_attachments,
+                    )
+                    for event in self.service.chat_completion_with_params_stream(
+                        provider,
+                        model,
+                        messages,
+                        **request_parameters,
+                        extra_parameters=extra_parameters,
+                        attachments=converted_attachments,
+                    ):
+                        if event.get("type") == "chunk":
+                            response_text += event.get("text", "")
+                            yield f"data: {json.dumps(event)}\n\n"
+                        elif event.get("type") == "done":
+                            usage = event.get("usage", usage) or usage
+                            yield f"data: {json.dumps(event)}\n\n"
                 elapsed = round(time.monotonic() - started, 2)
                 add_chat_message(
                     "assistant",
