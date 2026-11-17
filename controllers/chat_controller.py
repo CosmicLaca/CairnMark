@@ -224,8 +224,137 @@ def _resize_image_attachment(attachment):
         return attachment
 
 
-def _resize_attachments(attachments):
-    return [_resize_image_attachment(item) for item in (attachments or [])]
+def _convert_video_attachment(attachment):
+    """Resize/re-encode a video attachment to max 640px side, 2 fps, lower quality, mp4.
+
+    Returns the original attachment unchanged when ffmpeg-python or ffmpeg is
+    unavailable or conversion fails, so chat still works without the toolchain.
+    """
+    if not isinstance(attachment, dict) or attachment.get("type") != "video":
+        return attachment
+    try:
+        import ffmpeg
+    except ImportError:
+        return attachment
+    try:
+        decoded = base64.b64decode(attachment["data"], validate=True)
+    except Exception:  # noqa: BLE001
+        return attachment
+    import os
+    import tempfile
+
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = os.path.join(tmpdir, "input")
+            with open(input_path, "wb") as handle:
+                handle.write(decoded)
+            probe = ffmpeg.probe(input_path)
+            streams = probe.get("streams", []) if isinstance(probe, dict) else []
+            video_stream = next(
+                (s for s in streams if s.get("codec_type") == "video"), None
+            )
+            if video_stream is None:
+                return attachment
+            width = int(video_stream.get("width") or 0)
+            height = int(video_stream.get("height") or 0)
+            if width <= 0 or height <= 0:
+                return attachment
+            has_audio = any(s.get("codec_type") == "audio" for s in streams)
+            stream = ffmpeg.input(input_path)
+            video = stream.video
+            if max(width, height) > 640:
+                if width >= height:
+                    video = video.filter("scale", 640, -2)
+                else:
+                    video = video.filter("scale", -2, 640)
+            video = video.filter("fps", fps=2)
+            output_path = os.path.join(tmpdir, "output.mp4")
+            output_args = {
+                "vcodec": "libx264",
+                "crf": 28,
+                "preset": "fast",
+                "pix_fmt": "yuv420p",
+                "movflags": "+faststart",
+            }
+            if has_audio:
+                audio = stream.audio
+                ffmpeg.output(
+                    video, audio, output_path,
+                    acodec="aac", audio_bitrate="64k", **output_args,
+                ).overwrite_output().run(quiet=True)
+            else:
+                ffmpeg.output(
+                    video, output_path, **output_args,
+                ).overwrite_output().run(quiet=True)
+            with open(output_path, "rb") as handle:
+                converted = handle.read()
+            if not converted:
+                return attachment
+            return {
+                "type": "video",
+                "data": base64.b64encode(converted).decode("ascii"),
+                "mime_type": "video/mp4",
+                "preview_data": attachment.get("preview_data"),
+            }
+    except Exception:  # noqa: BLE001
+        current_app.logger.exception("Video attachment could not be converted")
+        return attachment
+
+
+def _convert_audio_attachment(attachment):
+    """Convert an audio attachment to a 64 kbit/s MP3."""
+    if not isinstance(attachment, dict) or attachment.get("type") != "audio":
+        return attachment
+    try:
+        import ffmpeg
+    except ImportError:
+        return attachment
+    try:
+        decoded = base64.b64decode(attachment["data"], validate=True)
+    except Exception:  # noqa: BLE001
+        return attachment
+    import os
+    import tempfile
+
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = os.path.join(tmpdir, "input")
+            with open(input_path, "wb") as handle:
+                handle.write(decoded)
+            probe = ffmpeg.probe(input_path)
+            streams = probe.get("streams", []) if isinstance(probe, dict) else []
+            if not any(s.get("codec_type") == "audio" for s in streams):
+                return attachment
+            stream = ffmpeg.input(input_path)
+            audio = stream.audio
+            output_path = os.path.join(tmpdir, "output.mp3")
+            ffmpeg.output(
+                audio, output_path,
+                acodec="libmp3lame", audio_bitrate="64k",
+            ).overwrite_output().run(quiet=True)
+            with open(output_path, "rb") as handle:
+                converted = handle.read()
+            if not converted:
+                return attachment
+            return {
+                "type": "audio",
+                "data": base64.b64encode(converted).decode("ascii"),
+                "mime_type": "audio/mpeg",
+                "preview_data": attachment.get("preview_data"),
+            }
+    except Exception:  # noqa: BLE001
+        current_app.logger.exception("Audio attachment could not be converted")
+        return attachment
+
+
+def _process_attachments(attachments):
+    result = []
+    for item in (attachments or []):
+        item = _resize_image_attachment(item)
+        item = _convert_video_attachment(item)
+        item = _convert_audio_attachment(item)
+        result.append(item)
+    return result
 
 
 def _build_chat_request_body(service, provider, model, messages, request_parameters, extra_parameters, attachments=None):
@@ -323,7 +452,7 @@ class ChatController:
             saved_name,
             _parameter_values(data),
             _model_parameter_values(data.get("model_params")),
-            _resize_attachments(_attachment_values(data.get("attachments"))),
+            _process_attachments(_attachment_values(data.get("attachments"))),
         )
 
     def send(self):
