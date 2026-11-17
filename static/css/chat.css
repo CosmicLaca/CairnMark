@@ -629,24 +629,25 @@
     gap: 6px;
 }
 
-.chat-video-wrap {
+.chat-video-wrap,
+.chat-video-player {
     position: relative;
     display: inline-block;
     line-height: 0;
 }
 
-.chat-attachment--video .chat-video-controls {
+.chat-video-controls {
     position: absolute;
-    left: -5px;
-    bottom: -2px;
+    left: 1px;
+    bottom: 1px;
+    z-index: 1;
     display: flex;
-    gap: 4px;
     padding: 2px;
     border-radius: 4px;
     background: rgba(17, 25, 23, 0.45);
 }
 
-.chat-attachment--video .chat-video-controls button {
+.chat-video-controls button {
     min-width: 18px;
     height: 18px;
     border: 0;
@@ -657,7 +658,7 @@
     font-size: 0.7rem;
 }
 
-.chat-attachment--video .chat-video-controls button:hover {
+.chat-video-controls button:hover {
     background: #ffffff;
 }
 

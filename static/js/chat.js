@@ -509,29 +509,14 @@
                     toggleBtn.className = "chat-video-toggle";
                     toggleBtn.textContent = "▶";
                     toggleBtn.title = "Play";
-                    toggleBtn.addEventListener("click", () => {
-                        if (video.paused) video.play().catch(() => {});
-                        else video.pause();
-                    });
-                    const syncToggle = () => {
-                        toggleBtn.textContent = video.paused ? "▶" : "⏸";
-                        toggleBtn.title = video.paused ? "Play" : "Pause";
-                    };
-                    video.addEventListener("play", syncToggle);
-                    video.addEventListener("pause", syncToggle);
-                    video.addEventListener("ended", () => {
-                        video.currentTime = 0;
-                        toggleBtn.textContent = "▶";
-                        toggleBtn.title = "Play";
-                    });
                     controls.appendChild(toggleBtn);
                     const backBtn = document.createElement("button");
                     backBtn.type = "button";
                     backBtn.className = "chat-video-back";
                     backBtn.textContent = "⏪";
                     backBtn.title = "Rewind to beginning";
-                    backBtn.addEventListener("click", () => { video.currentTime = 0; });
                     controls.appendChild(backBtn);
+                    wrap.appendChild(controls);
                     wireVideoPlayer(wrap);
                     previews.appendChild(wrap);
                 });
