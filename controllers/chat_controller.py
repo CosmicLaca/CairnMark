@@ -432,40 +432,6 @@ def _extract_video_audio_attachment(attachment):
         return None
 
 
-def _needs_separate_audio(original_attachment, converted_video_attachment):
-    """Decide whether the in-video audio was preserved at full length."""
-    if not isinstance(original_attachment, dict) or original_attachment.get("type") != "video":
-        return False
-    try:
-        import ffmpeg
-    except ImportError:
-        return False
-    import os
-    import tempfile
-
-    try:
-        # original audio duration
-        with tempfile.TemporaryDirectory() as tmpdir:
-            original_path = os.path.join(tmpdir, "original")
-            with open(original_path, "wb") as handle:
-                handle.write(base64.b64decode(original_attachment["data"], validate=True))
-            original_duration = _probe_audio_duration(original_path)
-            if original_duration is None:
-                return False  # no audio in source
-            # converted video audio duration
-            converted_path = os.path.join(tmpdir, "converted")
-            with open(converted_path, "wb") as handle:
-                handle.write(base64.b64decode(converted_video_attachment["data"], validate=True))
-            converted_duration = _probe_audio_duration(converted_path)
-            if converted_duration is None:
-                return True  # audio lost during conversion
-            # tolerance: 1.0s or 10%
-            tolerance = max(1.0, original_duration * 0.1)
-            return abs(original_duration - converted_duration) > tolerance
-    except Exception:  # noqa: BLE001
-        return False
-
-
 def _process_attachments(attachments):
     result = []
     for item in (attachments or []):
@@ -473,7 +439,10 @@ def _process_attachments(attachments):
             original = item
             converted_video = _convert_video_attachment(item)
             result.append(converted_video)
-            if _needs_separate_audio(original, converted_video):
+            # Models cannot read the audio track embedded in a video attachment,
+            # so always send the (converted 64 kbit/s) audio track separately
+            # when the source video has one.
+            if _video_has_audio(original.get("data", "")):
                 separate = _extract_video_audio_attachment(original)
                 if separate is not None:
                     result.append(separate)

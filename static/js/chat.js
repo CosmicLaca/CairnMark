@@ -283,6 +283,9 @@
                     ? meta.preview_images
                     : [];
             const showAudioIcon = Boolean(meta && meta.has_audio);
+        if (showAudioIcon) {
+            div.classList.add("chat-message--has-audio");
+        }
             if (previewImages.length) {
                 const body = document.createElement("div");
                 body.className = "chat-user-body";
@@ -316,7 +319,7 @@
                     mic.className = "chat-user-audio-icon";
                     mic.textContent = "🎤";
                     mic.title = "Audio attachment";
-                    body.appendChild(mic);
+                    div.appendChild(mic);
                 }
                 div.appendChild(body);
             } else {

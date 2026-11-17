@@ -217,6 +217,7 @@
 }
 
 .chat-message {
+    position: relative;
     display: grid;
     gap: 6px;
     padding: 13px 14px;
@@ -293,19 +294,25 @@
 }
 
 .chat-user-audio-icon {
+    position: absolute;
+    top: 4px;
+    left: 4px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     border: 1px solid var(--line);
     border-radius: 6px;
-    background: rgba(255, 255, 255, 0.72);
+    background: rgba(255, 255, 255, 0.85);
     color: #2f5a50;
-    font-size: 1rem;
+    font-size: 0.85rem;
     line-height: 1;
-    flex: 0 0 auto;
-    align-self: flex-start;
+    z-index: 2;
+}
+
+.chat-message--has-audio .chat-role {
+    margin-left: 30px;
 }
 
 .chat-role {
