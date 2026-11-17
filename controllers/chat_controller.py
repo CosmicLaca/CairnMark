@@ -187,6 +187,7 @@ def _attachment_values(value):
                 "mime_type": mime_type,
                 "preview_data": preview_data,
                 "attach_audio": bool(item.get("attach_audio")),
+                "original_name": str(item.get("original_name") or item.get("name") or "").strip(),
             }
         )
     return cleaned
@@ -480,6 +481,28 @@ def _preview_directory():
     return directory
 
 
+def _save_preview_media(data, extension):
+    """Save converted media bytes to instance/preview and return the filename."""
+    if not data:
+        return None
+    try:
+        decoded = base64.b64decode(data, validate=True)
+    except Exception:  # noqa: BLE001
+        return None
+    if not decoded:
+        return None
+    safe_ext = (extension or "").lstrip(".").lower()
+    if safe_ext not in {"mp3", "mp4", "wav"}:
+        safe_ext = "bin"
+    filename = f"preview-{uuid.uuid4().hex}.{safe_ext}"
+    try:
+        (_preview_directory() / filename).write_bytes(decoded)
+        return filename
+    except OSError:  # noqa: BLE001
+        current_app.logger.exception("Preview media could not be saved")
+        return None
+
+
 def _preview_filenames_from_messages(messages):
     """Collect preview filenames referenced by a list of message dicts."""
     names = []
@@ -498,6 +521,22 @@ def _preview_filenames_from_messages(messages):
                     names.append(str(parsed))
             except (ValueError, TypeError):
                 names.extend(part.strip() for part in value.split(",") if part.strip())
+        media_value = message.get("preview_media")
+        if isinstance(media_value, list):
+            for item in media_value:
+                if isinstance(item, dict) and item.get("filename"):
+                    names.append(str(item["filename"]))
+        elif isinstance(media_value, str) and media_value.strip():
+            try:
+                parsed = json.loads(media_value)
+                if isinstance(parsed, list):
+                    for item in parsed:
+                        if isinstance(item, dict) and item.get("filename"):
+                            names.append(str(item["filename"]))
+                        elif item:
+                            names.append(str(item))
+            except (ValueError, TypeError):
+                pass
     return names
 
 
@@ -632,25 +671,41 @@ class ChatController:
         except ProviderOfflineError as error:
             return jsonify({"error": str(error)}), 503
 
+        save_original_media = bool(_data.get("save_original_media"))
         preview_images = []
+        preview_media = []
         has_audio_attachment = False
         for attachment in attachments or []:
             attachment_type = attachment.get("type")
-            if attachment_type == "audio":
-                has_audio_attachment = True
             if attachment_type == "image":
                 filename = _save_preview_image(attachment.get("data", ""))
                 if filename:
                     preview_images.append(filename)
-            elif attachment_type == "video" and attachment.get("preview_data"):
-                filename = _save_preview_image(attachment.get("preview_data", ""))
-                if filename:
-                    preview_images.append(filename)
+            elif attachment_type == "audio":
+                has_audio_attachment = True
+                if save_original_media:
+                    converted = _convert_audio_attachment(attachment)
+                    data = converted.get("data", attachment.get("data", ""))
+                    filename = _save_preview_media(data, "mp3")
+                    if filename:
+                        preview_media.append({"type": "audio", "filename": filename, "original_name": attachment.get("original_name", "")})
+            elif attachment_type == "video":
+                if save_original_media:
+                    converted = _convert_video_attachment(attachment)
+                    data = converted.get("data", attachment.get("data", ""))
+                    filename = _save_preview_media(data, "mp4")
+                    if filename:
+                        preview_media.append({"type": "video", "filename": filename, "original_name": attachment.get("original_name", "")})
+                elif attachment.get("preview_data"):
+                    filename = _save_preview_image(attachment.get("preview_data", ""))
+                    if filename:
+                        preview_images.append(filename)
         add_chat_message(
             "user",
             user_message,
             preview_images=preview_images,
-            has_audio=has_audio_attachment,
+            has_audio=has_audio_attachment and not save_original_media,
+            preview_media=preview_media,
         )
 
         stream_requested = (

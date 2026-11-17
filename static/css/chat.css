@@ -293,6 +293,22 @@
     background: rgba(176, 74, 57, 0.06);
 }
 
+.chat-user-media-previews {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: flex-start;
+    margin-top: 6px;
+}
+
+.chat-user-media-player {
+    max-width: 100%;
+    max-height: 180px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.5);
+}
+
 .chat-user-audio-icon {
     position: absolute;
     top: 4px;
@@ -514,7 +530,6 @@
 .chat-composer-body {
     display: flex;
     align-items: flex-start;
-    gap: 10px;
 }
 
 .chat-composer-media {
@@ -540,6 +555,7 @@
     gap: 8px;
     align-items: flex-start;
     min-width: 0;
+    margin-right: 10px;
 }
 
 .chat-attachments[hidden] {
@@ -591,6 +607,19 @@
 
 .chat-audio-player button:hover {
     background: rgba(111, 214, 195, 0.18);
+}
+
+.chat-audio-player--compact {
+    max-width: 260px;
+    padding: 4px 6px;
+}
+
+.chat-audio-player--compact .chat-attachment-name {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: default;
 }
 
 .chat-attachment--video {

@@ -165,8 +165,10 @@ Documents are always available. Image, video, and audio controls appear when a
 selected local model reports the matching capability. Large images are resized
 before sending. Attached video is re-encoded to MP4, scaled to a 480-pixel
 maximum side, 2 frames per second, and lower quality before sending. Its audio
-track is dropped by default; use the "Attach audio" switch to keep it. Attached
-audio is converted to a 64 kbit/s MP3 when needed. Attachments up to 100 MB
+track is dropped by default; use the "Attach audio" switch to keep it. The
+"Save the original attachment" switch stores the converted video/audio in
+instance/preview and shows them as players in the chat bubble. Attached audio is
+converted to a 64 kbit/s MP3 when needed. Attachments up to 100 MB
 are accepted. Small image previews are
 stored in `instance/preview/`; only their filenames are stored in chat history.
 

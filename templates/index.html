@@ -66,7 +66,7 @@
         <p>Choose an active model in the setup panel, then write the first message below.</p>
       </div>
       {% for message in chat_messages %}
-        <div class="chat-message chat-message--{{ message.role }}">
+        <div class="chat-message chat-message--{{ message.role }}{% if message.role == 'user' and message.has_audio %} chat-message--has-audio{% endif %}">
           <span class="chat-role">
             {% if message.role == 'assistant' and message.provider %}
               assistant::{{ message.provider }}::{{ message.model_name }}{% if message.saved_system_prompt_name %}::{{ message.saved_system_prompt_name }}{% endif %}
@@ -74,6 +74,19 @@
               {{ message.role }}
             {% endif %}
           </span>
+          {% if message.role == 'user' and message.preview_media %}
+            {% for media in message.preview_media %}
+              {% if media.type == 'audio' %}
+              <div class="chat-audio-player chat-audio-player--compact" data-audio-src="{{ url_for('chat_preview', filename=media.filename) }}">
+                <audio src="{{ url_for('chat_preview', filename=media.filename) }}" preload="metadata" hidden></audio>
+                <button type="button" class="chat-audio-toggle" title="Play">▶</button>
+                <button type="button" class="chat-audio-back" title="Rewind 5 seconds">⏪</button>
+                {% set display_name = media.original_name or media.filename %}
+                {% if display_name %}<span class="chat-attachment-name" title="{{ display_name }}">{{ display_name }}</span>{% endif %}
+              </div>
+              {% endif %}
+            {% endfor %}
+          {% endif %}
           {% if message.role == 'assistant' %}
             <span class="chat-meta-row">
               {% if message.response_time or message.input_tokens or message.output_tokens %}
@@ -97,17 +110,36 @@
               {% endif %}
             </span>
           {% endif %}
-          {% if message.role == 'user' and message.preview_images %}
+          {% if message.role == 'user' and (message.preview_images or message.preview_media) %}
           <div class="chat-user-body">
             <div class="chat-user-previews">
               {% for preview in message.preview_images %}
               <img class="chat-user-preview" src="{{ url_for('chat_preview', filename=preview) }}" alt="Attached image preview" onerror="this.outerHTML='<span class=\\'chat-user-preview--broken\\'>🔗</span>'">
               {% endfor %}
+              {% if message.preview_media %}
+              {% for media in message.preview_media %}
+                {% if media.type == 'video' %}
+                <div class="chat-video-player chat-video-player--compact chat-video-player--thumb" data-video-src="{{ url_for('chat_preview', filename=media.filename) }}">
+                  <video class="chat-user-media-player" src="{{ url_for('chat_preview', filename=media.filename) }}" preload="metadata" style="height:100px;width:auto;"></video>
+                  <div class="chat-video-controls">
+                    <button type="button" class="chat-video-toggle" title="Play">▶</button>
+                    <button type="button" class="chat-video-back" title="Rewind to beginning">⏪</button>
+                  </div>
+                </div>
+                {% endif %}
+              {% endfor %}
+              {% endif %}
             </div>
             <div class="chat-content" data-raw="{{ message.content|e }}">{{ message.content }}</div>
+            {% if message.has_audio %}
+            <span class="chat-user-audio-icon" title="Audio attachment">🎤</span>
+            {% endif %}
           </div>
           {% else %}
           <div class="chat-content markdown-content" data-raw="{{ message.content|e }}">{{ message.content|markdown }}</div>
+          {% if message.role == 'user' and message.has_audio %}
+          <span class="chat-user-audio-icon" title="Audio attachment">🎤</span>
+          {% endif %}
           {% endif %}
         </div>
       {% endfor %}

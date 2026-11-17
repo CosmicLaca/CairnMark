@@ -112,6 +112,20 @@ def _parse_preview_images(value):
     return []
 
 
+def _parse_preview_media(value):
+    if not value:
+        return []
+    if isinstance(value, list):
+        return value
+    try:
+        parsed = _json.loads(value)
+    except (ValueError, TypeError):
+        return []
+    if isinstance(parsed, list):
+        return parsed
+    return []
+
+
 def _database_path():
     configured = current_app.config.get("CHAT_DATABASE_PATH")
     if configured:
@@ -139,6 +153,7 @@ CHAT_MESSAGE_COLUMNS = {
     "request_body": "TEXT NOT NULL DEFAULT ''",
     "preview_images": "TEXT NOT NULL DEFAULT ''",
     "has_audio": "INTEGER NOT NULL DEFAULT 0",
+    "preview_media": "TEXT NOT NULL DEFAULT ''",
 }
 
 
@@ -314,7 +329,7 @@ def list_chat_messages():
         rows = connection.execute(
             "SELECT id, role, content, model_name, provider, response_time, "
             "input_tokens, output_tokens, system_prompt, saved_system_prompt_name, "
-            "request_body, preview_images, has_audio, created_at FROM chat_messages ORDER BY id"
+            "request_body, preview_images, has_audio, preview_media, created_at FROM chat_messages ORDER BY id"
         ).fetchall()
     return [
         {
@@ -331,7 +346,8 @@ def list_chat_messages():
             "request_body": row[10] or "",
             "preview_images": _parse_preview_images(row[11] or ""),
             "has_audio": bool(row[12]),
-            "created_at": row[13],
+            "preview_media": _parse_preview_media(row[13] or ""),
+            "created_at": row[14],
         }
         for row in rows
     ]
@@ -350,6 +366,7 @@ def add_chat_message(
     request_body="",
     preview_images=None,
     has_audio=0,
+    preview_media=None,
 ):
     with closing(_connect()) as connection:
         if isinstance(preview_images, (list, tuple)):
@@ -358,12 +375,18 @@ def add_chat_message(
             preview_value = ""
         else:
             preview_value = str(preview_images)
+        if isinstance(preview_media, (list, tuple)):
+            preview_media_value = _json.dumps(list(preview_media), ensure_ascii=False)
+        elif preview_media in (None, ""):
+            preview_media_value = ""
+        else:
+            preview_media_value = str(preview_media)
         cursor = connection.execute(
             "INSERT INTO chat_messages "
             "(role, content, model_name, provider, response_time, input_tokens, "
             "output_tokens, system_prompt, saved_system_prompt_name, request_body, "
-            "preview_images, has_audio) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "preview_images, has_audio, preview_media) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 role,
                 content,
@@ -377,6 +400,7 @@ def add_chat_message(
                 request_body,
                 preview_value,
                 1 if has_audio else 0,
+                preview_media_value,
             ),
         )
         connection.commit()
@@ -526,8 +550,8 @@ def load_saved_chat(name):
                 "INSERT INTO chat_messages "
                 "(role, content, model_name, provider, response_time, input_tokens, "
                 "output_tokens, system_prompt, saved_system_prompt_name, request_body, "
-                "preview_images, has_audio) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "preview_images, has_audio, preview_media) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     m.get("role", "user"),
                     m.get("content", ""),
@@ -543,6 +567,9 @@ def load_saved_chat(name):
                     if isinstance(preview_images, (list, tuple))
                     else str(preview_images or ""),
                     1 if m.get("has_audio") else 0,
+                    _json.dumps(m.get("preview_media", []), ensure_ascii=False)
+                    if isinstance(m.get("preview_media"), (list, tuple))
+                    else str(m.get("preview_media") or ""),
                 ),
             )
         connection.commit()
