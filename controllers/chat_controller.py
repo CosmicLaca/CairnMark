@@ -5,7 +5,6 @@ import io
 import json
 import re
 import time
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -88,6 +87,7 @@ AUDIO_ANALYSIS_PROMPT = (
     "Analyze the attached audio: transcribe any spoken words, and if there "
     "is no speech, describe the audio content (music, sounds, or noise)."
 )
+from services.chat_previews import ChatPreviewStore
 
 
 class AttachmentProcessingError(RuntimeError):
@@ -752,146 +752,12 @@ def render_markdown_html(text):
     return markdown.markdown(str(text or ""), extensions=MARKDOWN_EXTENSIONS)
 
 
-def _preview_directory():
-    database_path = Path(current_app.config.get("CHAT_DATABASE_PATH", ""))
-    if not database_path.is_absolute():
-        database_path = Path(current_app.root_path).parent / database_path
-    directory = database_path.parent / "preview"
-    directory.mkdir(parents=True, exist_ok=True)
-    return directory
-
-
-def _save_preview_media(data, extension):
-    """Save converted media bytes to instance/preview and return the filename."""
-    if not data:
-        return None
-    try:
-        decoded = base64.b64decode(data, validate=True)
-    except Exception:  # noqa: BLE001
-        return None
-    if not decoded:
-        return None
-    safe_ext = (extension or "").lstrip(".").lower()
-    if safe_ext not in {"mp3", "mp4", "wav"}:
-        safe_ext = "bin"
-    filename = f"preview-{uuid.uuid4().hex}.{safe_ext}"
-    try:
-        (_preview_directory() / filename).write_bytes(decoded)
-        return filename
-    except OSError:  # noqa: BLE001
-        current_app.logger.exception("Preview media could not be saved")
-        return None
-
-
-def _preview_filenames_from_messages(messages):
-    """Collect preview filenames referenced by a list of message dicts."""
-    names = []
-    for message in messages or []:
-        if not isinstance(message, dict):
-            continue
-        value = message.get("preview_images")
-        if isinstance(value, list):
-            names.extend(str(item) for item in value if item)
-        elif isinstance(value, str) and value.strip():
-            try:
-                parsed = json.loads(value)
-                if isinstance(parsed, list):
-                    names.extend(str(item) for item in parsed if item)
-                elif parsed:
-                    names.append(str(parsed))
-            except (ValueError, TypeError):
-                names.extend(part.strip() for part in value.split(",") if part.strip())
-        media_value = message.get("preview_media")
-        if isinstance(media_value, list):
-            for item in media_value:
-                if isinstance(item, dict) and item.get("filename"):
-                    names.append(str(item["filename"]))
-        elif isinstance(media_value, str) and media_value.strip():
-            try:
-                parsed = json.loads(media_value)
-                if isinstance(parsed, list):
-                    for item in parsed:
-                        if isinstance(item, dict) and item.get("filename"):
-                            names.append(str(item["filename"]))
-                        elif item:
-                            names.append(str(item))
-            except (ValueError, TypeError):
-                pass
-    return names
-
-
-def _preview_filenames_in_use():
-    """Collect preview filenames still referenced by any chat (current or saved)."""
-    in_use = set()
-    try:
-        for message in list_chat_messages():
-            for name in _preview_filenames_from_messages([message]):
-                in_use.add(Path(str(name)).name)
-    except Exception:  # noqa: BLE001
-        pass
-    try:
-        from models.chat_storage import list_saved_chats, get_saved_chat
-
-        for name in list_saved_chats():
-            saved = get_saved_chat(name)
-            for ref in _preview_filenames_from_messages(saved or []):
-                in_use.add(Path(str(ref)).name)
-    except Exception:  # noqa: BLE001
-        pass
-    return in_use
-
-
-def _delete_preview_files(filenames, in_use=None):
-    """Delete preview image files, ignoring missing or unsafe names.
-
-    Files in the ``in_use`` set (still referenced elsewhere) are kept.
-    """
-    if in_use is None:
-        in_use = _preview_filenames_in_use()
-    in_use = {Path(str(name)).name for name in (in_use or set())}
-    directory = _preview_directory()
-    for name in filenames or []:
-        safe_name = Path(str(name)).name
-        if not safe_name or safe_name in in_use:
-            continue
-        target = directory / safe_name
-        try:
-            target.unlink(missing_ok=True)
-        except OSError:  # noqa: BLE001
-            current_app.logger.exception(
-                "Preview file could not be deleted: %s", safe_name
-            )
-
-
-def _save_preview_image(data):
-    """Create a 300px-high JPEG preview and return its randomized filename."""
-    try:
-        from PIL import Image
-    except ImportError:
-        return None
-    try:
-        decoded = base64.b64decode(data, validate=True)
-        with Image.open(io.BytesIO(decoded)) as image:
-            if image.height <= 0:
-                return None
-            scale = 300 / image.height
-            width = max(1, int(image.width * scale))
-            resized = image.resize((width, 300), Image.LANCZOS)
-            if resized.mode in ("RGBA", "P"):
-                resized = resized.convert("RGB")
-            filename = f"preview-{uuid.uuid4().hex}.jpg"
-            resized.save(_preview_directory() / filename, format="JPEG", quality=60)
-            return filename
-    except Exception:  # noqa: BLE001
-        current_app.logger.exception("Preview image could not be saved")
-        return None
-
-
 class ChatController:
     """Provide chat context and handle chat messages."""
 
-    def __init__(self, service=None):
+    def __init__(self, service=None, preview_store=None):
         self.service = service or ModelProviderService()
+        self.previews = preview_store or ChatPreviewStore()
 
     def context(self):
         settings = get_chat_settings()
@@ -953,7 +819,7 @@ class ChatController:
             for attachment in chat_request.attachments:
                 attachment_type = attachment.get("type")
                 if attachment_type == "image":
-                    filename = _save_preview_image(attachment.get("data", ""))
+                    filename = self.previews.save(attachment.get("data", ""), "jpg")
                     if filename:
                         preview_images.append(filename)
                 elif attachment_type == "audio":
@@ -961,7 +827,7 @@ class ChatController:
                     if save_original_media:
                         converted = _convert_audio_attachment(attachment)
                         data = converted.get("data", attachment.get("data", ""))
-                        filename = _save_preview_media(data, "mp3")
+                        filename = self.previews.save(data, "mp3")
                         if filename:
                             preview_media.append(
                                 {
@@ -986,7 +852,7 @@ class ChatController:
                                 )
                                 if merged:
                                     data = merged
-                        filename = _save_preview_media(data, "mp4")
+                        filename = self.previews.save(data, "mp4")
                         if filename:
                             preview_media.append(
                                 {
@@ -998,8 +864,8 @@ class ChatController:
                                 }
                             )
                     elif attachment.get("preview_data"):
-                        filename = _save_preview_image(
-                            attachment.get("preview_data", "")
+                        filename = self.previews.save(
+                            attachment.get("preview_data", ""), "jpg"
                         )
                         if filename:
                             preview_images.append(filename)
@@ -1181,7 +1047,7 @@ class ChatController:
         )
 
     def preview(self, filename):
-        directory = _preview_directory()
+        directory = self.previews.directory()
         safe_name = Path(filename).name
         if not safe_name or safe_name != filename:
             return ("", 404)
@@ -1226,14 +1092,10 @@ class ChatController:
 
     def clear(self):
         current_messages = list_chat_messages()
-        filenames = _preview_filenames_from_messages(current_messages)
-        in_use = set()
-        for name in list_saved_chats():
-            saved = get_saved_chat(name)
-            for ref in _preview_filenames_from_messages(saved or []):
-                in_use.add(Path(str(ref)).name)
+        filenames = self.previews.filenames(current_messages)
+        saved_messages = [get_saved_chat(name) or [] for name in list_saved_chats()]
         clear_chat_messages()
-        _delete_preview_files(filenames, in_use=in_use)
+        self.previews.delete_unreferenced(filenames, *saved_messages)
         return jsonify({"message": "Chat cleared."})
 
     def abort(self):
@@ -1244,18 +1106,13 @@ class ChatController:
             and isinstance(messages[-1], dict)
             and messages[-1].get("role") == "user"
         ):
-            filenames = _preview_filenames_from_messages([messages[-1]])
-        in_use = set()
-        for message in messages[:-1]:
-            for ref in _preview_filenames_from_messages([message]):
-                in_use.add(Path(str(ref)).name)
-        for name in list_saved_chats():
-            saved = get_saved_chat(name)
-            for ref in _preview_filenames_from_messages(saved or []):
-                in_use.add(Path(str(ref)).name)
+            filenames = self.previews.filenames([messages[-1]])
+        referenced = [messages[:-1]] + [
+            get_saved_chat(name) or [] for name in list_saved_chats()
+        ]
         deleted = delete_last_chat_message()
         if deleted:
-            _delete_preview_files(filenames, in_use=in_use)
+            self.previews.delete_unreferenced(filenames, *referenced)
         return jsonify({"message": "Request aborted.", "deleted": deleted})
 
     def list_saved(self):
@@ -1287,20 +1144,13 @@ class ChatController:
         if not name:
             return jsonify({"error": "Chat name is required."}), 400
         saved = get_saved_chat(name)
-        filenames = _preview_filenames_from_messages(saved) if saved else []
-        in_use = set()
-        for message in list_chat_messages():
-            for ref in _preview_filenames_from_messages([message]):
-                in_use.add(Path(str(ref)).name)
-        for other in list_saved_chats():
-            if other == name:
-                continue
-            other_saved = get_saved_chat(other)
-            for ref in _preview_filenames_from_messages(other_saved or []):
-                in_use.add(Path(str(ref)).name)
+        filenames = self.previews.filenames(saved) if saved else []
+        referenced = [list_chat_messages()] + [
+            get_saved_chat(other) or [] for other in list_saved_chats() if other != name
+        ]
         if not delete_saved_chat(name):
             return jsonify({"error": "Saved chat not found."}), 404
-        _delete_preview_files(filenames, in_use=in_use)
+        self.previews.delete_unreferenced(filenames, *referenced)
         return jsonify({"message": "Chat deleted.", "name": name})
 
     def list_saved_system_prompts(self):

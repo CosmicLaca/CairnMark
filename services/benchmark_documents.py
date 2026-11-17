@@ -38,6 +38,8 @@ class BenchmarkRepository:
 
     def list_files(self):
         """Return JSON filenames in stable, case-insensitive display order."""
+        if not self.directory.is_dir():
+            return []
         return sorted(
             (
                 path.name

@@ -6,13 +6,10 @@ page defaults lives in the main ``instance/cairnmark.db``.
 """
 
 import json
-import sqlite3
 from contextlib import closing
-from pathlib import Path
-
-from flask import current_app
 
 from config import PROJECT_ROOT
+from models.sqlite_store import SQLiteStore
 
 
 CHAT_PARAMETER_DEFAULTS = {
@@ -133,22 +130,6 @@ def _parse_preview_media(value):
     return []
 
 
-def _database_path():
-    configured = current_app.config.get("CHAT_DATABASE_PATH")
-    if configured:
-        path = Path(configured)
-    else:
-        path = PROJECT_ROOT / "instance" / "chathistory.db"
-    if not path.is_absolute():
-        path = PROJECT_ROOT / path
-    return path
-
-
-def _settings_database_path():
-    """Return the main database that stores the chat setup defaults."""
-    return Path(current_app.config["DATABASE_PATH"])
-
-
 CHAT_MESSAGE_COLUMNS = {
     "model_name": "TEXT NOT NULL DEFAULT ''",
     "provider": "TEXT NOT NULL DEFAULT ''",
@@ -207,40 +188,18 @@ def _migrate_chat_settings(connection):
     connection.execute("ALTER TABLE chat_settings_new RENAME TO chat_settings")
 
 
-def _connect(settings=False):
-    """Open and migrate either chat database selected by ``settings``."""
-    database_path = _settings_database_path() if settings else _database_path()
-    database_path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(database_path)
-    connection.execute("PRAGMA busy_timeout = 5000")
-    if settings:
-        connection.executescript(CHAT_SETTINGS_SCHEMA + CHAT_ATTACHMENT_SETTINGS_SCHEMA)
-        _migrate_chat_settings(connection)
-    else:
-        connection.executescript(CHAT_SCHEMA)
-        _migrate_chat_messages(connection)
-    connection.commit()
-    return connection
+CHAT_STORE = SQLiteStore(
+    "CHAT_DATABASE_PATH",
+    default_path=PROJECT_ROOT / "instance" / "chathistory.db",
+    schema=CHAT_SCHEMA,
+    migrate=_migrate_chat_messages,
+)
 
-
-def init_chat_storage(app):
-    """Record the chat history path and create the setup defaults table."""
-    database_path = Path(
-        app.config.get(
-            "CHAT_DATABASE_PATH",
-            str(PROJECT_ROOT / "instance" / "chathistory.db"),
-        )
-    )
-    if not database_path.is_absolute():
-        database_path = PROJECT_ROOT / database_path
-    app.config["CHAT_DATABASE_PATH"] = str(database_path)
-    settings_path = Path(app.config["DATABASE_PATH"])
-    settings_path.parent.mkdir(parents=True, exist_ok=True)
-    with closing(sqlite3.connect(settings_path)) as connection:
-        connection.execute("PRAGMA busy_timeout = 5000")
-        connection.executescript(CHAT_SETTINGS_SCHEMA + CHAT_ATTACHMENT_SETTINGS_SCHEMA)
-        _migrate_chat_settings(connection)
-        connection.commit()
+SETTINGS_STORE = SQLiteStore(
+    "DATABASE_PATH",
+    schema=CHAT_SETTINGS_SCHEMA + CHAT_ATTACHMENT_SETTINGS_SCHEMA,
+    migrate=_migrate_chat_settings,
+)
 
 
 def _default_chat_settings():
@@ -252,11 +211,11 @@ def _default_chat_settings():
 
 
 def get_chat_settings():
-    database_path = _settings_database_path()
+    database_path = SETTINGS_STORE.path()
     if not database_path.exists():
         return _default_chat_settings()
     parameter_columns = tuple(CHAT_PARAMETER_DEFAULTS)
-    with closing(_connect(settings=True)) as connection:
+    with closing(SETTINGS_STORE.connect()) as connection:
         row = connection.execute(
             "SELECT model_name, system_prompt, "
             + ", ".join(parameter_columns)
@@ -294,7 +253,7 @@ def save_chat_settings(settings):
             for key, converter in CHAT_PARAMETER_CONVERTERS.items()
         ),
     ]
-    with closing(_connect(settings=True)) as connection:
+    with closing(SETTINGS_STORE.connect()) as connection:
         connection.execute(
             f"""
             INSERT INTO chat_settings
@@ -317,10 +276,10 @@ def save_chat_settings(settings):
 
 def get_chat_attachment_settings():
     """Return the last-used media attachment switch values."""
-    database_path = _settings_database_path()
+    database_path = SETTINGS_STORE.path()
     if not database_path.exists():
         return {"save_original_media": False, "attach_audio": False}
-    with closing(_connect(settings=True)) as connection:
+    with closing(SETTINGS_STORE.connect()) as connection:
         row = connection.execute(
             "SELECT save_original_media, attach_audio "
             "FROM chat_attachment_settings WHERE id = 1"
@@ -335,7 +294,7 @@ def get_chat_attachment_settings():
 
 def save_chat_attachment_settings(settings):
     """Persist both media attachment switch values."""
-    with closing(_connect(settings=True)) as connection:
+    with closing(SETTINGS_STORE.connect()) as connection:
         connection.execute(
             """
             INSERT INTO chat_attachment_settings
@@ -355,10 +314,10 @@ def save_chat_attachment_settings(settings):
 
 
 def list_chat_messages():
-    database_path = _database_path()
+    database_path = CHAT_STORE.path()
     if not database_path.exists():
         return []
-    with closing(_connect()) as connection:
+    with closing(CHAT_STORE.connect()) as connection:
         rows = connection.execute(
             "SELECT id, role, content, model_name, provider, response_time, "
             "input_tokens, output_tokens, system_prompt, saved_system_prompt_name, "
@@ -401,7 +360,7 @@ def add_chat_message(
     has_audio=0,
     preview_media=None,
 ):
-    with closing(_connect()) as connection:
+    with closing(CHAT_STORE.connect()) as connection:
         if isinstance(preview_images, (list, tuple)):
             preview_value = json.dumps(list(preview_images), ensure_ascii=False)
         elif preview_images in (None, ""):
@@ -441,20 +400,20 @@ def add_chat_message(
 
 
 def clear_chat_messages():
-    database_path = _database_path()
+    database_path = CHAT_STORE.path()
     if not database_path.exists():
         return
-    with closing(_connect()) as connection:
+    with closing(CHAT_STORE.connect()) as connection:
         connection.execute("DELETE FROM chat_messages")
         connection.commit()
 
 
 def delete_last_chat_message():
     """Remove the most recent chat message when it is an unanswered user request."""
-    database_path = _database_path()
+    database_path = CHAT_STORE.path()
     if not database_path.exists():
         return False
-    with closing(_connect()) as connection:
+    with closing(CHAT_STORE.connect()) as connection:
         row = connection.execute(
             "SELECT id, role FROM chat_messages ORDER BY id DESC LIMIT 1"
         ).fetchone()
@@ -466,10 +425,10 @@ def delete_last_chat_message():
 
 
 def list_saved_system_prompts():
-    database_path = _database_path()
+    database_path = CHAT_STORE.path()
     if not database_path.exists():
         return []
-    with closing(_connect()) as connection:
+    with closing(CHAT_STORE.connect()) as connection:
         rows = connection.execute(
             "SELECT name FROM saved_system_prompts ORDER BY name COLLATE NOCASE"
         ).fetchall()
@@ -477,7 +436,7 @@ def list_saved_system_prompts():
 
 
 def save_saved_system_prompt(name, content):
-    with closing(_connect()) as connection:
+    with closing(CHAT_STORE.connect()) as connection:
         connection.execute(
             """
             INSERT INTO saved_system_prompts (name, content)
@@ -492,10 +451,10 @@ def save_saved_system_prompt(name, content):
 
 
 def get_saved_system_prompt(name):
-    database_path = _database_path()
+    database_path = CHAT_STORE.path()
     if not database_path.exists():
         return None
-    with closing(_connect()) as connection:
+    with closing(CHAT_STORE.connect()) as connection:
         row = connection.execute(
             "SELECT content FROM saved_system_prompts WHERE name = ?", (name,)
         ).fetchone()
@@ -505,10 +464,10 @@ def get_saved_system_prompt(name):
 
 
 def delete_saved_system_prompt(name):
-    database_path = _database_path()
+    database_path = CHAT_STORE.path()
     if not database_path.exists():
         return False
-    with closing(_connect()) as connection:
+    with closing(CHAT_STORE.connect()) as connection:
         cursor = connection.execute(
             "DELETE FROM saved_system_prompts WHERE name = ?", (name,)
         )
@@ -517,10 +476,10 @@ def delete_saved_system_prompt(name):
 
 
 def list_saved_chats():
-    database_path = _database_path()
+    database_path = CHAT_STORE.path()
     if not database_path.exists():
         return []
-    with closing(_connect()) as connection:
+    with closing(CHAT_STORE.connect()) as connection:
         rows = connection.execute(
             "SELECT name FROM saved_chats ORDER BY name COLLATE NOCASE"
         ).fetchall()
@@ -529,7 +488,7 @@ def list_saved_chats():
 
 def save_saved_chat(name, messages):
     payload = json.dumps(messages, ensure_ascii=False)
-    with closing(_connect()) as connection:
+    with closing(CHAT_STORE.connect()) as connection:
         connection.execute(
             """
             INSERT INTO saved_chats (name, messages)
@@ -544,10 +503,10 @@ def save_saved_chat(name, messages):
 
 
 def get_saved_chat(name):
-    database_path = _database_path()
+    database_path = CHAT_STORE.path()
     if not database_path.exists():
         return None
-    with closing(_connect()) as connection:
+    with closing(CHAT_STORE.connect()) as connection:
         row = connection.execute(
             "SELECT messages FROM saved_chats WHERE name = ?", (name,)
         ).fetchone()
@@ -560,10 +519,10 @@ def get_saved_chat(name):
 
 
 def delete_saved_chat(name):
-    database_path = _database_path()
+    database_path = CHAT_STORE.path()
     if not database_path.exists():
         return False
-    with closing(_connect()) as connection:
+    with closing(CHAT_STORE.connect()) as connection:
         cursor = connection.execute("DELETE FROM saved_chats WHERE name = ?", (name,))
         connection.commit()
         return cursor.rowcount > 0
@@ -573,7 +532,7 @@ def load_saved_chat(name):
     messages = get_saved_chat(name)
     if messages is None:
         return False
-    with closing(_connect()) as connection:
+    with closing(CHAT_STORE.connect()) as connection:
         connection.execute("DELETE FROM chat_messages")
         for m in messages:
             preview_images = m.get("preview_images", [])

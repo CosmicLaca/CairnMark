@@ -1,11 +1,8 @@
 """SQLite persistence for provider-specific model configurations."""
 
-import sqlite3
 from contextlib import closing
-from pathlib import Path
 
-from flask import current_app
-
+from models.sqlite_store import SQLiteStore
 from services.token_encryption import encrypt_token, decrypt_token
 
 
@@ -38,16 +35,8 @@ PROVIDER_SCHEMA = """
 """
 
 
-def _database_path():
-    """Return the database configured for the active application."""
-    return Path(current_app.config["DATABASE_PATH"])
-
-
-def _ensure_schema(connection):
-    """Create or migrate provider tables on an open connection."""
-    connection.execute(SCHEMA)
-    connection.execute(INDEX)
-    connection.execute(PROVIDER_SCHEMA)
+def _migrate(connection):
+    """Add provider columns introduced after the initial schema."""
     provider_columns = {
         row[1]
         for row in connection.execute(
@@ -68,31 +57,18 @@ def _ensure_schema(connection):
         connection.execute(
             "ALTER TABLE model_configurations ADD COLUMN size_gb INTEGER"
         )
-    connection.commit()
 
 
-def _connect():
-    """Open the configured database and restore a missing schema."""
-    database_path = _database_path()
-    database_path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(database_path)
-    connection.execute("PRAGMA busy_timeout = 5000")
-    _ensure_schema(connection)
-    return connection
-
-
-def init_model_storage(app):
-    """Create the model configuration table for an application."""
-    database_path = Path(app.config["DATABASE_PATH"])
-    database_path.parent.mkdir(parents=True, exist_ok=True)
-    with closing(sqlite3.connect(database_path)) as connection:
-        connection.execute("PRAGMA busy_timeout = 5000")
-        _ensure_schema(connection)
+STORE = SQLiteStore(
+    "DATABASE_PATH",
+    schema=";\n".join((SCHEMA, INDEX, PROVIDER_SCHEMA)),
+    migrate=_migrate,
+)
 
 
 def save_model_list(models, provider_name="llama.cpp"):
     """Save model list to database with their enabled states and sizes."""
-    with closing(_connect()) as connection:
+    with closing(STORE.connect()) as connection:
         connection.execute(
             "DELETE FROM model_configurations WHERE provider_name = ?",
             (provider_name,),
@@ -118,7 +94,7 @@ def save_model_list(models, provider_name="llama.cpp"):
 
 def get_saved_model_configuration(provider_name="llama.cpp"):
     """Retrieve saved model configuration for a specific provider."""
-    with closing(_connect()) as connection:
+    with closing(STORE.connect()) as connection:
         rows = connection.execute(
             """
             SELECT model_name, is_enabled, size_gb
@@ -140,7 +116,7 @@ def get_saved_model_configuration(provider_name="llama.cpp"):
 
 def get_active_model_configurations():
     """Return enabled models that belong to enabled providers."""
-    with closing(_connect()) as connection:
+    with closing(STORE.connect()) as connection:
         rows = connection.execute(
             """
             SELECT models.provider_name, models.model_name, models.size_gb
@@ -165,7 +141,7 @@ def get_active_model_configurations():
 
 def get_model_configuration_summary(provider_name="llama.cpp"):
     """Return total and enabled model counts for one provider."""
-    with closing(_connect()) as connection:
+    with closing(STORE.connect()) as connection:
         total, enabled = connection.execute(
             """
             SELECT COUNT(*), COALESCE(SUM(is_enabled), 0)
@@ -184,7 +160,7 @@ def save_provider_configuration(
     api_key=None,
 ):
     """Save a provider connection, preserving an omitted API key."""
-    with closing(_connect()) as connection:
+    with closing(STORE.connect()) as connection:
         connection.execute(
             """
             INSERT INTO provider_configurations
@@ -203,7 +179,7 @@ def save_provider_configuration(
 
 def get_provider_configuration(provider_name):
     """Return one saved provider endpoint and its enabled state."""
-    with closing(_connect()) as connection:
+    with closing(STORE.connect()) as connection:
         row = connection.execute(
             """
             SELECT provider_name, server_ip, server_port, api_key, is_enabled
@@ -225,7 +201,7 @@ def get_provider_configuration(provider_name):
 
 def set_provider_enabled(provider_name, is_enabled):
     """Persist the overall enabled state for a configured provider."""
-    with closing(_connect()) as connection:
+    with closing(STORE.connect()) as connection:
         cursor = connection.execute(
             """
             UPDATE provider_configurations

@@ -11,10 +11,7 @@ from flask import Flask
 from markupsafe import Markup
 
 from config import CONFIGS
-from models.benchmark_metadata import init_database
-from models.chat_storage import init_chat_storage
-from models.model_storage import init_model_storage
-from models.parameter_storage import init_parameter_storage
+from models import init_storage
 from routes import init_routes
 
 
@@ -56,10 +53,7 @@ def create_app(config_name=None, config_overrides=None):
     if config_overrides:
         app.config.from_mapping(config_overrides)
     app.logger.setLevel(getattr(logging, app.config["LOG_LEVEL"], logging.INFO))
-    init_database(app)
-    init_model_storage(app)
-    init_chat_storage(app)
-    init_parameter_storage(app)
+    init_storage(app)
     init_routes(app)
 
     markdown_extensions = ("fenced_code", "tables", "sane_lists")
@@ -67,7 +61,9 @@ def create_app(config_name=None, config_overrides=None):
     @app.template_filter("markdown")
     def render_markdown_filter(value):
         """Render trusted Markdown text as HTML for templates."""
-        return Markup(markdown.markdown(str(value or ""), extensions=markdown_extensions))
+        return Markup(
+            markdown.markdown(str(value or ""), extensions=markdown_extensions)
+        )
 
     return app
 

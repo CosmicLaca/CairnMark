@@ -66,6 +66,7 @@
     let moreParamsModelKey = "";
     const pendingAttachments = [];
     const renderMarkdown = window.CairnmarkMarkdown.render;
+    const chatMedia = window.CairnmarkChatMedia;
 
     // Toggle state per message
     const rawSource = new WeakMap();
@@ -135,126 +136,17 @@
     // Capture phase catches scrolling inside the chat history container too.
     window.addEventListener("scroll", hideHoverPreview, true);
 
-    const wireVideoPlayer = (wrap) => {
-        if (!wrap || wrap.dataset.wired === "1") return;
-        wrap.dataset.wired = "1";
-        const video = wrap.querySelector("video");
-        if (!video) return;
-        const toggleBtn = wrap.querySelector(".chat-video-toggle");
-        const backBtn = wrap.querySelector(".chat-video-back");
-        const syncToggle = () => {
-            if (toggleBtn) {
-                toggleBtn.textContent = video.paused ? "▶" : "⏸";
-                toggleBtn.title = video.paused ? "Play" : "Pause";
-            }
-        };
-        syncToggle();
-        if (toggleBtn) {
-            toggleBtn.addEventListener("click", () => {
-                if (video.paused) video.play().catch(() => {});
-                else video.pause();
-            });
-        }
-        video.addEventListener("play", syncToggle);
-        video.addEventListener("pause", syncToggle);
-        video.addEventListener("ended", () => {
-            video.currentTime = 0;
-            if (toggleBtn) {
-                toggleBtn.textContent = "▶";
-                toggleBtn.title = "Play";
-            }
-        });
-        if (backBtn) {
-            backBtn.addEventListener("click", () => { video.currentTime = 0; });
-        }
-    };
-
-    const wireAudioPlayer = (player) => {
-        if (!player || player.dataset.wired === "1") return;
-        player.dataset.wired = "1";
-        const audio = player.querySelector("audio");
-        if (!audio) return;
-        const toggleBtn = player.querySelector(".chat-audio-toggle");
-        const backBtn = player.querySelector(".chat-audio-back");
-        const syncToggle = () => {
-            if (toggleBtn) {
-                toggleBtn.textContent = audio.paused ? "▶" : "⏸";
-                toggleBtn.title = audio.paused ? "Play" : "Pause";
-            }
-        };
-        syncToggle();
-        if (toggleBtn) {
-            toggleBtn.addEventListener("click", () => {
-                if (audio.paused) {
-                    audio.play().catch(() => {});
-                } else {
-                    audio.pause();
-                }
-            });
-        }
-        audio.addEventListener("play", syncToggle);
-        audio.addEventListener("pause", syncToggle);
-        audio.addEventListener("ended", syncToggle);
-        if (backBtn) {
-            backBtn.addEventListener("click", () => {
-                audio.currentTime = 0;
-            });
-        }
-        audio.addEventListener("ended", () => {
-            audio.currentTime = 0;
-            if (toggleBtn) {
-                toggleBtn.textContent = "▶";
-                toggleBtn.title = "Play";
-            }
-        });
-    };
-
-    const createAudioPlayer = (src, name) => {
-        const item = document.createElement("div");
-        item.className = "chat-audio-player chat-audio-player--compact";
-        const audio = document.createElement("audio");
-        audio.src = src;
-        audio.preload = "metadata";
-        audio.hidden = true;
-        item.appendChild(audio);
-        const toggleBtn = document.createElement("button");
-        toggleBtn.type = "button";
-        toggleBtn.className = "chat-audio-toggle";
-        toggleBtn.textContent = "▶";
-        toggleBtn.title = "Play";
-        item.appendChild(toggleBtn);
-        const backBtn = document.createElement("button");
-        backBtn.type = "button";
-        backBtn.className = "chat-audio-back";
-        backBtn.textContent = "⏪";
-        backBtn.title = "Rewind to beginning";
-        backBtn.addEventListener("click", () => {
-            audio.currentTime = 0;
-        });
-        item.appendChild(backBtn);
-        audio.addEventListener("ended", () => {
-            audio.currentTime = 0;
-            toggleBtn.textContent = "▶";
-            toggleBtn.title = "Play";
-        });
-        if (name) {
-            const nameSpan = document.createElement("span");
-            nameSpan.className = "chat-attachment-name";
-            nameSpan.textContent = name;
-            nameSpan.title = name;
-            item.appendChild(nameSpan);
-        }
-        wireAudioPlayer(item);
-        return item;
-    };
-
     // Server-rendered preview thumbnails (initial page load) do not get the
     // per-element hover listeners attached by appendMessage, so delegate.
     // Wire up any server-rendered audio players.
-    document.querySelectorAll(".chat-audio-player").forEach(wireAudioPlayer);
+    document.querySelectorAll(".chat-audio-player").forEach((item) => {
+        chatMedia.wire(item, "audio");
+    });
 
     // Wire up any server-rendered video players.
-    document.querySelectorAll(".chat-video-player").forEach(wireVideoPlayer);
+    document.querySelectorAll(".chat-video-player").forEach((item) => {
+        chatMedia.wire(item, "video");
+    });
 
     // Auto-rewind native video players on end.
     document.querySelectorAll("video.chat-user-media-player").forEach((video) => {
@@ -459,7 +351,7 @@
                 const src = item.url || (item.filename ? `/chat/preview/${encodeURIComponent(item.filename)}` : null);
                 if (!src) return;
                 const displayName = item.original_name || item.filename || "";
-                const player = createAudioPlayer(src, displayName);
+                const player = chatMedia.createAudio(src, displayName);
                 div.appendChild(player);
             });
             const videoMedia = previewMedia.filter((m) => m && m.type === "video");
@@ -517,7 +409,7 @@
                     backBtn.title = "Rewind to beginning";
                     controls.appendChild(backBtn);
                     wrap.appendChild(controls);
-                    wireVideoPlayer(wrap);
+                    chatMedia.wire(wrap, "video");
                     previews.appendChild(wrap);
                 });
                 body.appendChild(previews);
@@ -1479,57 +1371,12 @@
 
             if (attachment.type === "audio") {
                 if (!audioAttachmentsEl) return;
-                const item = document.createElement("div");
-                item.className = "chat-audio-player";
+                const item = chatMedia.createAudio(
+                    attachment.audioUrl,
+                    attachment.name,
+                    false
+                );
                 item.setAttribute("data-chat-attachment", "audio");
-
-                const audio = document.createElement("audio");
-                audio.src = attachment.audioUrl;
-                audio.preload = "metadata";
-                audio.hidden = true;
-                item.appendChild(audio);
-
-                const toggleBtn = document.createElement("button");
-                toggleBtn.type = "button";
-                toggleBtn.className = "chat-audio-toggle";
-                toggleBtn.textContent = "▶";
-                toggleBtn.title = "Play";
-                toggleBtn.addEventListener("click", () => {
-                    if (audio.paused) {
-                        audio.play().catch(() => {});
-                    } else {
-                        audio.pause();
-                    }
-                });
-                item.appendChild(toggleBtn);
-                const syncToggle = () => {
-                    toggleBtn.textContent = audio.paused ? "▶" : "⏸";
-                    toggleBtn.title = audio.paused ? "Play" : "Pause";
-                };
-                audio.addEventListener("play", syncToggle);
-                audio.addEventListener("pause", syncToggle);
-                audio.addEventListener("ended", syncToggle);
-
-                const backBtn = document.createElement("button");
-                backBtn.type = "button";
-                backBtn.className = "chat-audio-back";
-                backBtn.textContent = "⏪";
-                backBtn.title = "Rewind to beginning";
-                backBtn.addEventListener("click", () => {
-                    audio.currentTime = 0;
-                });
-                item.appendChild(backBtn);
-                audio.addEventListener("ended", () => {
-                    audio.currentTime = 0;
-                    toggleBtn.textContent = "▶";
-                    toggleBtn.title = "Play";
-                });
-
-                const name = document.createElement("span");
-                name.className = "chat-attachment-name";
-                name.textContent = attachment.name;
-                name.title = attachment.name;
-                item.appendChild(name);
 
                 const removeBtn = document.createElement("button");
                 removeBtn.type = "button";
@@ -1574,35 +1421,15 @@
                 toggleBtn.className = "chat-video-toggle";
                 toggleBtn.textContent = "▶";
                 toggleBtn.title = "Play";
-                toggleBtn.addEventListener("click", () => {
-                    if (video.paused) {
-                        video.play().catch(() => {});
-                    } else {
-                        video.pause();
-                    }
-                });
-                const syncToggle = () => {
-                    toggleBtn.textContent = video.paused ? "▶" : "⏸";
-                    toggleBtn.title = video.paused ? "Play" : "Pause";
-                };
-                video.addEventListener("play", syncToggle);
-                video.addEventListener("pause", syncToggle);
-                video.addEventListener("ended", () => {
-                    video.currentTime = 0;
-                    toggleBtn.textContent = "▶";
-                    toggleBtn.title = "Play";
-                });
                 controls.appendChild(toggleBtn);
                 const backBtn = document.createElement("button");
                 backBtn.type = "button";
                 backBtn.className = "chat-video-back";
                 backBtn.textContent = "⏪";
                 backBtn.title = "Rewind to beginning";
-                backBtn.addEventListener("click", () => {
-                    video.currentTime = 0;
-                });
                 controls.appendChild(backBtn);
                 videoWrap.appendChild(controls);
+                chatMedia.wire(videoWrap, "video");
                 item.appendChild(videoWrap);
             } else {
                 const name = document.createElement("span");

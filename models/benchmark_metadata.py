@@ -1,10 +1,10 @@
 """SQLite persistence for benchmark organization metadata."""
 
-import sqlite3
 from contextlib import closing
-from pathlib import Path
 
-from flask import current_app
+import sqlite3
+
+from models.sqlite_store import SQLiteStore
 
 
 SCHEMA = """
@@ -42,41 +42,17 @@ def _add_missing_columns(connection):
             )
 
 
-def _database_path():
-    """Return the configured database as a concrete filesystem path."""
-    return Path(current_app.config["DATABASE_PATH"])
-
-
-def _ensure_schema(connection):
-    """Create or migrate benchmark metadata tables."""
-    connection.row_factory = sqlite3.Row
-    connection.executescript(SCHEMA)
-    _add_missing_columns(connection)
-    connection.commit()
-
-
-def _connect():
-    """Open the configured database and restore a missing schema."""
-    database_path = _database_path()
-    database_path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(database_path)
-    connection.execute("PRAGMA busy_timeout = 5000")
-    _ensure_schema(connection)
-    return connection
-
-
-def init_database(app):
-    """Create the instance database and metadata table for an application."""
-    database_path = Path(app.config["DATABASE_PATH"])
-    database_path.parent.mkdir(parents=True, exist_ok=True)
-    with closing(sqlite3.connect(database_path)) as connection:
-        connection.execute("PRAGMA busy_timeout = 5000")
-        _ensure_schema(connection)
+STORE = SQLiteStore(
+    "DATABASE_PATH",
+    schema=SCHEMA,
+    migrate=_add_missing_columns,
+    row_factory=sqlite3.Row,
+)
 
 
 def get_benchmark_metadata(filename):
     """Return saved metadata for one benchmark, or ``None`` when unsaved."""
-    with closing(_connect()) as connection:
+    with closing(STORE.connect()) as connection:
         row = connection.execute(
             """
             SELECT filename, category, difficulty, notes,
@@ -96,7 +72,7 @@ def get_metadata_for_files(filenames):
         return {}
 
     placeholders = ", ".join("?" for _filename in filenames)
-    with closing(_connect()) as connection:
+    with closing(STORE.connect()) as connection:
         rows = connection.execute(
             f"""
             SELECT filename, category, difficulty, notes,
@@ -111,7 +87,7 @@ def get_metadata_for_files(filenames):
 
 def list_categories():
     """Return saved category names in case-insensitive order."""
-    with closing(_connect()) as connection:
+    with closing(STORE.connect()) as connection:
         rows = connection.execute(
             """
             SELECT name AS category
@@ -130,7 +106,7 @@ def list_categories():
 
 def save_category(name):
     """Persist one category and return its stored spelling."""
-    with closing(_connect()) as connection:
+    with closing(STORE.connect()) as connection:
         connection.execute(
             "INSERT OR IGNORE INTO benchmark_categories (name) VALUES (?)",
             (name,),
@@ -156,7 +132,7 @@ def save_benchmark_metadata(
     model_name,
 ):
     """Create or replace the editable metadata for one benchmark file."""
-    with closing(_connect()) as connection:
+    with closing(STORE.connect()) as connection:
         connection.execute(
             """
             INSERT INTO benchmark_metadata (
