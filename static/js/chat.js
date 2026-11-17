@@ -830,6 +830,7 @@
                 historyEl.replaceChildren(emptyStateEl);
                 syncEmptyState();
             }
+            if (savedSelect) savedSelect.value = "";
         } catch (error) {
             window.alert(`Clear failed: ${error}`);
         }

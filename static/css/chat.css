@@ -725,6 +725,24 @@
     background: rgba(111, 214, 195, 0.08);
 }
 
+.chat-clear-button {
+    color: #8b3f34;
+    border-color: rgba(176, 74, 57, 0.48);
+    background: rgba(176, 74, 57, 0.08);
+    box-shadow: 5px 6px 0 rgba(176, 74, 57, 0.12);
+}
+
+.chat-clear-button span {
+    color: #b04a39;
+    font-size: 0.85rem;
+}
+
+.chat-clear-button:hover,
+.chat-clear-button:focus-visible {
+    color: #6f2f27;
+    box-shadow: 3px 4px 0 rgba(176, 74, 57, 0.22);
+}
+
 .chat-media-uploads {
     display: flex;
     flex-wrap: wrap;
