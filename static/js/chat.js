@@ -384,7 +384,8 @@
                 const bodyIcon = document.createElement("span");
                 bodyIcon.className = "chat-prompt-icon";
                 bodyIcon.setAttribute("data-action", "request-body");
-                bodyIcon.setAttribute("data-request-body", JSON.stringify(meta.request_body));
+                // Ensure the request_body is stored as a string in the attribute
+                bodyIcon.setAttribute("data-request-body", typeof meta.request_body === "string" ? meta.request_body : JSON.stringify(meta.request_body));
                 bodyIcon.title = "Show API request body";
                 const bodySvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
                 bodySvg.setAttribute("viewBox", "0 0 16 16");
