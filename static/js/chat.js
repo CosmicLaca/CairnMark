@@ -1025,7 +1025,18 @@
         if (requestBodyModal) {
             requestBodyModal.hidden = false;
             if (requestBodyText) {
-                requestBodyText.innerHTML = renderMarkdown("```json\n" + JSON.stringify(body, null, 2) + "\n```");
+                if (body && typeof body === 'object' && !Array.isArray(body) && (body.video_request || body.audio_request)) {
+                    let html = '';
+                    if (body.video_request) {
+                        html += `### Video request\n\n\`\`\`json\n${JSON.stringify(body.video_request, null, 2)}\n\`\`\`\n\n`;
+                    }
+                    if (body.audio_request) {
+                        html += `### Audio request\n\n\`\`\`json\n${JSON.stringify(body.audio_request, null, 2)}\n\`\`\`\n`;
+                    }
+                    requestBodyText.innerHTML = renderMarkdown(html);
+                } else {
+                    requestBodyText.innerHTML = renderMarkdown("```json\n" + JSON.stringify(body, null, 2) + "\n```");
+                }
             }
         }
     };

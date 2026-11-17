@@ -800,6 +800,8 @@ class ChatController:
             for item in (attachments or [])
         )
 
+        audio_request_body = None
+
         if not stream_requested:
             if split_needed:
                 video_attachments = []
@@ -847,11 +849,6 @@ class ChatController:
                     )
                 started = time.monotonic()
                 usage = {"prompt_tokens": 0, "completion_tokens": 0}
-                audio_messages = [dict(m) for m in messages]
-                for index in range(len(audio_messages) - 1, -1, -1):
-                    if audio_messages[index].get("role") == "user":
-                        audio_messages[index]["content"] = "Analyze the attached audio: transcribe any spoken words, and if there is no speech, describe the audio content (music, sounds, or noise)."
-                        break
                 try:
                     text1, usage1 = self.service.chat_completion_with_params(
                         provider,
@@ -911,6 +908,12 @@ class ChatController:
                         "Chat request failed for provider=%s model=%s", provider, model
                     )
                     return jsonify({"error": str(error)}), 502
+            if audio_request_body:
+                request_body = {
+                    "video_request": request_body,
+                    "audio_request": audio_request_body,
+                }
+
             elapsed = round(time.monotonic() - started, 2)
 
             add_chat_message(
@@ -936,7 +939,7 @@ class ChatController:
                     "model": model,
                     "saved_system_prompt_name": saved_name,
                     "system_prompt": system_prompt,
-                    "request_body": request_body,
+                    "request_body": json.dumps(request_body),
                     "messages": list_chat_messages(),
                 }
             )
@@ -1005,6 +1008,22 @@ class ChatController:
                         extra_parameters,
                         attachments=video_attachments,
                     )
+                    audio_request_body = None
+                    if audio_attachments:
+                        audio_request_body = _build_chat_request_body(
+                            self.service,
+                            provider,
+                            model,
+                            audio_messages,
+                            request_parameters,
+                            extra_parameters,
+                            attachments=audio_attachments,
+                        )
+                    if audio_request_body:
+                        request_body = {
+                            "video_request": request_body,
+                            "audio_request": audio_request_body,
+                        }
                 else:
                     converted_attachments = attachments
                     if needs_conversion:
@@ -1058,7 +1077,7 @@ class ChatController:
                     "model": model,
                     "saved_system_prompt_name": saved_name,
                     "system_prompt": system_prompt,
-                    "request_body": request_body,
+                    "request_body": json.dumps(request_body),
                 }
                 yield f"data: {json.dumps(payload)}\n\n"
             except Exception as error:  # noqa: BLE001
