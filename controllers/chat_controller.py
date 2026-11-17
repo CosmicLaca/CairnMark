@@ -90,6 +90,10 @@ AUDIO_ANALYSIS_PROMPT = (
 )
 
 
+class AttachmentProcessingError(RuntimeError):
+    """Raised when media cannot be converted into a safe model attachment."""
+
+
 @dataclass(frozen=True)
 class ChatRequestData:
     """Validated values submitted for one chat turn."""
@@ -265,19 +269,21 @@ def _resize_image_attachment(attachment):
 def _convert_video_attachment(attachment):
     """Re-encode video to MP4 with a 480px maximum side and 2 fps.
 
-    Returns the original attachment unchanged when ffmpeg-python or ffmpeg is
-    unavailable or conversion fails, so chat still works without the toolchain.
+    Audio is always removed. Conversion fails closed because returning the
+    original file could silently send an audio track when Attach audio is off.
     """
     if not isinstance(attachment, dict) or attachment.get("type") != "video":
         return attachment
     try:
         import ffmpeg
-    except ImportError:
-        return attachment
+    except ImportError as error:
+        raise AttachmentProcessingError(
+            "Video attachments require FFmpeg to remove the audio track."
+        ) from error
     try:
         decoded = base64.b64decode(attachment["data"], validate=True)
-    except Exception:  # noqa: BLE001
-        return attachment
+    except Exception as error:  # noqa: BLE001
+        raise AttachmentProcessingError("Video attachment data is invalid.") from error
     import os
     import tempfile
 
@@ -292,11 +298,15 @@ def _convert_video_attachment(attachment):
                 (s for s in streams if s.get("codec_type") == "video"), None
             )
             if video_stream is None:
-                return attachment
+                raise AttachmentProcessingError(
+                    "The attachment does not contain a video track."
+                )
             width = int(video_stream.get("width") or 0)
             height = int(video_stream.get("height") or 0)
             if width <= 0 or height <= 0:
-                return attachment
+                raise AttachmentProcessingError(
+                    "The video dimensions could not be determined."
+                )
             stream = ffmpeg.input(input_path)
             video = stream.video
             if max(width, height) > 480:
@@ -317,21 +327,26 @@ def _convert_video_attachment(attachment):
             ffmpeg.output(
                 video,
                 output_path,
+                an=None,
                 **output_args,
             ).overwrite_output().run(quiet=True)
             with open(output_path, "rb") as handle:
                 converted = handle.read()
             if not converted:
-                return attachment
+                raise AttachmentProcessingError("The converted video is empty.")
             return {
                 "type": "video",
                 "data": base64.b64encode(converted).decode("ascii"),
                 "mime_type": "video/mp4",
                 "preview_data": attachment.get("preview_data"),
             }
-    except Exception:  # noqa: BLE001
+    except AttachmentProcessingError:
+        raise
+    except Exception as error:  # noqa: BLE001
         current_app.logger.exception("Video attachment could not be converted")
-        return attachment
+        raise AttachmentProcessingError(
+            "Video attachment could not be converted without audio."
+        ) from error
 
 
 def _convert_audio_attachment(attachment):
@@ -934,53 +949,62 @@ class ChatController:
         preview_images = []
         preview_media = []
         has_audio_attachment = False
-        for attachment in chat_request.attachments:
-            attachment_type = attachment.get("type")
-            if attachment_type == "image":
-                filename = _save_preview_image(attachment.get("data", ""))
-                if filename:
-                    preview_images.append(filename)
-            elif attachment_type == "audio":
-                has_audio_attachment = True
-                if save_original_media:
-                    converted = _convert_audio_attachment(attachment)
-                    data = converted.get("data", attachment.get("data", ""))
-                    filename = _save_preview_media(data, "mp3")
-                    if filename:
-                        preview_media.append(
-                            {
-                                "type": "audio",
-                                "filename": filename,
-                                "original_name": attachment.get("original_name", ""),
-                            }
-                        )
-            elif attachment_type == "video":
-                if save_original_media:
-                    converted = _convert_video_attachment(attachment)
-                    data = converted.get("data", attachment.get("data", ""))
-                    if attachment.get("attach_audio") and _video_has_audio(
-                        attachment.get("data", "")
-                    ):
-                        audio_att = _extract_video_audio_attachment(attachment)
-                        if audio_att is not None:
-                            merged = _merge_video_audio(
-                                converted.get("data", ""), audio_att.get("data", "")
-                            )
-                            if merged:
-                                data = merged
-                    filename = _save_preview_media(data, "mp4")
-                    if filename:
-                        preview_media.append(
-                            {
-                                "type": "video",
-                                "filename": filename,
-                                "original_name": attachment.get("original_name", ""),
-                            }
-                        )
-                elif attachment.get("preview_data"):
-                    filename = _save_preview_image(attachment.get("preview_data", ""))
+        try:
+            for attachment in chat_request.attachments:
+                attachment_type = attachment.get("type")
+                if attachment_type == "image":
+                    filename = _save_preview_image(attachment.get("data", ""))
                     if filename:
                         preview_images.append(filename)
+                elif attachment_type == "audio":
+                    has_audio_attachment = True
+                    if save_original_media:
+                        converted = _convert_audio_attachment(attachment)
+                        data = converted.get("data", attachment.get("data", ""))
+                        filename = _save_preview_media(data, "mp3")
+                        if filename:
+                            preview_media.append(
+                                {
+                                    "type": "audio",
+                                    "filename": filename,
+                                    "original_name": attachment.get(
+                                        "original_name", ""
+                                    ),
+                                }
+                            )
+                elif attachment_type == "video":
+                    if save_original_media:
+                        converted = _convert_video_attachment(attachment)
+                        data = converted["data"]
+                        if attachment.get("attach_audio") and _video_has_audio(
+                            attachment.get("data", "")
+                        ):
+                            audio_att = _extract_video_audio_attachment(attachment)
+                            if audio_att is not None:
+                                merged = _merge_video_audio(
+                                    converted["data"], audio_att.get("data", "")
+                                )
+                                if merged:
+                                    data = merged
+                        filename = _save_preview_media(data, "mp4")
+                        if filename:
+                            preview_media.append(
+                                {
+                                    "type": "video",
+                                    "filename": filename,
+                                    "original_name": attachment.get(
+                                        "original_name", ""
+                                    ),
+                                }
+                            )
+                    elif attachment.get("preview_data"):
+                        filename = _save_preview_image(
+                            attachment.get("preview_data", "")
+                        )
+                        if filename:
+                            preview_images.append(filename)
+        except AttachmentProcessingError as error:
+            return jsonify({"error": str(error)}), 422
         add_chat_message(
             "user",
             chat_request.user_message,
@@ -1022,16 +1046,16 @@ class ChatController:
 
         if not stream_requested:
             started = time.monotonic()
-            plan = _prepare_attachment_plan(chat_request.attachments, messages)
-            request_body = _build_plan_request_body(
-                self.service,
-                provider,
-                model,
-                plan,
-                request_parameters,
-                chat_request.extra_parameters,
-            )
             try:
+                plan = _prepare_attachment_plan(chat_request.attachments, messages)
+                request_body = _build_plan_request_body(
+                    self.service,
+                    provider,
+                    model,
+                    plan,
+                    request_parameters,
+                    chat_request.extra_parameters,
+                )
                 response_text, usage = _complete_attachment_plan(
                     self.service,
                     provider,
@@ -1040,6 +1064,8 @@ class ChatController:
                     request_parameters,
                     chat_request.extra_parameters,
                 )
+            except AttachmentProcessingError as error:
+                return jsonify({"error": str(error)}), 422
             except Exception as error:  # noqa: BLE001
                 current_app.logger.exception(
                     "Chat request failed for provider=%s model=%s",

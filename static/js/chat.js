@@ -1766,6 +1766,9 @@
         historyEl.querySelectorAll(".chat-message--assistant .chat-content").forEach((el) => {
             const raw = el.dataset.raw || el.textContent;
             rawSource.set(el, raw);
+            // Match newly received and toggled messages on initial page load.
+            // The server-rendered HTML remains available as a no-JavaScript fallback.
+            el.innerHTML = renderMarkdown(raw);
             const parent = el.parentElement;
             if (parent && !parent.querySelector(".chat-message-actions")) {
                 const actions = document.createElement("div");
