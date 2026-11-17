@@ -1,7 +1,5 @@
 """SQLite persistence for provider-specific model configurations."""
 
-from contextlib import closing
-
 from models.sqlite_store import SQLiteStore
 from services.token_encryption import encrypt_token, decrypt_token
 
@@ -68,7 +66,7 @@ STORE = SQLiteStore(
 
 def save_model_list(models, provider_name="llama.cpp"):
     """Save model list to database with their enabled states and sizes."""
-    with closing(STORE.connect()) as connection:
+    with STORE.transaction() as connection:
         connection.execute(
             "DELETE FROM model_configurations WHERE provider_name = ?",
             (provider_name,),
@@ -89,21 +87,19 @@ def save_model_list(models, provider_name="llama.cpp"):
                 for model in models
             ),
         )
-        connection.commit()
 
 
 def get_saved_model_configuration(provider_name="llama.cpp"):
     """Retrieve saved model configuration for a specific provider."""
-    with closing(STORE.connect()) as connection:
-        rows = connection.execute(
-            """
-            SELECT model_name, is_enabled, size_gb
-            FROM model_configurations
-            WHERE provider_name = ?
-            ORDER BY model_name
-            """,
-            (provider_name,),
-        ).fetchall()
+    rows = STORE.fetch(
+        """
+        SELECT model_name, is_enabled, size_gb
+        FROM model_configurations
+        WHERE provider_name = ?
+        ORDER BY model_name
+        """,
+        (provider_name,),
+    )
     return [
         {
             "name": model_name,
@@ -116,19 +112,18 @@ def get_saved_model_configuration(provider_name="llama.cpp"):
 
 def get_active_model_configurations():
     """Return enabled models that belong to enabled providers."""
-    with closing(STORE.connect()) as connection:
-        rows = connection.execute(
-            """
-            SELECT models.provider_name, models.model_name, models.size_gb
-            FROM model_configurations AS models
-            JOIN provider_configurations AS providers
-              ON providers.provider_name = models.provider_name
-            WHERE providers.is_enabled = 1
-              AND models.is_enabled = 1
-            ORDER BY models.provider_name COLLATE NOCASE,
-                     models.model_name COLLATE NOCASE
-            """
-        ).fetchall()
+    rows = STORE.fetch(
+        """
+        SELECT models.provider_name, models.model_name, models.size_gb
+        FROM model_configurations AS models
+        JOIN provider_configurations AS providers
+          ON providers.provider_name = models.provider_name
+        WHERE providers.is_enabled = 1
+          AND models.is_enabled = 1
+        ORDER BY models.provider_name COLLATE NOCASE,
+                 models.model_name COLLATE NOCASE
+        """
+    )
     return [
         {
             "provider": provider_name,
@@ -141,15 +136,15 @@ def get_active_model_configurations():
 
 def get_model_configuration_summary(provider_name="llama.cpp"):
     """Return total and enabled model counts for one provider."""
-    with closing(STORE.connect()) as connection:
-        total, enabled = connection.execute(
-            """
-            SELECT COUNT(*), COALESCE(SUM(is_enabled), 0)
-            FROM model_configurations
-            WHERE provider_name = ?
-            """,
-            (provider_name,),
-        ).fetchone()
+    total, enabled = STORE.fetch(
+        """
+        SELECT COUNT(*), COALESCE(SUM(is_enabled), 0)
+        FROM model_configurations
+        WHERE provider_name = ?
+        """,
+        (provider_name,),
+        one=True,
+    )
     return {"total": total, "enabled": enabled}
 
 
@@ -160,34 +155,32 @@ def save_provider_configuration(
     api_key=None,
 ):
     """Save a provider connection, preserving an omitted API key."""
-    with closing(STORE.connect()) as connection:
-        connection.execute(
-            """
-            INSERT INTO provider_configurations
-                (provider_name, server_ip, server_port, api_key)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(provider_name) DO UPDATE SET
-                server_ip = excluded.server_ip,
-                server_port = excluded.server_port,
-                api_key = COALESCE(excluded.api_key, provider_configurations.api_key),
-                updated_at = CURRENT_TIMESTAMP
-            """,
-            (provider_name, server_ip, server_port, encrypt_token(api_key)),
-        )
-        connection.commit()
+    STORE.execute(
+        """
+        INSERT INTO provider_configurations
+            (provider_name, server_ip, server_port, api_key)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(provider_name) DO UPDATE SET
+            server_ip = excluded.server_ip,
+            server_port = excluded.server_port,
+            api_key = COALESCE(excluded.api_key, provider_configurations.api_key),
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (provider_name, server_ip, server_port, encrypt_token(api_key)),
+    )
 
 
 def get_provider_configuration(provider_name):
     """Return one saved provider endpoint and its enabled state."""
-    with closing(STORE.connect()) as connection:
-        row = connection.execute(
-            """
-            SELECT provider_name, server_ip, server_port, api_key, is_enabled
-            FROM provider_configurations
-            WHERE provider_name = ?
-            """,
-            (provider_name,),
-        ).fetchone()
+    row = STORE.fetch(
+        """
+        SELECT provider_name, server_ip, server_port, api_key, is_enabled
+        FROM provider_configurations
+        WHERE provider_name = ?
+        """,
+        (provider_name,),
+        one=True,
+    )
     if not row:
         return None
     return {
@@ -201,14 +194,12 @@ def get_provider_configuration(provider_name):
 
 def set_provider_enabled(provider_name, is_enabled):
     """Persist the overall enabled state for a configured provider."""
-    with closing(STORE.connect()) as connection:
-        cursor = connection.execute(
-            """
-            UPDATE provider_configurations
-            SET is_enabled = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE provider_name = ?
-            """,
-            (bool(is_enabled), provider_name),
-        )
-        connection.commit()
-    return cursor.rowcount > 0
+    rowcount, _lastrowid = STORE.execute(
+        """
+        UPDATE provider_configurations
+        SET is_enabled = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE provider_name = ?
+        """,
+        (bool(is_enabled), provider_name),
+    )
+    return rowcount > 0

@@ -309,6 +309,11 @@
     background: rgba(255, 255, 255, 0.5);
 }
 
+.chat-video-player--thumb .chat-user-media-player {
+    width: auto;
+    height: 100px;
+}
+
 .chat-user-audio-icon {
     position: absolute;
     top: 4px;
@@ -687,6 +692,11 @@
     flex: 0 0 auto;
 }
 
+.chat-attachment-video {
+    width: auto;
+    height: 130px;
+}
+
 .chat-attachment-name {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1006,6 +1016,11 @@
     color: #6f7c77;
     font-size: 0.78rem;
     font-style: italic;
+}
+
+.more-params-loading[hidden],
+.chat-file-input {
+    display: none;
 }
 
 .more-params-modal .modal-content {

@@ -69,6 +69,29 @@ class BenchmarkRepository:
             json.dumps(content, indent=2, ensure_ascii=False),
         )
 
+    def update_response(self, filename, topic_index, request_index, response):
+        """Validate and atomically update one expected response value."""
+        content = self.load(filename)
+        if not isinstance(content, list):
+            raise ValueError("Unsupported benchmark structure.")
+        if topic_index < 0 or topic_index >= len(content):
+            raise ValueError("Topic index out of range.")
+        section = content[topic_index]
+        if not isinstance(section, dict) or not section:
+            raise ValueError("Invalid topic section.")
+        section_content = section[next(iter(section))]
+        items = (
+            section_content.get(BENCHMARK_ITEMS_KEY, [])
+            if isinstance(section_content, dict)
+            else []
+        )
+        if request_index < 0 or request_index >= len(items):
+            raise ValueError("Request index out of range.")
+        if not isinstance(items[request_index], dict):
+            raise ValueError("Invalid request entry.")
+        items[request_index]["response"] = response
+        self.save(filename, content)
+
     def create(self, filename, content):
         """Atomically create a new benchmark JSON document."""
         self.directory.mkdir(parents=True, exist_ok=True)
@@ -134,6 +157,72 @@ def iter_benchmark_items(content):
             for item in items:
                 if isinstance(item, dict):
                     yield topic, item
+
+
+def read_prompt_template(filename):
+    """Read one configured prompt template, returning empty text on failure."""
+    path = Path(current_app.config["SYSTEM_PROMPT_DIRECTORY"]) / filename
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        current_app.logger.warning("Could not read system prompt %s", path)
+        return ""
+
+
+def build_benchmark_log(filename, content, system_prompt=""):
+    """Build a readable Markdown run log from a benchmark document."""
+    lines = [f"# Benchmark Log: {filename}", ""]
+    if not isinstance(content, list):
+        return "\n".join(lines)
+    for section in content:
+        if not isinstance(section, dict):
+            continue
+        for subcategory, section_content in section.items():
+            lines.extend((f"## {subcategory}", ""))
+            items = (
+                section_content.get(BENCHMARK_ITEMS_KEY, [])
+                if isinstance(section_content, dict)
+                else []
+            )
+            for index, item in enumerate(items, start=1):
+                if not isinstance(item, dict):
+                    continue
+                lines.extend(
+                    (f"### Request {index}", "", item.get("request", ""), "")
+                )
+                lines.extend(
+                    (
+                        "**System prompt:**",
+                        "",
+                        (system_prompt or "").replace(
+                            "{{subcategory}}", subcategory
+                        ),
+                        "",
+                    )
+                )
+                answers = item.get("answers") or []
+                if answers:
+                    for answer in answers:
+                        if not isinstance(answer, dict):
+                            continue
+                        response_time = answer.get(
+                            "response_time", answer.get("reponse_time", "")
+                        )
+                        lines.extend(
+                            (
+                                f"**Model:** {answer.get('model_name', '')}",
+                                "",
+                                "**Model response:** "
+                                f"{answer.get('model_answer', '')}",
+                                "",
+                                f"**Response time:** {response_time}s",
+                                "",
+                            )
+                        )
+                else:
+                    lines.extend(("_No model response recorded._", ""))
+                lines.extend(("---", ""))
+    return "\n".join(lines)
 
 
 def has_model_answers(content):

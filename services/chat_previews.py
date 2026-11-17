@@ -9,6 +9,14 @@ from pathlib import Path
 from flask import current_app
 from PIL import Image
 
+from services.chat_attachments import (
+    convert_audio_attachment,
+    convert_video_attachment,
+    extract_video_audio_attachment,
+    merge_video_audio,
+    video_has_audio,
+)
+
 
 class ChatPreviewStore:
     """Save preview media and remove files no conversation references."""
@@ -49,6 +57,61 @@ class ChatPreviewStore:
         except Exception:  # noqa: BLE001
             current_app.logger.exception("Chat preview could not be saved")
             return None
+
+    def save_attachments(self, attachments, *, save_original_media=False):
+        """Persist requested previews and return message metadata for them."""
+        preview_images = []
+        preview_media = []
+        has_audio = False
+        for attachment in attachments or []:
+            attachment_type = attachment.get("type")
+            if attachment_type == "image":
+                filename = self.save(attachment.get("data", ""), "jpg")
+                if filename:
+                    preview_images.append(filename)
+            elif attachment_type == "audio":
+                has_audio = True
+                if save_original_media:
+                    converted = convert_audio_attachment(attachment)
+                    filename = self.save(
+                        converted.get("data", attachment.get("data", "")),
+                        "mp3",
+                    )
+                    if filename:
+                        preview_media.append(
+                            self._media_record("audio", filename, attachment)
+                        )
+            elif attachment_type == "video" and save_original_media:
+                converted = convert_video_attachment(attachment)
+                data = converted["data"]
+                if attachment.get("attach_audio") and video_has_audio(
+                    attachment.get("data", "")
+                ):
+                    audio = extract_video_audio_attachment(attachment)
+                    if audio is not None:
+                        data = merge_video_audio(data, audio.get("data", "")) or data
+                filename = self.save(data, "mp4")
+                if filename:
+                    preview_media.append(
+                        self._media_record("video", filename, attachment)
+                    )
+            elif attachment_type == "video" and attachment.get("preview_data"):
+                filename = self.save(attachment["preview_data"], "jpg")
+                if filename:
+                    preview_images.append(filename)
+        return {
+            "preview_images": preview_images,
+            "preview_media": preview_media,
+            "has_audio": has_audio and not save_original_media,
+        }
+
+    @staticmethod
+    def _media_record(media_type, filename, attachment):
+        return {
+            "type": media_type,
+            "filename": filename,
+            "original_name": attachment.get("original_name", ""),
+        }
 
     @staticmethod
     def filenames(messages):

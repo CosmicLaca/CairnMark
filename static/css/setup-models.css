@@ -302,35 +302,35 @@ body.modal-open {
     transform: rotate(21deg);
 }
 
-.provider-card--vllm .provider-identity {
+.provider-card--single-model .provider-identity {
     background:
         radial-gradient(circle at 100% 0, rgba(242, 166, 90, 0.15), transparent 15rem),
         linear-gradient(150deg, rgba(111, 214, 195, 0.07), transparent 45%),
         var(--sidebar);
 }
 
-.provider-card--vllm .provider-glyph {
+.provider-card--single-model .provider-glyph {
     border-color: rgba(242, 166, 90, 0.38);
     background: rgba(242, 166, 90, 0.07);
 }
 
-.provider-card--vllm .provider-glyph span {
+.provider-card--single-model .provider-glyph span {
     color: var(--ember);
 }
 
-.provider-card--openrouter .provider-identity {
+.provider-card--online-lead .provider-identity {
     background:
         radial-gradient(circle at 100% 0, rgba(176, 133, 255, 0.18), transparent 15rem),
         linear-gradient(150deg, rgba(201, 243, 106, 0.06), transparent 45%),
         var(--sidebar);
 }
 
-.provider-card--openrouter .provider-glyph {
+.provider-card--online-lead .provider-glyph {
     border-color: rgba(176, 133, 255, 0.42);
     background: rgba(176, 133, 255, 0.09);
 }
 
-.provider-card--openrouter .provider-glyph span {
+.provider-card--online-lead .provider-glyph span {
     color: #c9adff;
 }
 
@@ -538,22 +538,8 @@ body.modal-open {
     transition: color var(--motion), box-shadow var(--motion), transform var(--motion);
 }
 
-#setup-llama-btn.provider-setup-button {
-    display: grid;
-    padding: 11px 16px;
-    color: #eef3e9;
-    border: 1px solid var(--sidebar);
-    border-radius: 2px 14px 2px 2px;
-    background: var(--sidebar);
-    font: inherit;
-    gap: 13px;
-    transition: color var(--motion), box-shadow var(--motion), transform var(--motion);
-}
-
 .provider-setup-button:hover,
-.provider-setup-button:focus-visible,
-#setup-llama-btn.provider-setup-button:hover,
-#setup-llama-btn.provider-setup-button:focus-visible {
+.provider-setup-button:focus-visible {
     color: var(--lichen);
     background: var(--sidebar);
     box-shadow: 3px 4px 0 rgba(111, 214, 195, 0.3);

@@ -4,10 +4,6 @@ import sqlite3
 
 from flask import current_app, jsonify, request
 
-from models.model_storage import (
-    get_model_configuration_summary,
-    get_provider_configuration,
-)
 from services.model_providers import (
     CATALOG_ERRORS,
     PROVIDER_SPECS,
@@ -16,6 +12,8 @@ from services.model_providers import (
     ProviderConflictError,
     ProviderValidationError,
 )
+from services.provider_setup import provider_setup_cards
+
 
 PROVIDER_OPERATION_ERRORS = CATALOG_ERRORS + (sqlite3.Error,)
 
@@ -28,33 +26,7 @@ class ProviderController:
 
     def setup_context(self):
         """Build provider summaries used by the setup page."""
-        context = {}
-        for provider in PROVIDER_SPECS:
-            template_key = self._template_key(provider)
-            configuration = get_provider_configuration(provider)
-            context[f"{template_key}_model_summary"] = (
-                get_model_configuration_summary(provider)
-            )
-            context[f"{template_key}_provider_protocol"] = (
-                self._protocol_label(configuration)
-            )
-
-        vllm_configuration = get_provider_configuration("vllm")
-        context["vllm_model_name"] = (
-            "Checking server…" if vllm_configuration else "Setup required"
-        )
-        return context
-
-    @staticmethod
-    def _template_key(provider):
-        """Return the stable identifier used by setup-page context keys."""
-        return provider.removesuffix(".cpp").replace("-", "_")
-
-    @staticmethod
-    def _protocol_label(configuration):
-        if not configuration:
-            return "Setup needed"
-        return f"{configuration['ip'].rstrip('/')}:{configuration['port']}"
+        return {"providers": provider_setup_cards(self.service)}
 
     def fetch_models(self):
         """Read a live catalog without changing saved configuration."""

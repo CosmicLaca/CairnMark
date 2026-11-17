@@ -120,7 +120,7 @@
               {% for media in message.preview_media %}
                 {% if media.type == 'video' %}
                 <div class="chat-video-player chat-video-player--compact chat-video-player--thumb" data-video-src="{{ url_for('chat_preview', filename=media.filename) }}">
-                  <video class="chat-user-media-player" src="{{ url_for('chat_preview', filename=media.filename) }}" preload="metadata" style="height:100px;width:auto;"></video>
+                  <video class="chat-user-media-player" src="{{ url_for('chat_preview', filename=media.filename) }}" preload="metadata"></video>
                   <div class="chat-video-controls">
                     <button type="button" class="chat-video-toggle" title="Play">▶</button>
                     <button type="button" class="chat-video-back" title="Rewind to beginning">⏪</button>
@@ -136,7 +136,7 @@
             {% endif %}
           </div>
           {% else %}
-          <div class="chat-content markdown-content" data-raw="{{ message.content|e }}">{{ message.content|markdown }}</div>
+          <div class="chat-content markdown-content" data-raw="{{ message.content|e }}">{{ message.content }}</div>
           {% if message.role == 'user' and message.has_audio %}
           <span class="chat-user-audio-icon" title="Audio attachment">🎤</span>
           {% endif %}

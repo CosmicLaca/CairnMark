@@ -1029,6 +1029,14 @@ class ModelProviderService:
         spec = PROVIDER_SPECS.get(provider)
         return spec.display_name if spec else provider
 
+    def saved_provider_overview(self, provider):
+        """Return persisted connection and model counts for setup-page views."""
+        self.spec(provider)
+        return {
+            "configuration": get_provider_configuration(provider),
+            "summary": get_model_configuration_summary(provider),
+        }
+
     def resolve_online_model(self, model_spec):
         """Validate a provider/model selector and require live reachability."""
         value = str(model_spec or "").strip()

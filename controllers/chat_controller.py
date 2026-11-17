@@ -1,14 +1,12 @@
 """Chat interface context and message handling for the home page."""
 
 import base64
-import io
 import json
 import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
-import markdown
 from flask import (
     Response,
     current_app,
@@ -18,32 +16,27 @@ from flask import (
     stream_with_context,
 )
 
+from models.chat_settings import (
+    chat_attachment_settings,
+    get_chat_settings,
+    save_chat_settings,
+)
 from models.chat_storage import (
     add_chat_message,
     clear_chat_messages,
     delete_last_chat_message,
-    delete_saved_chat,
-    delete_saved_system_prompt,
-    get_chat_attachment_settings,
-    get_chat_settings,
-    get_saved_chat,
-    get_saved_system_prompt,
+    delete_saved,
+    get_saved,
     list_chat_messages,
-    list_saved_chats,
-    list_saved_system_prompts,
+    list_saved,
     load_saved_chat,
-    save_chat_attachment_settings,
-    save_chat_settings,
-    save_saved_chat,
-    save_saved_system_prompt,
+    save_saved,
 )
 from services.model_providers import (
     ModelProviderService,
     ProviderOfflineError,
     ProviderValidationError,
 )
-
-MARKDOWN_EXTENSIONS = ("fenced_code", "tables", "sane_lists")
 
 CHAT_PARAMETER_CONVERTERS = {
     "temperature": (float, "Temperature"),
@@ -82,16 +75,19 @@ MODEL_PARAMETER_TEXT_LIMIT = 4096
 ATTACHMENT_TYPES = {"image", "document", "video", "audio"}
 ATTACHMENT_LIMIT = 8
 ATTACHMENT_DATA_LIMIT = 100 * 1024 * 1024
-MAX_IMAGE_PIXELS = 1_200_000
 AUDIO_ANALYSIS_PROMPT = (
     "Analyze the attached audio: transcribe any spoken words, and if there "
     "is no speech, describe the audio content (music, sounds, or noise)."
 )
 from services.chat_previews import ChatPreviewStore
-
-
-class AttachmentProcessingError(RuntimeError):
-    """Raised when media cannot be converted into a safe model attachment."""
+from services.chat_attachments import (
+    AttachmentProcessingError,
+    convert_audio_attachment as _convert_audio_attachment,
+    convert_video_attachment as _convert_video_attachment,
+    extract_video_audio_attachment as _extract_video_audio_attachment,
+    resize_image_attachment as _resize_image_attachment,
+    video_has_audio as _video_has_audio,
+)
 
 
 @dataclass(frozen=True)
@@ -231,298 +227,6 @@ def _attachment_values(value):
             }
         )
     return cleaned
-
-
-def _resize_image_attachment(attachment):
-    """Resize an image attachment above 1.2 megapixels when Pillow is available."""
-    if not isinstance(attachment, dict) or attachment.get("type") != "image":
-        return attachment
-    try:
-        from PIL import Image
-    except ImportError:
-        return attachment
-    try:
-        decoded = base64.b64decode(attachment["data"], validate=True)
-        with Image.open(io.BytesIO(decoded)) as image:
-            pixels = image.width * image.height
-            if pixels <= MAX_IMAGE_PIXELS:
-                return attachment
-            scale = (MAX_IMAGE_PIXELS / pixels) ** 0.5
-            size = (
-                max(1, int(image.width * scale)),
-                max(1, int(image.height * scale)),
-            )
-            resized = image.resize(size, Image.LANCZOS)
-            if resized.mode in ("RGBA", "P"):
-                resized = resized.convert("RGB")
-            output = io.BytesIO()
-            resized.save(output, format="JPEG", quality=90)
-            return {
-                "type": "image",
-                "data": base64.b64encode(output.getvalue()).decode("ascii"),
-                "mime_type": "image/jpeg",
-            }
-    except Exception:  # noqa: BLE001
-        return attachment
-
-
-def _convert_video_attachment(attachment):
-    """Re-encode video to MP4 with a 480px maximum side and 2 fps.
-
-    Audio is always removed. Conversion fails closed because returning the
-    original file could silently send an audio track when Attach audio is off.
-    """
-    if not isinstance(attachment, dict) or attachment.get("type") != "video":
-        return attachment
-    try:
-        import ffmpeg
-    except ImportError as error:
-        raise AttachmentProcessingError(
-            "Video attachments require FFmpeg to remove the audio track."
-        ) from error
-    try:
-        decoded = base64.b64decode(attachment["data"], validate=True)
-    except Exception as error:  # noqa: BLE001
-        raise AttachmentProcessingError("Video attachment data is invalid.") from error
-    import os
-    import tempfile
-
-    try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            input_path = os.path.join(tmpdir, "input")
-            with open(input_path, "wb") as handle:
-                handle.write(decoded)
-            probe = ffmpeg.probe(input_path)
-            streams = probe.get("streams", []) if isinstance(probe, dict) else []
-            video_stream = next(
-                (s for s in streams if s.get("codec_type") == "video"), None
-            )
-            if video_stream is None:
-                raise AttachmentProcessingError(
-                    "The attachment does not contain a video track."
-                )
-            width = int(video_stream.get("width") or 0)
-            height = int(video_stream.get("height") or 0)
-            if width <= 0 or height <= 0:
-                raise AttachmentProcessingError(
-                    "The video dimensions could not be determined."
-                )
-            stream = ffmpeg.input(input_path)
-            video = stream.video
-            if max(width, height) > 480:
-                if width >= height:
-                    video = video.filter("scale", 480, -2)
-                else:
-                    video = video.filter("scale", -2, 480)
-            video = video.filter("fps", fps=2)
-            output_path = os.path.join(tmpdir, "output.mp4")
-            output_args = {
-                "vcodec": "libx264",
-                "crf": 28,
-                "preset": "fast",
-                "pix_fmt": "yuv420p",
-                "movflags": "+faststart",
-            }
-            # Always strip audio: audio is sent separately when attach_audio is on.
-            ffmpeg.output(
-                video,
-                output_path,
-                an=None,
-                **output_args,
-            ).overwrite_output().run(quiet=True)
-            with open(output_path, "rb") as handle:
-                converted = handle.read()
-            if not converted:
-                raise AttachmentProcessingError("The converted video is empty.")
-            return {
-                "type": "video",
-                "data": base64.b64encode(converted).decode("ascii"),
-                "mime_type": "video/mp4",
-                "preview_data": attachment.get("preview_data"),
-            }
-    except AttachmentProcessingError:
-        raise
-    except Exception as error:  # noqa: BLE001
-        current_app.logger.exception("Video attachment could not be converted")
-        raise AttachmentProcessingError(
-            "Video attachment could not be converted without audio."
-        ) from error
-
-
-def _convert_audio_attachment(attachment):
-    """Convert an audio attachment to a 64 kbit/s MP3."""
-    if not isinstance(attachment, dict) or attachment.get("type") != "audio":
-        return attachment
-    try:
-        import ffmpeg
-    except ImportError:
-        return attachment
-    try:
-        decoded = base64.b64decode(attachment["data"], validate=True)
-    except Exception:  # noqa: BLE001
-        return attachment
-    import os
-    import tempfile
-
-    try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            input_path = os.path.join(tmpdir, "input")
-            with open(input_path, "wb") as handle:
-                handle.write(decoded)
-            probe = ffmpeg.probe(input_path)
-            streams = probe.get("streams", []) if isinstance(probe, dict) else []
-            if not any(s.get("codec_type") == "audio" for s in streams):
-                return attachment
-            stream = ffmpeg.input(input_path)
-            audio = stream.audio
-            output_path = os.path.join(tmpdir, "output.mp3")
-            ffmpeg.output(
-                audio,
-                output_path,
-                acodec="libmp3lame",
-                audio_bitrate="64k",
-            ).overwrite_output().run(quiet=True)
-            with open(output_path, "rb") as handle:
-                converted = handle.read()
-            if not converted:
-                return attachment
-            return {
-                "type": "audio",
-                "data": base64.b64encode(converted).decode("ascii"),
-                "mime_type": "audio/mpeg",
-                "preview_data": attachment.get("preview_data"),
-            }
-    except Exception:  # noqa: BLE001
-        current_app.logger.exception("Audio attachment could not be converted")
-        return attachment
-
-
-def _probe_audio_duration(path):
-    """Return the audio stream duration in seconds, or None if unavailable."""
-    try:
-        import ffmpeg
-    except ImportError:
-        return None
-    try:
-        probe = ffmpeg.probe(path)
-        streams = probe.get("streams", []) if isinstance(probe, dict) else []
-        audio_stream = next(
-            (s for s in streams if s.get("codec_type") == "audio"), None
-        )
-        if audio_stream is None:
-            return None
-        duration = audio_stream.get("duration")
-        if duration is None and isinstance(probe, dict):
-            duration = probe.get("format", {}).get("duration")
-        if duration is None:
-            return None
-        return float(duration)
-    except Exception:  # noqa: BLE001
-        return None
-
-
-def _video_has_audio(data):
-    import os
-    import tempfile
-
-    try:
-        decoded = base64.b64decode(data, validate=True)
-    except Exception:  # noqa: BLE001
-        return False
-    try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            input_path = os.path.join(tmpdir, "input")
-            with open(input_path, "wb") as handle:
-                handle.write(decoded)
-            return _probe_audio_duration(input_path) is not None
-    except Exception:  # noqa: BLE001
-        return False
-
-
-def _extract_video_audio_attachment(attachment):
-    """Extract the audio track of a video as a 64 kbit/s MP3 attachment."""
-    if not isinstance(attachment, dict) or attachment.get("type") != "video":
-        return None
-    try:
-        import ffmpeg
-    except ImportError:
-        return None
-    try:
-        decoded = base64.b64decode(attachment["data"], validate=True)
-    except Exception:  # noqa: BLE001
-        return None
-    import os
-    import tempfile
-
-    try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            input_path = os.path.join(tmpdir, "input")
-            with open(input_path, "wb") as handle:
-                handle.write(decoded)
-            if _probe_audio_duration(input_path) is None:
-                return None
-            stream = ffmpeg.input(input_path)
-            audio = stream.audio
-            output_path = os.path.join(tmpdir, "output.mp3")
-            ffmpeg.output(
-                audio,
-                output_path,
-                acodec="libmp3lame",
-                audio_bitrate="64k",
-            ).overwrite_output().run(quiet=True)
-            with open(output_path, "rb") as handle:
-                converted = handle.read()
-            if not converted:
-                return None
-            return {
-                "type": "audio",
-                "data": base64.b64encode(converted).decode("ascii"),
-                "mime_type": "audio/mpeg",
-            }
-    except Exception:  # noqa: BLE001
-        current_app.logger.exception("Video audio could not be extracted")
-        return None
-
-
-def _merge_video_audio(video_data, audio_data):
-    """Mux a converted (audio-less) video with a separate audio track into one MP4."""
-    if not video_data or not audio_data:
-        return None
-    try:
-        import ffmpeg
-    except ImportError:
-        return None
-    import os
-    import tempfile
-
-    try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            video_path = os.path.join(tmpdir, "video.mp4")
-            audio_path = os.path.join(tmpdir, "audio.mp3")
-            output_path = os.path.join(tmpdir, "merged.mp4")
-            with open(video_path, "wb") as handle:
-                handle.write(base64.b64decode(video_data, validate=True))
-            with open(audio_path, "wb") as handle:
-                handle.write(base64.b64decode(audio_data, validate=True))
-            video_stream = ffmpeg.input(video_path).video
-            audio_stream = ffmpeg.input(audio_path).audio
-            ffmpeg.output(
-                video_stream,
-                audio_stream,
-                output_path,
-                vcodec="copy",
-                acodec="aac",
-                audio_bitrate="64k",
-                movflags="+faststart",
-            ).overwrite_output().run(quiet=True)
-            with open(output_path, "rb") as handle:
-                merged = handle.read()
-            if not merged:
-                return None
-            return base64.b64encode(merged).decode("ascii")
-    except Exception:  # noqa: BLE001
-        current_app.logger.exception("Video and audio could not be merged")
-        return None
 
 
 def _process_attachments(attachments):
@@ -732,7 +436,6 @@ def _chat_result_payload(
     """Return the shared JSON result for regular and streaming chat."""
     payload = {
         "response": response_text,
-        "response_html": render_markdown_html(response_text),
         "time": elapsed,
         "input_tokens": usage.get("prompt_tokens", 0),
         "output_tokens": usage.get("completion_tokens", 0),
@@ -747,11 +450,6 @@ def _chat_result_payload(
     return payload
 
 
-def render_markdown_html(text):
-    """Render Markdown text to HTML using the same extensions as About."""
-    return markdown.markdown(str(text or ""), extensions=MARKDOWN_EXTENSIONS)
-
-
 class ChatController:
     """Provide chat context and handle chat messages."""
 
@@ -764,11 +462,11 @@ class ChatController:
         messages = list_chat_messages()
         return {
             "chat_settings": settings,
-            "chat_attachment_settings": get_chat_attachment_settings(),
+            "chat_attachment_settings": chat_attachment_settings(),
             "chat_messages": messages,
             "active_models": self.service.active_models(),
-            "saved_chats": list_saved_chats(),
-            "saved_system_prompts": list_saved_system_prompts(),
+            "saved_chats": list_saved("chat"),
+            "saved_system_prompts": list_saved("system_prompt"),
         }
 
     def _parse_request(self):
@@ -779,9 +477,9 @@ class ChatController:
         saved_name_raw = (data.get("saved_system_prompt_name") or "").strip()
         saved_name = ""
         if saved_name_raw:
-            stored = get_saved_system_prompt(saved_name_raw)
+            stored = get_saved("system_prompt", saved_name_raw)
             if stored is None and system_prompt.strip():
-                save_saved_system_prompt(saved_name_raw, system_prompt)
+                save_saved("system_prompt", saved_name_raw, system_prompt)
                 stored = system_prompt
             if stored == system_prompt:
                 saved_name = saved_name_raw
@@ -812,71 +510,17 @@ class ChatController:
             return jsonify({"error": str(error)}), 503
 
         save_original_media = bool(chat_request.raw.get("save_original_media"))
-        preview_images = []
-        preview_media = []
-        has_audio_attachment = False
         try:
-            for attachment in chat_request.attachments:
-                attachment_type = attachment.get("type")
-                if attachment_type == "image":
-                    filename = self.previews.save(attachment.get("data", ""), "jpg")
-                    if filename:
-                        preview_images.append(filename)
-                elif attachment_type == "audio":
-                    has_audio_attachment = True
-                    if save_original_media:
-                        converted = _convert_audio_attachment(attachment)
-                        data = converted.get("data", attachment.get("data", ""))
-                        filename = self.previews.save(data, "mp3")
-                        if filename:
-                            preview_media.append(
-                                {
-                                    "type": "audio",
-                                    "filename": filename,
-                                    "original_name": attachment.get(
-                                        "original_name", ""
-                                    ),
-                                }
-                            )
-                elif attachment_type == "video":
-                    if save_original_media:
-                        converted = _convert_video_attachment(attachment)
-                        data = converted["data"]
-                        if attachment.get("attach_audio") and _video_has_audio(
-                            attachment.get("data", "")
-                        ):
-                            audio_att = _extract_video_audio_attachment(attachment)
-                            if audio_att is not None:
-                                merged = _merge_video_audio(
-                                    converted["data"], audio_att.get("data", "")
-                                )
-                                if merged:
-                                    data = merged
-                        filename = self.previews.save(data, "mp4")
-                        if filename:
-                            preview_media.append(
-                                {
-                                    "type": "video",
-                                    "filename": filename,
-                                    "original_name": attachment.get(
-                                        "original_name", ""
-                                    ),
-                                }
-                            )
-                    elif attachment.get("preview_data"):
-                        filename = self.previews.save(
-                            attachment.get("preview_data", ""), "jpg"
-                        )
-                        if filename:
-                            preview_images.append(filename)
+            preview_data = self.previews.save_attachments(
+                chat_request.attachments,
+                save_original_media=save_original_media,
+            )
         except AttachmentProcessingError as error:
             return jsonify({"error": str(error)}), 422
         add_chat_message(
             "user",
             chat_request.user_message,
-            preview_images=preview_images,
-            has_audio=has_audio_attachment and not save_original_media,
-            preview_media=preview_media,
+            **preview_data,
         )
 
         stream_requested = request.args.get("stream") == "1" or "text/event-stream" in (
@@ -1081,19 +725,21 @@ class ChatController:
     def save_attachment_settings(self):
         """Persist last-used media attachment switch values."""
         data = request.get_json(silent=True) or {}
-        settings = get_chat_attachment_settings()
+        settings = chat_attachment_settings()
         for key in ("save_original_media", "attach_audio"):
             if key in data:
                 if not isinstance(data[key], bool):
                     return jsonify({"error": f"{key} must be a boolean."}), 400
                 settings[key] = data[key]
-        save_chat_attachment_settings(settings)
+        chat_attachment_settings(settings)
         return jsonify({"message": "Attachment settings saved."})
 
     def clear(self):
         current_messages = list_chat_messages()
         filenames = self.previews.filenames(current_messages)
-        saved_messages = [get_saved_chat(name) or [] for name in list_saved_chats()]
+        saved_messages = [
+            get_saved("chat", name) or [] for name in list_saved("chat")
+        ]
         clear_chat_messages()
         self.previews.delete_unreferenced(filenames, *saved_messages)
         return jsonify({"message": "Chat cleared."})
@@ -1108,88 +754,76 @@ class ChatController:
         ):
             filenames = self.previews.filenames([messages[-1]])
         referenced = [messages[:-1]] + [
-            get_saved_chat(name) or [] for name in list_saved_chats()
+            get_saved("chat", name) or [] for name in list_saved("chat")
         ]
         deleted = delete_last_chat_message()
         if deleted:
             self.previews.delete_unreferenced(filenames, *referenced)
         return jsonify({"message": "Request aborted.", "deleted": deleted})
 
-    def list_saved(self):
-        return jsonify({"names": list_saved_chats()})
-
-    def save_chat(self):
+    def saved_chat(self, action):
+        """List, save, load, or delete a named chat."""
+        if action == "list":
+            return jsonify({"names": list_saved("chat")})
         data = request.get_json(silent=True) or {}
         name = (data.get("name") or "").strip()
         if not name:
             return jsonify({"error": "Chat name is required."}), 400
-        messages = list_chat_messages()
-        save_saved_chat(name, messages)
-        return jsonify({"message": "Chat saved.", "name": name})
+        if action == "save":
+            save_saved("chat", name, list_chat_messages())
+            return jsonify({"message": "Chat saved.", "name": name})
+        if action == "load":
+            if not load_saved_chat(name):
+                return jsonify({"error": "Saved chat not found."}), 404
+            return jsonify(
+                {
+                    "message": "Chat loaded.",
+                    "name": name,
+                    "messages": list_chat_messages(),
+                }
+            )
 
-    def load_chat(self):
-        data = request.get_json(silent=True) or {}
-        name = (data.get("name") or "").strip()
-        if not name:
-            return jsonify({"error": "Chat name is required."}), 400
-        if not load_saved_chat(name):
-            return jsonify({"error": "Saved chat not found."}), 404
-        return jsonify(
-            {"message": "Chat loaded.", "name": name, "messages": list_chat_messages()}
-        )
-
-    def delete_chat(self):
-        data = request.get_json(silent=True) or {}
-        name = (data.get("name") or "").strip()
-        if not name:
-            return jsonify({"error": "Chat name is required."}), 400
-        saved = get_saved_chat(name)
+        saved = get_saved("chat", name)
         if saved is None:
             return jsonify({"error": "Saved chat not found."}), 404
-
         current_messages = list_chat_messages()
         filenames = self.previews.filenames(saved) + self.previews.filenames(
             current_messages
         )
         referenced = [
-            get_saved_chat(other) or [] for other in list_saved_chats() if other != name
+            get_saved("chat", other) or []
+            for other in list_saved("chat")
+            if other != name
         ]
-        if not delete_saved_chat(name):
+        if not delete_saved("chat", name):
             return jsonify({"error": "Saved chat not found."}), 404
         clear_chat_messages()
         self.previews.delete_unreferenced(filenames, *referenced)
         return jsonify({"message": "Chat deleted.", "name": name})
 
-    def list_saved_system_prompts(self):
-        return jsonify({"names": list_saved_system_prompts()})
-
-    def save_system_prompt(self):
-        data = request.get_json(silent=True) or {}
-        name = (data.get("name") or "").strip()
-        content = data.get("content", "")
-        if not name:
-            return jsonify({"error": "Name is required."}), 400
-        save_saved_system_prompt(name, content)
-        return jsonify({"message": "System prompt saved.", "name": name})
-
-    def load_system_prompt(self):
+    def saved_system_prompt(self, action):
+        """List, save, load, or delete a named system prompt."""
+        if action == "list":
+            return jsonify({"names": list_saved("system_prompt")})
         data = request.get_json(silent=True) or {}
         name = (data.get("name") or "").strip()
         if not name:
             return jsonify({"error": "Name is required."}), 400
-        content = get_saved_system_prompt(name)
-        if content is None:
-            return jsonify({"error": "Saved system prompt not found."}), 404
-        return jsonify(
-            {"message": "System prompt loaded.", "name": name, "content": content}
-        )
-
-    def delete_system_prompt(self):
-        data = request.get_json(silent=True) or {}
-        name = (data.get("name") or "").strip()
-        if not name:
-            return jsonify({"error": "Name is required."}), 400
-        if not delete_saved_system_prompt(name):
+        if action == "save":
+            save_saved("system_prompt", name, data.get("content", ""))
+            return jsonify({"message": "System prompt saved.", "name": name})
+        if action == "load":
+            content = get_saved("system_prompt", name)
+            if content is None:
+                return jsonify({"error": "Saved system prompt not found."}), 404
+            return jsonify(
+                {
+                    "message": "System prompt loaded.",
+                    "name": name,
+                    "content": content,
+                }
+            )
+        if not delete_saved("system_prompt", name):
             return jsonify({"error": "Saved system prompt not found."}), 404
         return jsonify({"message": "System prompt deleted.", "name": name})
 

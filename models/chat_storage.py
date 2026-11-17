@@ -1,72 +1,11 @@
-"""SQLite persistence for chat history and chat setup defaults.
-
-Chat messages, saved chats, and saved system prompts live in the separate
-``instance/chathistory.db``. The ``chat_settings`` row that supplies the chat
-page defaults lives in the main ``instance/cairnmark.db``.
-"""
+"""SQLite persistence for messages, saved chats, and saved prompts."""
 
 import json
-from contextlib import closing
+from functools import partial
 
 from config import PROJECT_ROOT
 from models.sqlite_store import SQLiteStore
 
-
-CHAT_PARAMETER_DEFAULTS = {
-    "temperature": 0.7,
-    "top_p": 1.0,
-    "top_k": 40,
-    "seed": 4294967295,
-    "history_limit": 4,
-}
-
-CHAT_PARAMETER_CONVERTERS = {
-    "temperature": float,
-    "top_p": float,
-    "top_k": int,
-    "seed": int,
-    "history_limit": int,
-}
-
-CHAT_SETTINGS_COLUMNS = (
-    "id",
-    "model_name",
-    "system_prompt",
-    *CHAT_PARAMETER_DEFAULTS,
-    "updated_at",
-)
-
-CHAT_SETTINGS_COLUMNS_SQL = """
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    model_name TEXT NOT NULL DEFAULT '',
-    system_prompt TEXT NOT NULL DEFAULT '',
-    temperature REAL,
-    top_p REAL,
-    top_k INTEGER,
-    seed INTEGER,
-    history_limit INTEGER,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-"""
-
-CHAT_SETTINGS_DEFAULT_SQL = {
-    **{key: repr(value) for key, value in CHAT_PARAMETER_DEFAULTS.items()},
-    "model_name": "''",
-    "system_prompt": "''",
-    "updated_at": "CURRENT_TIMESTAMP",
-}
-
-CHAT_SETTINGS_SCHEMA = f"""
-CREATE TABLE IF NOT EXISTS chat_settings ({CHAT_SETTINGS_COLUMNS_SQL});
-"""
-
-CHAT_ATTACHMENT_SETTINGS_SCHEMA = """
-CREATE TABLE IF NOT EXISTS chat_attachment_settings (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    save_original_media INTEGER NOT NULL DEFAULT 0,
-    attach_audio INTEGER NOT NULL DEFAULT 0,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-"""
 
 CHAT_SCHEMA = """
 CREATE TABLE IF NOT EXISTS chat_messages (
@@ -100,7 +39,8 @@ CREATE TABLE IF NOT EXISTS saved_system_prompts (
 """
 
 
-def _parse_preview_images(value):
+def _parse_list(value, *, csv_fallback=False):
+    """Decode a stored JSON list, optionally accepting legacy CSV text."""
     if not value:
         return []
     if isinstance(value, list):
@@ -108,7 +48,9 @@ def _parse_preview_images(value):
     try:
         parsed = json.loads(value)
     except (ValueError, TypeError):
-        return [part for part in str(value).split(",") if part.strip()]
+        if csv_fallback:
+            return [part.strip() for part in str(value).split(",") if part.strip()]
+        return []
     if isinstance(parsed, list):
         return parsed
     if isinstance(parsed, str):
@@ -116,18 +58,11 @@ def _parse_preview_images(value):
     return []
 
 
-def _parse_preview_media(value):
-    if not value:
-        return []
-    if isinstance(value, list):
-        return value
-    try:
-        parsed = json.loads(value)
-    except (ValueError, TypeError):
-        return []
-    if isinstance(parsed, list):
-        return parsed
-    return []
+def _stored_list(value):
+    """Serialize list-like preview metadata while retaining legacy strings."""
+    if isinstance(value, (list, tuple)):
+        return json.dumps(list(value), ensure_ascii=False)
+    return "" if value in (None, "") else str(value)
 
 
 CHAT_MESSAGE_COLUMNS = {
@@ -156,38 +91,6 @@ def _migrate_chat_messages(connection):
             )
 
 
-def _migrate_chat_settings(connection):
-    """Rebuild chat settings so every numeric parameter can be unset."""
-    existing = {
-        row[1]: row for row in connection.execute("PRAGMA table_info(chat_settings)")
-    }
-    if not existing:
-        return
-    parameter_columns = tuple(CHAT_PARAMETER_DEFAULTS)
-    # Also drop any parameters that used to exist but no longer do.
-    extra_columns = {col for col in existing if col not in CHAT_SETTINGS_COLUMNS}
-    needs_rebuild = (
-        any(column not in existing for column in CHAT_SETTINGS_COLUMNS)
-        or any(existing[column][3] for column in parameter_columns)
-        or bool(extra_columns)
-    )
-    if not needs_rebuild:
-        return
-
-    select_columns = ", ".join(
-        column if column in existing else CHAT_SETTINGS_DEFAULT_SQL[column]
-        for column in CHAT_SETTINGS_COLUMNS
-    )
-    connection.execute("DROP TABLE IF EXISTS chat_settings_new")
-    connection.execute(f"CREATE TABLE chat_settings_new ({CHAT_SETTINGS_COLUMNS_SQL})")
-    connection.execute(
-        f"INSERT INTO chat_settings_new ({', '.join(CHAT_SETTINGS_COLUMNS)}) "
-        f"SELECT {select_columns} FROM chat_settings"
-    )
-    connection.execute("DROP TABLE chat_settings")
-    connection.execute("ALTER TABLE chat_settings_new RENAME TO chat_settings")
-
-
 CHAT_STORE = SQLiteStore(
     "CHAT_DATABASE_PATH",
     default_path=PROJECT_ROOT / "instance" / "chathistory.db",
@@ -195,134 +98,15 @@ CHAT_STORE = SQLiteStore(
     migrate=_migrate_chat_messages,
 )
 
-SETTINGS_STORE = SQLiteStore(
-    "DATABASE_PATH",
-    schema=CHAT_SETTINGS_SCHEMA + CHAT_ATTACHMENT_SETTINGS_SCHEMA,
-    migrate=_migrate_chat_settings,
-)
-
-
-def _default_chat_settings():
-    return {
-        "model_name": "",
-        "system_prompt": "",
-        **CHAT_PARAMETER_DEFAULTS,
-    }
-
-
-def get_chat_settings():
-    database_path = SETTINGS_STORE.path()
-    if not database_path.exists():
-        return _default_chat_settings()
-    parameter_columns = tuple(CHAT_PARAMETER_DEFAULTS)
-    with closing(SETTINGS_STORE.connect()) as connection:
-        row = connection.execute(
-            "SELECT model_name, system_prompt, "
-            + ", ".join(parameter_columns)
-            + " FROM chat_settings WHERE id = 1"
-        ).fetchone()
-    if not row:
-        return _default_chat_settings()
-    settings = {
-        "model_name": row[0] or "",
-        "system_prompt": row[1] or "",
-    }
-    for index, column in enumerate(parameter_columns, start=2):
-        settings[column] = row[index]
-    return settings
-
-
-def _optional_number(value, converter):
-    if value is None:
-        return None
-    if isinstance(value, str):
-        value = value.strip()
-        if not value:
-            return None
-    return converter(value)
-
-
-def save_chat_settings(settings):
-    writable_columns = ("model_name", "system_prompt", *CHAT_PARAMETER_DEFAULTS)
-    placeholders = ", ".join("?" for _ in writable_columns)
-    values = [
-        settings.get("model_name", ""),
-        settings.get("system_prompt", ""),
-        *(
-            _optional_number(settings.get(key, CHAT_PARAMETER_DEFAULTS[key]), converter)
-            for key, converter in CHAT_PARAMETER_CONVERTERS.items()
-        ),
-    ]
-    with closing(SETTINGS_STORE.connect()) as connection:
-        connection.execute(
-            f"""
-            INSERT INTO chat_settings
-                (id, {', '.join(writable_columns)})
-            VALUES (1, {placeholders})
-            ON CONFLICT(id) DO UPDATE SET
-                model_name = excluded.model_name,
-                system_prompt = excluded.system_prompt,
-                temperature = excluded.temperature,
-                top_p = excluded.top_p,
-                top_k = excluded.top_k,
-                seed = excluded.seed,
-                history_limit = excluded.history_limit,
-                updated_at = CURRENT_TIMESTAMP
-            """,
-            values,
-        )
-        connection.commit()
-
-
-def get_chat_attachment_settings():
-    """Return the last-used media attachment switch values."""
-    database_path = SETTINGS_STORE.path()
-    if not database_path.exists():
-        return {"save_original_media": False, "attach_audio": False}
-    with closing(SETTINGS_STORE.connect()) as connection:
-        row = connection.execute(
-            "SELECT save_original_media, attach_audio "
-            "FROM chat_attachment_settings WHERE id = 1"
-        ).fetchone()
-    if not row:
-        return {"save_original_media": False, "attach_audio": False}
-    return {
-        "save_original_media": bool(row[0]),
-        "attach_audio": bool(row[1]),
-    }
-
-
-def save_chat_attachment_settings(settings):
-    """Persist both media attachment switch values."""
-    with closing(SETTINGS_STORE.connect()) as connection:
-        connection.execute(
-            """
-            INSERT INTO chat_attachment_settings
-                (id, save_original_media, attach_audio)
-            VALUES (1, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                save_original_media = excluded.save_original_media,
-                attach_audio = excluded.attach_audio,
-                updated_at = CURRENT_TIMESTAMP
-            """,
-            (
-                1 if settings.get("save_original_media") else 0,
-                1 if settings.get("attach_audio") else 0,
-            ),
-        )
-        connection.commit()
-
-
 def list_chat_messages():
-    database_path = CHAT_STORE.path()
-    if not database_path.exists():
+    if not CHAT_STORE.path().exists():
         return []
-    with closing(CHAT_STORE.connect()) as connection:
-        rows = connection.execute(
-            "SELECT id, role, content, model_name, provider, response_time, "
-            "input_tokens, output_tokens, system_prompt, saved_system_prompt_name, "
-            "request_body, preview_images, has_audio, preview_media, created_at FROM chat_messages ORDER BY id"
-        ).fetchall()
+    rows = CHAT_STORE.fetch(
+        "SELECT id, role, content, model_name, provider, response_time, "
+        "input_tokens, output_tokens, system_prompt, saved_system_prompt_name, "
+        "request_body, preview_images, has_audio, preview_media, created_at "
+        "FROM chat_messages ORDER BY id"
+    )
     return [
         {
             "id": row[0],
@@ -336,9 +120,9 @@ def list_chat_messages():
             "system_prompt": row[8] or "",
             "saved_system_prompt_name": row[9] or "",
             "request_body": row[10] or "",
-            "preview_images": _parse_preview_images(row[11] or ""),
+            "preview_images": _parse_list(row[11] or "", csv_fallback=True),
             "has_audio": bool(row[12]),
-            "preview_media": _parse_preview_media(row[13] or ""),
+            "preview_media": _parse_list(row[13] or ""),
             "created_at": row[14],
         }
         for row in rows
@@ -360,184 +144,136 @@ def add_chat_message(
     has_audio=0,
     preview_media=None,
 ):
-    with closing(CHAT_STORE.connect()) as connection:
-        if isinstance(preview_images, (list, tuple)):
-            preview_value = json.dumps(list(preview_images), ensure_ascii=False)
-        elif preview_images in (None, ""):
-            preview_value = ""
-        else:
-            preview_value = str(preview_images)
-        if isinstance(preview_media, (list, tuple)):
-            preview_media_value = json.dumps(list(preview_media), ensure_ascii=False)
-        elif preview_media in (None, ""):
-            preview_media_value = ""
-        else:
-            preview_media_value = str(preview_media)
-        cursor = connection.execute(
-            "INSERT INTO chat_messages "
-            "(role, content, model_name, provider, response_time, input_tokens, "
-            "output_tokens, system_prompt, saved_system_prompt_name, request_body, "
-            "preview_images, has_audio, preview_media) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                role,
-                content,
-                model_name,
-                provider,
-                response_time,
-                input_tokens,
-                output_tokens,
-                system_prompt,
-                saved_system_prompt_name,
-                request_body,
-                preview_value,
-                1 if has_audio else 0,
-                preview_media_value,
-            ),
-        )
-        connection.commit()
-        return cursor.lastrowid
+    _rowcount, lastrowid = CHAT_STORE.execute(
+        "INSERT INTO chat_messages "
+        "(role, content, model_name, provider, response_time, input_tokens, "
+        "output_tokens, system_prompt, saved_system_prompt_name, request_body, "
+        "preview_images, has_audio, preview_media) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            role,
+            content,
+            model_name,
+            provider,
+            response_time,
+            input_tokens,
+            output_tokens,
+            system_prompt,
+            saved_system_prompt_name,
+            request_body,
+            _stored_list(preview_images),
+            1 if has_audio else 0,
+            _stored_list(preview_media),
+        ),
+    )
+    return lastrowid
 
 
 def clear_chat_messages():
-    database_path = CHAT_STORE.path()
-    if not database_path.exists():
+    if not CHAT_STORE.path().exists():
         return
-    with closing(CHAT_STORE.connect()) as connection:
-        connection.execute("DELETE FROM chat_messages")
-        connection.commit()
+    CHAT_STORE.execute("DELETE FROM chat_messages")
 
 
 def delete_last_chat_message():
     """Remove the most recent chat message when it is an unanswered user request."""
-    database_path = CHAT_STORE.path()
-    if not database_path.exists():
+    if not CHAT_STORE.path().exists():
         return False
-    with closing(CHAT_STORE.connect()) as connection:
+    with CHAT_STORE.transaction() as connection:
         row = connection.execute(
             "SELECT id, role FROM chat_messages ORDER BY id DESC LIMIT 1"
         ).fetchone()
         if not row or row[1] != "user":
             return False
         connection.execute("DELETE FROM chat_messages WHERE id = ?", (row[0],))
-        connection.commit()
         return True
 
 
-def list_saved_system_prompts():
-    database_path = CHAT_STORE.path()
-    if not database_path.exists():
+SAVED_RECORDS = {
+    "chat": ("saved_chats", "messages", True),
+    "system_prompt": ("saved_system_prompts", "content", False),
+}
+
+
+def list_saved(record_type):
+    """List saved chat or system-prompt names in display order."""
+    if not CHAT_STORE.path().exists():
         return []
-    with closing(CHAT_STORE.connect()) as connection:
-        rows = connection.execute(
-            "SELECT name FROM saved_system_prompts ORDER BY name COLLATE NOCASE"
-        ).fetchall()
+    table, _value_column, _uses_json = SAVED_RECORDS[record_type]
+    rows = CHAT_STORE.fetch(
+        f"SELECT name FROM {table} ORDER BY name COLLATE NOCASE"
+    )
     return [row[0] for row in rows]
 
 
-def save_saved_system_prompt(name, content):
-    with closing(CHAT_STORE.connect()) as connection:
-        connection.execute(
-            """
-            INSERT INTO saved_system_prompts (name, content)
-            VALUES (?, ?)
-            ON CONFLICT(name) DO UPDATE SET
-                content = excluded.content,
-                updated_at = CURRENT_TIMESTAMP
-            """,
-            (name, content),
-        )
-        connection.commit()
+def save_saved(record_type, name, value):
+    """Create or replace one named chat or system prompt."""
+    table, value_column, uses_json = SAVED_RECORDS[record_type]
+    payload = json.dumps(value, ensure_ascii=False) if uses_json else value
+    CHAT_STORE.execute(
+        f"""
+        INSERT INTO {table} (name, {value_column})
+        VALUES (?, ?)
+        ON CONFLICT(name) DO UPDATE SET
+            {value_column} = excluded.{value_column},
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (name, payload),
+    )
 
 
-def get_saved_system_prompt(name):
-    database_path = CHAT_STORE.path()
-    if not database_path.exists():
+def get_saved(record_type, name):
+    """Return one saved chat or system prompt, or ``None`` when absent."""
+    if not CHAT_STORE.path().exists():
         return None
-    with closing(CHAT_STORE.connect()) as connection:
-        row = connection.execute(
-            "SELECT content FROM saved_system_prompts WHERE name = ?", (name,)
-        ).fetchone()
+    table, value_column, uses_json = SAVED_RECORDS[record_type]
+    row = CHAT_STORE.fetch(
+        f"SELECT {value_column} FROM {table} WHERE name = ?",
+        (name,),
+        one=True,
+    )
     if not row:
         return None
-    return row[0]
-
-
-def delete_saved_system_prompt(name):
-    database_path = CHAT_STORE.path()
-    if not database_path.exists():
-        return False
-    with closing(CHAT_STORE.connect()) as connection:
-        cursor = connection.execute(
-            "DELETE FROM saved_system_prompts WHERE name = ?", (name,)
-        )
-        connection.commit()
-        return cursor.rowcount > 0
-
-
-def list_saved_chats():
-    database_path = CHAT_STORE.path()
-    if not database_path.exists():
-        return []
-    with closing(CHAT_STORE.connect()) as connection:
-        rows = connection.execute(
-            "SELECT name FROM saved_chats ORDER BY name COLLATE NOCASE"
-        ).fetchall()
-    return [row[0] for row in rows]
-
-
-def save_saved_chat(name, messages):
-    payload = json.dumps(messages, ensure_ascii=False)
-    with closing(CHAT_STORE.connect()) as connection:
-        connection.execute(
-            """
-            INSERT INTO saved_chats (name, messages)
-            VALUES (?, ?)
-            ON CONFLICT(name) DO UPDATE SET
-                messages = excluded.messages,
-                updated_at = CURRENT_TIMESTAMP
-            """,
-            (name, payload),
-        )
-        connection.commit()
-
-
-def get_saved_chat(name):
-    database_path = CHAT_STORE.path()
-    if not database_path.exists():
-        return None
-    with closing(CHAT_STORE.connect()) as connection:
-        row = connection.execute(
-            "SELECT messages FROM saved_chats WHERE name = ?", (name,)
-        ).fetchone()
-    if not row:
-        return None
+    if not uses_json:
+        return row[0]
     try:
         return json.loads(row[0])
     except (ValueError, TypeError):
         return None
 
 
-def delete_saved_chat(name):
-    database_path = CHAT_STORE.path()
-    if not database_path.exists():
+def delete_saved(record_type, name):
+    """Delete one named chat or system prompt and report whether it existed."""
+    if not CHAT_STORE.path().exists():
         return False
-    with closing(CHAT_STORE.connect()) as connection:
-        cursor = connection.execute("DELETE FROM saved_chats WHERE name = ?", (name,))
-        connection.commit()
-        return cursor.rowcount > 0
+    table, _value_column, _uses_json = SAVED_RECORDS[record_type]
+    rowcount, _lastrowid = CHAT_STORE.execute(
+        f"DELETE FROM {table} WHERE name = ?",
+        (name,),
+    )
+    return rowcount > 0
+
+
+list_saved_chats = partial(list_saved, "chat")
+save_saved_chat = partial(save_saved, "chat")
+get_saved_chat = partial(get_saved, "chat")
+delete_saved_chat = partial(delete_saved, "chat")
+list_saved_system_prompts = partial(list_saved, "system_prompt")
+save_saved_system_prompt = partial(save_saved, "system_prompt")
+get_saved_system_prompt = partial(get_saved, "system_prompt")
+delete_saved_system_prompt = partial(delete_saved, "system_prompt")
 
 
 def load_saved_chat(name):
     messages = get_saved_chat(name)
     if messages is None:
         return False
-    with closing(CHAT_STORE.connect()) as connection:
+    with CHAT_STORE.transaction() as connection:
         connection.execute("DELETE FROM chat_messages")
         for m in messages:
             preview_images = m.get("preview_images", [])
             if isinstance(preview_images, str):
-                preview_images = _parse_preview_images(preview_images)
+                preview_images = _parse_list(preview_images, csv_fallback=True)
             connection.execute(
                 "INSERT INTO chat_messages "
                 "(role, content, model_name, provider, response_time, input_tokens, "
@@ -555,14 +291,9 @@ def load_saved_chat(name):
                     m.get("system_prompt", "") or "",
                     m.get("saved_system_prompt_name", "") or "",
                     m.get("request_body", "") or "",
-                    json.dumps(preview_images, ensure_ascii=False)
-                    if isinstance(preview_images, (list, tuple))
-                    else str(preview_images or ""),
+                    _stored_list(preview_images),
                     1 if m.get("has_audio") else 0,
-                    json.dumps(m.get("preview_media", []), ensure_ascii=False)
-                    if isinstance(m.get("preview_media"), (list, tuple))
-                    else str(m.get("preview_media") or ""),
+                    _stored_list(m.get("preview_media", [])),
                 ),
             )
-        connection.commit()
     return True

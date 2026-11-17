@@ -1,11 +1,11 @@
-"""Persistence helpers for Cairnmark's local application data."""
 """Application persistence initialization."""
 
 
 def init_storage(app):
     """Normalize database paths and initialize every eager schema."""
     from models.benchmark_metadata import STORE as benchmark_store
-    from models.chat_storage import CHAT_STORE, SETTINGS_STORE
+    from models.chat_settings import SETTINGS_STORE
+    from models.chat_storage import CHAT_STORE
     from models.model_storage import STORE as model_store
     from models.parameter_storage import STORE as parameter_store
 

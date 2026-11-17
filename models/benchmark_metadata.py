@@ -1,7 +1,5 @@
 """SQLite persistence for benchmark organization metadata."""
 
-from contextlib import closing
-
 import sqlite3
 
 from models.sqlite_store import SQLiteStore
@@ -52,16 +50,16 @@ STORE = SQLiteStore(
 
 def get_benchmark_metadata(filename):
     """Return saved metadata for one benchmark, or ``None`` when unsaved."""
-    with closing(STORE.connect()) as connection:
-        row = connection.execute(
-            """
-            SELECT filename, category, difficulty, notes,
-                   generation_prompt, model_name, updated_at
-            FROM benchmark_metadata
-            WHERE filename = ?
-            """,
-            (filename,),
-        ).fetchone()
+    row = STORE.fetch(
+        """
+        SELECT filename, category, difficulty, notes,
+               generation_prompt, model_name, updated_at
+        FROM benchmark_metadata
+        WHERE filename = ?
+        """,
+        (filename,),
+        one=True,
+    )
     return dict(row) if row else None
 
 
@@ -72,32 +70,30 @@ def get_metadata_for_files(filenames):
         return {}
 
     placeholders = ", ".join("?" for _filename in filenames)
-    with closing(STORE.connect()) as connection:
-        rows = connection.execute(
-            f"""
-            SELECT filename, category, difficulty, notes,
-                   generation_prompt, model_name, updated_at
-            FROM benchmark_metadata
-            WHERE filename IN ({placeholders})
-            """,
-            filenames,
-        ).fetchall()
+    rows = STORE.fetch(
+        f"""
+        SELECT filename, category, difficulty, notes,
+               generation_prompt, model_name, updated_at
+        FROM benchmark_metadata
+        WHERE filename IN ({placeholders})
+        """,
+        filenames,
+    )
     return {row["filename"]: dict(row) for row in rows}
 
 
 def list_categories():
     """Return saved category names in case-insensitive order."""
-    with closing(STORE.connect()) as connection:
-        rows = connection.execute(
-            """
-            SELECT name AS category
-            FROM benchmark_categories
-            UNION
-            SELECT category
-            FROM benchmark_metadata
-            WHERE category != 'Uncategorized'
-            """
-        ).fetchall()
+    rows = STORE.fetch(
+        """
+        SELECT name AS category
+        FROM benchmark_categories
+        UNION
+        SELECT category
+        FROM benchmark_metadata
+        WHERE category != 'Uncategorized'
+        """
+    )
     unique = {}
     for row in rows:
         unique.setdefault(row["category"].casefold(), row["category"])
@@ -106,12 +102,11 @@ def list_categories():
 
 def save_category(name):
     """Persist one category and return its stored spelling."""
-    with closing(STORE.connect()) as connection:
+    with STORE.transaction() as connection:
         connection.execute(
             "INSERT OR IGNORE INTO benchmark_categories (name) VALUES (?)",
             (name,),
         )
-        connection.commit()
         row = connection.execute(
             """
             SELECT name
@@ -132,33 +127,31 @@ def save_benchmark_metadata(
     model_name,
 ):
     """Create or replace the editable metadata for one benchmark file."""
-    with closing(STORE.connect()) as connection:
-        connection.execute(
-            """
-            INSERT INTO benchmark_metadata (
-                filename,
-                category,
-                difficulty,
-                notes,
-                generation_prompt,
-                model_name
-            )
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(filename) DO UPDATE SET
-                category = excluded.category,
-                difficulty = excluded.difficulty,
-                notes = excluded.notes,
-                generation_prompt = excluded.generation_prompt,
-                model_name = excluded.model_name,
-                updated_at = CURRENT_TIMESTAMP
-            """,
-            (
-                filename,
-                category,
-                difficulty,
-                notes,
-                generation_prompt,
-                model_name,
-            ),
+    STORE.execute(
+        """
+        INSERT INTO benchmark_metadata (
+            filename,
+            category,
+            difficulty,
+            notes,
+            generation_prompt,
+            model_name
         )
-        connection.commit()
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(filename) DO UPDATE SET
+            category = excluded.category,
+            difficulty = excluded.difficulty,
+            notes = excluded.notes,
+            generation_prompt = excluded.generation_prompt,
+            model_name = excluded.model_name,
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (
+            filename,
+            category,
+            difficulty,
+            notes,
+            generation_prompt,
+            model_name,
+        ),
+    )

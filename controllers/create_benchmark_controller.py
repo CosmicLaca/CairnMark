@@ -3,7 +3,6 @@
 import json
 import re
 from datetime import datetime
-from pathlib import Path
 
 from flask import (
     Response,
@@ -23,7 +22,11 @@ from services.benchmark_categories import (
     create_category,
     normalize_new_category,
 )
-from services.benchmark_documents import DIFFICULTY_LEVELS, BenchmarkRepository
+from services.benchmark_documents import (
+    DIFFICULTY_LEVELS,
+    BenchmarkRepository,
+    read_prompt_template,
+)
 from services.benchmark_progress import BenchmarkStreamParser
 from services.model_providers import (
     ModelProviderService,
@@ -47,16 +50,6 @@ class CreateBenchmarkController:
         self.service = service or ModelProviderService()
         self.repository = repository or BenchmarkRepository()
 
-    @staticmethod
-    def _prompt_template(filename):
-        """Read one configured prompt template and log missing files."""
-        path = Path(current_app.config["SYSTEM_PROMPT_DIRECTORY"]) / filename
-        try:
-            return path.read_text(encoding="utf-8")
-        except OSError:
-            current_app.logger.warning("Could not read system prompt %s", path)
-            return ""
-
     def context(self):
         """Return selector options and the current category selection."""
         categories = category_names()
@@ -74,10 +67,10 @@ class CreateBenchmarkController:
             "selected_category": selected_category,
             "created_category": created_category,
             "difficulty_levels": DIFFICULTY_LEVELS,
-            "system_prompt_template": self._prompt_template(
+            "system_prompt_template": read_prompt_template(
                 "create_benchmark-SYSTEM.md"
             ),
-            "user_prompt_template": self._prompt_template(
+            "user_prompt_template": read_prompt_template(
                 "create_benchmark-USER.md"
             ),
             "new_category": "",

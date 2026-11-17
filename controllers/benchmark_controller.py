@@ -26,11 +26,12 @@ from services.benchmark_categories import (
     normalize_new_category,
 )
 from services.benchmark_documents import (
-    BENCHMARK_ITEMS_KEY,
     DIFFICULTY_LEVELS,
     BenchmarkRepository,
+    build_benchmark_log,
     group_benchmarks,
     has_model_answers,
+    read_prompt_template,
 )
 from services.model_providers import (
     ModelProviderService,
@@ -62,16 +63,6 @@ class BenchmarkController:
             )
             return []
 
-    @staticmethod
-    def _prompt_template(filename):
-        """Read a configured prompt template, returning empty text on failure."""
-        path = Path(current_app.config["SYSTEM_PROMPT_DIRECTORY"]) / filename
-        try:
-            return path.read_text(encoding="utf-8")
-        except OSError:
-            current_app.logger.warning("Could not read system prompt %s", path)
-            return ""
-
     def _catalog_context(self, filenames, prompt_filename):
         """Build the shared selector context for run and evaluation pages."""
         metadata = get_metadata_for_files(filenames)
@@ -79,7 +70,7 @@ class BenchmarkController:
             "benchmark_files": filenames,
             "benchmark_groups": group_benchmarks(filenames, metadata),
             "active_models": self.service.active_models(),
-            "run_system_prompt": self._prompt_template(prompt_filename),
+            "run_system_prompt": read_prompt_template(prompt_filename),
         }
 
     def selection_context(self):
@@ -116,7 +107,7 @@ class BenchmarkController:
 
     def load_content(self, filename):
         """Load one validated JSON document from the prompt directory."""
-        if filename not in self.list_files():
+        if not self.repository.contains(filename):
             abort(404)
         try:
             return self.repository.load(filename)
@@ -130,7 +121,7 @@ class BenchmarkController:
 
     def select(self, filename, page):
         """Display and update organization metadata for a benchmark file."""
-        if filename not in self.list_files():
+        if not self.repository.contains(filename):
             abort(404)
 
         metadata = get_benchmark_metadata(filename) or {
@@ -215,7 +206,7 @@ class BenchmarkController:
 
     def process_one(self, filename):
         """Process a single request against the selected model."""
-        if filename not in self.list_files():
+        if not self.repository.contains(filename):
             abort(404)
         data = request.get_json(silent=True) or {}
         model_spec = (data.get("model") or "").strip()
@@ -258,7 +249,7 @@ class BenchmarkController:
 
     def save_result(self, filename):
         """Overwrite a benchmark file and its metadata with processed results."""
-        if filename not in self.list_files():
+        if not self.repository.contains(filename):
             abort(404)
         data = request.get_json(silent=True) or {}
         content = data.get("content")
@@ -283,7 +274,7 @@ class BenchmarkController:
         create_category(category)
 
         if create_log:
-            log_text = self._build_log_markdown(
+            log_text = build_benchmark_log(
                 filename, content, system_prompt
             )
             log_filename = Path(filename).stem + ".md"
@@ -312,65 +303,9 @@ class BenchmarkController:
             }
         )
 
-    @staticmethod
-    def _build_log_markdown(filename, content, system_prompt=""):
-        """Build a readable markdown log from a processed benchmark."""
-        lines = [f"# Benchmark Log: {filename}", ""]
-        if not isinstance(content, list):
-            return "\n".join(lines)
-        for section in content:
-            if not isinstance(section, dict):
-                continue
-            for subcategory, section_content in section.items():
-                lines.append(f"## {subcategory}")
-                lines.append("")
-                items = (
-                    section_content.get(BENCHMARK_ITEMS_KEY, [])
-                    if isinstance(section_content, dict)
-                    else []
-                )
-                for index, item in enumerate(items, start=1):
-                    if not isinstance(item, dict):
-                        continue
-                    lines.append(f"### Request {index}")
-                    lines.append("")
-                    lines.append(item.get("request", ""))
-                    lines.append("")
-                    processed_prompt = (system_prompt or "").replace(
-                        "{{subcategory}}", subcategory
-                    )
-                    lines.append("**System prompt:**")
-                    lines.append("")
-                    lines.append(processed_prompt)
-                    lines.append("")
-                    answers = item.get("answers") or []
-                    if answers:
-                        for answer in answers:
-                            if not isinstance(answer, dict):
-                                continue
-                            lines.append(
-                                f"**Model:** {answer.get('model_name', '')}"
-                            )
-                            lines.append("")
-                            lines.append(
-                                f"**Model response:** {answer.get('model_answer', '')}"
-                            )
-                            lines.append("")
-                            response_time = answer.get(
-                                "response_time", answer.get("reponse_time", "")
-                            )
-                            lines.append(f"**Response time:** {response_time}s")
-                            lines.append("")
-                    else:
-                        lines.append("_No model response recorded._")
-                        lines.append("")
-                    lines.append("---")
-                    lines.append("")
-        return "\n".join(lines)
-
     def update_response(self, filename):
         """Update a single response value in a benchmark JSON file."""
-        if filename not in self.list_files():
+        if not self.repository.contains(filename):
             abort(404)
         data = request.get_json(silent=True) or {}
         try:
@@ -382,30 +317,15 @@ class BenchmarkController:
         if not isinstance(new_response, str):
             return jsonify({"error": "Response must be text."}), 400
 
-        content = self.load_content(filename)
-        if not isinstance(content, list):
-            return jsonify({"error": "Unsupported benchmark structure."}), 400
-        if topic_index < 0 or topic_index >= len(content):
-            return jsonify({"error": "Topic index out of range."}), 400
-        section = content[topic_index]
-        if not isinstance(section, dict) or not section:
-            return jsonify({"error": "Invalid topic section."}), 400
-        topic_name = next(iter(section))
-        section_content = section[topic_name]
-        items = (
-            section_content.get(BENCHMARK_ITEMS_KEY, [])
-            if isinstance(section_content, dict)
-            else []
-        )
-        if request_index < 0 or request_index >= len(items):
-            return jsonify({"error": "Request index out of range."}), 400
-        if not isinstance(items[request_index], dict):
-            return jsonify({"error": "Invalid request entry."}), 400
-
-        items[request_index]["response"] = new_response
-
         try:
-            self.repository.save(filename, content)
+            self.repository.update_response(
+                filename,
+                topic_index,
+                request_index,
+                new_response,
+            )
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
         except OSError:
             current_app.logger.exception("Could not update benchmark %s", filename)
             return jsonify({"error": "Could not update the response."}), 500

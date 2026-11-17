@@ -5,80 +5,135 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/setup-models.css') }}">
 {% endblock %}
 
-{% macro provider_modal(slug, provider, title, default_port, single_model=false, api_provider=false, endpoint="", catalog_route="GET /v1/models") %}
+{% macro provider_steps(provider) %}
+  {% if provider.name == "llama.cpp" %}
+    {% set steps = (("Connect", "Set server address"), ("Discover", "Read live models"), ("Curate", "Save enabled states")) %}
+  {% elif provider.single_model %}
+    {% set steps = (("Connect", "Port 8001 default"), ("Identify", "Read loaded model"), ("Save", "Keep provider state")) %}
+  {% else %}
+    {% set steps = (("Authenticate", "Enter API key"), ("Discover", "Read online models"), ("Curate", "Save enabled states")) %}
+  {% endif %}
+  <ol class="provider-steps" aria-label="{{ provider.title }} setup process">
+    {% for title, detail in steps %}
+      <li><span>{{ "%02d"|format(loop.index) }}</span><div><strong>{{ title }}</strong><small>{{ detail }}</small></div></li>
+    {% endfor %}
+  </ol>
+{% endmacro %}
+
+{% macro provider_card(provider) %}
+<article class="provider-card{% if provider.single_model %} provider-card--single-model{% elif provider.name == 'openrouter' %} provider-card--online-lead{% endif %}">
+  <div class="provider-identity">
+    <span class="provider-card-index">{{ provider.index }} / {{ provider.kind }}</span>
+    <div class="provider-glyph" aria-hidden="true"><span>{{ provider.glyph }}</span></div>
+    <div>
+      <span class="provider-eyebrow">{{ "Authenticated online catalog" if provider.api_provider else ("Single-model inference server" if provider.single_model else "Multi-model local catalog") }}</span>
+      <h3>{{ provider.title }}</h3>
+      <p>{{ provider.description }}</p>
+    </div>
+    <span class="provider-protocol" data-provider-protocol>{{ provider.protocol }}</span>
+  </div>
+  <div class="provider-workflow">
+    <div class="provider-workflow-header">
+      <div>
+        <span class="provider-state"><i></i> Provider available</span>
+        <h3>{{ "Online model catalog" if provider.api_provider else ("Loaded server model" if provider.single_model else "Local server catalog") }}</h3>
+      </div>
+      <span class="provider-mark" aria-hidden="true">{{ provider.index }}</span>
+    </div>
+    {{ provider_steps(provider) }}
+    <div class="provider-action-bar">
+      <button class="provider-setup-button" type="button" data-provider-setup data-provider="{{ provider.name }}" data-modal-target="{{ provider.slug }}-setup-modal">
+        <span class="provider-button-icon" aria-hidden="true">↗</span>
+        <span><small>Configure provider</small><strong>Setup: {{ provider.title }}</strong></span>
+        {% if provider.single_model %}
+          <span class="provider-loaded-model"><small>Loaded model</small><strong data-provider-model-name title="{{ provider.model_name }}">{{ provider.model_name }}</strong></span>
+        {% else %}
+          <span class="provider-model-stats"><small>Models</small><strong data-provider-count>{{ provider.summary.total }}/{{ provider.summary.enabled }}</strong></span>
+        {% endif %}
+        <span class="provider-button-arrow" aria-hidden="true">→</span>
+      </button>
+      <label class="provider-toggle-control">
+        <span><small>Provider state</small><strong data-provider-status>Checking…</strong></span>
+        <span class="provider-switch">
+          <input type="checkbox" data-provider-toggle disabled aria-label="Enable {{ provider.title }} provider">
+          <span></span>
+        </span>
+      </label>
+    </div>
+  </div>
+</article>
+{% endmacro %}
+
+{% macro provider_modal(provider) %}
 <div
-  id="{{ slug }}-setup-modal"
+  id="{{ provider.slug }}-setup-modal"
   class="modal model-setup-modal"
   data-provider-modal
-  data-provider="{{ provider }}"
-  data-provider-label="{{ title }}"
-  data-single-model="{{ 'true' if single_model else 'false' }}"
-  data-api-provider="{{ 'true' if api_provider else 'false' }}"
-  {% if api_provider %}data-provider-endpoint="{{ endpoint }}"{% endif %}
+  data-provider="{{ provider.name }}"
+  data-provider-label="{{ provider.title }}"
+  data-single-model="{{ 'true' if provider.single_model else 'false' }}"
+  data-api-provider="{{ 'true' if provider.api_provider else 'false' }}"
+  {% if provider.api_provider %}data-provider-endpoint="{{ provider.endpoint }}"{% endif %}
   aria-hidden="true"
   aria-modal="true"
-  aria-labelledby="{{ slug }}-modal-title"
+  aria-labelledby="{{ provider.slug }}-modal-title"
   role="dialog"
 >
   <div class="modal-content model-modal-content">
     <header class="modal-header">
       <div class="modal-title-group">
-        <span class="modal-kicker">{{ "Online provider · API authenticated" if api_provider else "Local provider · OpenAI-compatible" }}</span>
-        <h2 id="{{ slug }}-modal-title">Setup {{ title }}{{ "" if api_provider else " server" }}</h2>
-        <p>{{ "Authenticate with " ~ title ~ ", then choose the catalog entries Cairnmark should retain." if api_provider else "Connect to the model endpoint, then choose the catalog entries Cairnmark should retain." }}</p>
+        <span class="modal-kicker">{{ "Online provider · API authenticated" if provider.api_provider else "Local provider · OpenAI-compatible" }}</span>
+        <h2 id="{{ provider.slug }}-modal-title">Setup {{ provider.title }}{{ "" if provider.api_provider else " server" }}</h2>
+        <p>{{ "Authenticate with " ~ provider.title ~ ", then choose the catalog entries Cairnmark should retain." if provider.api_provider else "Connect to the model endpoint, then choose the catalog entries Cairnmark should retain." }}</p>
       </div>
       <div class="modal-header-actions">
-        <span class="modal-provider-chip"><i></i> {{ title }}</span>
-        <button class="close-modal-button" type="button" aria-label="Close dialog">
-          <span aria-hidden="true">×</span>
-        </button>
+        <span class="modal-provider-chip"><i></i> {{ provider.title }}</span>
+        <button class="close-modal-button" type="button" aria-label="Close dialog"><span aria-hidden="true">×</span></button>
       </div>
     </header>
 
     <div class="modal-body">
-      <section class="connection-panel" aria-labelledby="{{ slug }}-connection-title">
+      <section class="connection-panel" aria-labelledby="{{ provider.slug }}-connection-title">
         <header class="connection-panel-header">
           <span class="connection-step" aria-hidden="true">01</span>
           <div>
             <span class="modal-section-kicker">Connection</span>
-            <h3 id="{{ slug }}-connection-title">{{ "Authenticate the service" if api_provider else "Locate the server" }}</h3>
+            <h3 id="{{ provider.slug }}-connection-title">{{ "Authenticate the service" if provider.api_provider else "Locate the server" }}</h3>
           </div>
-          <span class="connection-route">{{ catalog_route }}</span>
+          <span class="connection-route">{{ provider.catalog_route }}</span>
         </header>
 
-        <div class="connection-fields{% if api_provider %} is-api-provider{% endif %}">
-          {% if api_provider %}
-          <div class="form-group api-key-field">
-            <label for="{{ slug }}-api-key">{{ title }} API key</label>
-            <span class="field-description">Stored locally; leave blank to reuse the saved key</span>
-            <div class="model-input-shell">
-              <span aria-hidden="true">✦</span>
-              <input class="provider-api-key" type="password" id="{{ slug }}-api-key" name="{{ slug }}-api-key" placeholder="Enter API key" autocomplete="new-password">
+        <div class="connection-fields{% if provider.api_provider %} is-api-provider{% endif %}">
+          {% if provider.api_provider %}
+            <div class="form-group api-key-field">
+              <label for="{{ provider.slug }}-api-key">{{ provider.title }} API key</label>
+              <span class="field-description">Stored locally; leave blank to reuse the saved key</span>
+              <div class="model-input-shell">
+                <span aria-hidden="true">✦</span>
+                <input class="provider-api-key" type="password" id="{{ provider.slug }}-api-key" name="{{ provider.slug }}-api-key" placeholder="Enter API key" autocomplete="new-password">
+              </div>
             </div>
-          </div>
           {% else %}
-          <div class="form-group server-address-field">
-            <label for="{{ slug }}-ip">Server address</label>
-            <span class="field-description">Protocol and local IP address</span>
-            <div class="model-input-shell">
-              <span aria-hidden="true">◎</span>
-              <input class="provider-ip" type="text" id="{{ slug }}-ip" name="{{ slug }}-ip" value="http://127.0.0.1" required>
+            <div class="form-group server-address-field">
+              <label for="{{ provider.slug }}-ip">Server address</label>
+              <span class="field-description">Protocol and local IP address</span>
+              <div class="model-input-shell">
+                <span aria-hidden="true">◎</span>
+                <input class="provider-ip" type="text" id="{{ provider.slug }}-ip" name="{{ provider.slug }}-ip" value="http://127.0.0.1" required>
+              </div>
             </div>
-          </div>
-
-          <div class="form-group server-port-field">
-            <label for="{{ slug }}-port">Port</label>
-            <span class="field-description">1–65535</span>
-            <div class="model-input-shell">
-              <span aria-hidden="true">:</span>
-              <input class="provider-port" type="number" id="{{ slug }}-port" name="{{ slug }}-port" value="{{ default_port }}" min="1" max="65535" required>
+            <div class="form-group server-port-field">
+              <label for="{{ provider.slug }}-port">Port</label>
+              <span class="field-description">1–65535</span>
+              <div class="model-input-shell">
+                <span aria-hidden="true">:</span>
+                <input class="provider-port" type="number" id="{{ provider.slug }}-port" name="{{ provider.slug }}-port" value="{{ provider.default_port }}" min="1" max="65535" required>
+              </div>
             </div>
-          </div>
           {% endif %}
-
           <button class="read-models-button" type="button">
             <span aria-hidden="true">↻</span>
-            <span><small>{{ "Query " ~ title if api_provider else "Query local server" }}</small><strong>Read Models</strong></span>
+            <span><small>{{ "Query " ~ provider.title if provider.api_provider else "Query local server" }}</small><strong>Read Models</strong></span>
           </button>
         </div>
       </section>
@@ -87,31 +142,24 @@
         <div class="model-list-header">
           <div>
             <span class="connection-step" aria-hidden="true">02</span>
-            <div>
-              <span class="modal-section-kicker">Model catalog</span>
-              <h3>{{ "Loaded model" if single_model else "Available models" }}</h3>
-            </div>
+            <div><span class="modal-section-kicker">Model catalog</span><h3>{{ "Loaded model" if provider.single_model else "Available models" }}</h3></div>
           </div>
           <div class="model-list-tools">
             <span class="model-count">Saved catalog</span>
-            {% if not single_model %}
-              <button class="select-all-button" type="button">
-                <span class="select-all-text">Select All</span>
-              </button>
+            {% if not provider.single_model %}
+              <button class="select-all-button" type="button"><span class="select-all-text">Select All</span></button>
             {% endif %}
           </div>
         </div>
-        {% if not single_model %}
+        {% if not provider.single_model %}
           <div class="model-search-shell">
-            <label class="sr-only" for="{{ slug }}-model-search">Filter models by name</label>
+            <label class="sr-only" for="{{ provider.slug }}-model-search">Filter models by name</label>
             <span aria-hidden="true">⌕</span>
-            <input class="model-search" id="{{ slug }}-model-search" type="search" placeholder="Filter model names…" autocomplete="off">
+            <input class="model-search" id="{{ provider.slug }}-model-search" type="search" placeholder="Filter model names…" autocomplete="off">
             <small class="model-search-summary">Type to filter</small>
           </div>
         {% endif %}
-        <div class="model-list-content">
-          <ul class="model-list-items"></ul>
-        </div>
+        <div class="model-list-content"><ul class="model-list-items"></ul></div>
       </div>
     </div>
 
@@ -142,42 +190,11 @@
 <nav class="category-browser provider-browser" aria-label="Model providers">
   <span class="category-browser-label">Model providers</span>
   <div class="category-tabs">
-    <div class="category-tab provider-tab is-active" data-provider-tab="llama.cpp">
-      <span aria-hidden="true">01</span><strong>llama.cpp</strong><small data-provider-tab-status>offline</small>
-    </div>
-    <div class="category-tab provider-tab is-active" data-provider-tab="vllm">
-      <span aria-hidden="true">02</span><strong>vLLM</strong><small data-provider-tab-status>offline</small>
-    </div>
-    <div class="category-tab provider-tab is-active" data-provider-tab="openrouter">
-      <span aria-hidden="true">03</span><strong>OpenRouter</strong><small data-provider-tab-status>offline</small>
-    </div>
-    <div class="category-tab provider-tab is-active" data-provider-tab="openai">
-      <span aria-hidden="true">04</span><strong>OpenAI</strong><small data-provider-tab-status>offline</small>
-    </div>
-    <div class="category-tab provider-tab is-active" data-provider-tab="anthropic">
-      <span aria-hidden="true">05</span><strong>Anthropic</strong><small data-provider-tab-status>offline</small>
-    </div>
-    <div class="category-tab provider-tab is-active" data-provider-tab="mistral">
-      <span aria-hidden="true">06</span><strong>Mistral</strong><small data-provider-tab-status>offline</small>
-    </div>
-    <div class="category-tab provider-tab is-active" data-provider-tab="deepseek">
-      <span aria-hidden="true">07</span><strong>DeepSeek</strong><small data-provider-tab-status>offline</small>
-    </div>
-    <div class="category-tab provider-tab is-active" data-provider-tab="opencode">
-      <span aria-hidden="true">08</span><strong>OpenCode</strong><small data-provider-tab-status>offline</small>
-    </div>
-    <div class="category-tab provider-tab is-active" data-provider-tab="opencode-zen">
-      <span aria-hidden="true">09</span><strong>OpenCode-ZEN</strong><small data-provider-tab-status>offline</small>
-    </div>
-    <div class="category-tab provider-tab is-active" data-provider-tab="zai">
-      <span aria-hidden="true">10</span><strong>Z.ai</strong><small data-provider-tab-status>offline</small>
-    </div>
-    <div class="category-tab provider-tab is-active" data-provider-tab="grok">
-      <span aria-hidden="true">11</span><strong>Grok</strong><small data-provider-tab-status>offline</small>
-    </div>
-    <div class="category-tab provider-tab is-active" data-provider-tab="google">
-      <span aria-hidden="true">12</span><strong>Google Gemini</strong><small data-provider-tab-status>offline</small>
-    </div>
+    {% for provider in providers %}
+      <div class="category-tab provider-tab is-active" data-provider-tab="{{ provider.name }}">
+        <span aria-hidden="true">{{ provider.index }}</span><strong>{{ provider.title }}</strong><small data-provider-tab-status>offline</small>
+      </div>
+    {% endfor %}
   </div>
 </nav>
 
@@ -188,492 +205,18 @@
       <h2>Connect a model server</h2>
       <p>Discover each server catalog, select active models, and keep every configuration locally.</p>
     </div>
-    <span class="benchmark-count">12 providers available</span>
+    <span class="benchmark-count">{{ providers|length }} providers available</span>
   </div>
-
   <div class="provider-card-list">
-    <article class="provider-card">
-      <div class="provider-identity">
-        <span class="provider-card-index">01 / LOCAL</span>
-        <div class="provider-glyph" aria-hidden="true"><span>⎔</span></div>
-        <div>
-          <span class="provider-eyebrow">Multi-model local catalog</span>
-          <h3>llama.cpp</h3>
-          <p>Register models exposed by your local server and choose which catalog entries remain active.</p>
-        </div>
-        <span class="provider-protocol" data-provider-protocol>{{ llama_provider_protocol }}</span>
-      </div>
-      <div class="provider-workflow">
-        <div class="provider-workflow-header">
-          <div><span class="provider-state"><i></i> Provider available</span><h3>Local server catalog</h3></div>
-          <span class="provider-mark" aria-hidden="true">01</span>
-        </div>
-        <ol class="provider-steps" aria-label="llama.cpp setup process">
-          <li><span>01</span><div><strong>Connect</strong><small>Set server address</small></div></li>
-          <li><span>02</span><div><strong>Discover</strong><small>Read live models</small></div></li>
-          <li><span>03</span><div><strong>Curate</strong><small>Save enabled states</small></div></li>
-        </ol>
-        <div class="provider-action-bar">
-          <button class="provider-setup-button" type="button" data-provider-setup data-provider="llama.cpp" data-modal-target="llama-setup-modal">
-            <span class="provider-button-icon" aria-hidden="true">↗</span>
-            <span><small>Configure provider</small><strong>Setup: llama.cpp</strong></span>
-            <span class="provider-model-stats"><small>Models</small><strong data-provider-count>{{ llama_model_summary.total }}/{{ llama_model_summary.enabled }}</strong></span>
-            <span class="provider-button-arrow" aria-hidden="true">→</span>
-          </button>
-          <label class="provider-toggle-control">
-            <span><small>Provider state</small><strong data-provider-status>Checking…</strong></span>
-            <span class="provider-switch">
-              <input type="checkbox" data-provider-toggle disabled aria-label="Enable llama.cpp provider">
-              <span></span>
-            </span>
-          </label>
-        </div>
-      </div>
-    </article>
-
-    <article class="provider-card provider-card--vllm">
-      <div class="provider-identity">
-        <span class="provider-card-index">02 / LOCAL</span>
-        <div class="provider-glyph" aria-hidden="true"><span>◉</span></div>
-        <div>
-          <span class="provider-eyebrow">Single-model inference server</span>
-          <h3>vLLM</h3>
-          <p>Track the single model currently exposed by the local vLLM OpenAI-compatible server.</p>
-        </div>
-        <span class="provider-protocol" data-provider-protocol>{{ vllm_provider_protocol }}</span>
-      </div>
-      <div class="provider-workflow">
-        <div class="provider-workflow-header">
-          <div><span class="provider-state"><i></i> Provider available</span><h3>Loaded server model</h3></div>
-          <span class="provider-mark" aria-hidden="true">02</span>
-        </div>
-        <ol class="provider-steps" aria-label="vLLM setup process">
-          <li><span>01</span><div><strong>Connect</strong><small>Port 8001 default</small></div></li>
-          <li><span>02</span><div><strong>Identify</strong><small>Read loaded model</small></div></li>
-          <li><span>03</span><div><strong>Save</strong><small>Keep provider state</small></div></li>
-        </ol>
-        <div class="provider-action-bar">
-          <button class="provider-setup-button" type="button" data-provider-setup data-provider="vllm" data-modal-target="vllm-setup-modal">
-            <span class="provider-button-icon" aria-hidden="true">↗</span>
-            <span><small>Configure provider</small><strong>Setup: vLLM</strong></span>
-            <span class="provider-loaded-model"><small>Loaded model</small><strong data-provider-model-name title="{{ vllm_model_name }}">{{ vllm_model_name }}</strong></span>
-            <span class="provider-button-arrow" aria-hidden="true">→</span>
-          </button>
-          <label class="provider-toggle-control">
-            <span><small>Provider state</small><strong data-provider-status>Checking…</strong></span>
-            <span class="provider-switch">
-              <input type="checkbox" data-provider-toggle disabled aria-label="Enable vLLM provider">
-              <span></span>
-            </span>
-          </label>
-        </div>
-      </div>
-    </article>
-
-    <article class="provider-card provider-card--openrouter">
-      <div class="provider-identity">
-        <span class="provider-card-index">03 / ONLINE</span>
-        <div class="provider-glyph" aria-hidden="true"><span>✦</span></div>
-        <div>
-          <span class="provider-eyebrow">Authenticated online catalog</span>
-          <h3>OpenRouter</h3>
-          <p>Load the OpenRouter catalog with your API key and choose which hosted models remain active.</p>
-        </div>
-        <span class="provider-protocol" data-provider-protocol>openrouter.ai/api/v1</span>
-      </div>
-      <div class="provider-workflow">
-        <div class="provider-workflow-header">
-          <div><span class="provider-state"><i></i> Provider available</span><h3>Online model catalog</h3></div>
-          <span class="provider-mark" aria-hidden="true">03</span>
-        </div>
-        <ol class="provider-steps" aria-label="OpenRouter setup process">
-          <li><span>01</span><div><strong>Authenticate</strong><small>Enter API key</small></div></li>
-          <li><span>02</span><div><strong>Discover</strong><small>Read online models</small></div></li>
-          <li><span>03</span><div><strong>Curate</strong><small>Save enabled states</small></div></li>
-        </ol>
-        <div class="provider-action-bar">
-          <button class="provider-setup-button" type="button" data-provider-setup data-provider="openrouter" data-modal-target="openrouter-setup-modal">
-            <span class="provider-button-icon" aria-hidden="true">↗</span>
-            <span><small>Configure provider</small><strong>Setup: OpenRouter</strong></span>
-            <span class="provider-model-stats"><small>Models</small><strong data-provider-count>{{ openrouter_model_summary.total }}/{{ openrouter_model_summary.enabled }}</strong></span>
-            <span class="provider-button-arrow" aria-hidden="true">→</span>
-          </button>
-          <label class="provider-toggle-control">
-            <span><small>Provider state</small><strong data-provider-status>Checking…</strong></span>
-            <span class="provider-switch">
-              <input type="checkbox" data-provider-toggle disabled aria-label="Enable OpenRouter provider">
-              <span></span>
-            </span>
-          </label>
-        </div>
-      </div>
-    </article>
-
-    <article class="provider-card provider-card--openai">
-      <div class="provider-identity">
-        <span class="provider-card-index">04 / ONLINE</span>
-        <div class="provider-glyph" aria-hidden="true"><span>✦</span></div>
-        <div>
-          <span class="provider-eyebrow">Authenticated online catalog</span>
-          <h3>OpenAI</h3>
-          <p>Load the OpenAI catalog with your API key and choose which hosted models remain active.</p>
-        </div>
-        <span class="provider-protocol" data-provider-protocol>api.openai.com/v1</span>
-      </div>
-      <div class="provider-workflow">
-        <div class="provider-workflow-header">
-          <div><span class="provider-state"><i></i> Provider available</span><h3>Online model catalog</h3></div>
-          <span class="provider-mark" aria-hidden="true">04</span>
-        </div>
-        <ol class="provider-steps" aria-label="OpenAI setup process">
-          <li><span>01</span><div><strong>Authenticate</strong><small>Enter API key</small></div></li>
-          <li><span>02</span><div><strong>Discover</strong><small>Read online models</small></div></li>
-          <li><span>03</span><div><strong>Curate</strong><small>Save enabled states</small></div></li>
-        </ol>
-        <div class="provider-action-bar">
-          <button class="provider-setup-button" type="button" data-provider-setup data-provider="openai" data-modal-target="openai-setup-modal">
-            <span class="provider-button-icon" aria-hidden="true">↗</span>
-            <span><small>Configure provider</small><strong>Setup: OpenAI</strong></span>
-            <span class="provider-model-stats"><small>Models</small><strong data-provider-count>{{ openai_model_summary.total }}/{{ openai_model_summary.enabled }}</strong></span>
-            <span class="provider-button-arrow" aria-hidden="true">→</span>
-          </button>
-          <label class="provider-toggle-control">
-            <span><small>Provider state</small><strong data-provider-status>Checking…</strong></span>
-            <span class="provider-switch">
-              <input type="checkbox" data-provider-toggle disabled aria-label="Enable OpenAI provider">
-              <span></span>
-            </span>
-          </label>
-        </div>
-      </div>
-    </article>
-
-    <article class="provider-card provider-card--anthropic">
-      <div class="provider-identity">
-        <span class="provider-card-index">05 / ONLINE</span>
-        <div class="provider-glyph" aria-hidden="true"><span>✦</span></div>
-        <div>
-          <span class="provider-eyebrow">Authenticated online catalog</span>
-          <h3>Anthropic</h3>
-          <p>Load the Anthropic catalog with your API key and choose which hosted models remain active.</p>
-        </div>
-        <span class="provider-protocol" data-provider-protocol>api.anthropic.com/v1</span>
-      </div>
-      <div class="provider-workflow">
-        <div class="provider-workflow-header">
-          <div><span class="provider-state"><i></i> Provider available</span><h3>Online model catalog</h3></div>
-          <span class="provider-mark" aria-hidden="true">05</span>
-        </div>
-        <ol class="provider-steps" aria-label="Anthropic setup process">
-          <li><span>01</span><div><strong>Authenticate</strong><small>Enter API key</small></div></li>
-          <li><span>02</span><div><strong>Discover</strong><small>Read online models</small></div></li>
-          <li><span>03</span><div><strong>Curate</strong><small>Save enabled states</small></div></li>
-        </ol>
-        <div class="provider-action-bar">
-          <button class="provider-setup-button" type="button" data-provider-setup data-provider="anthropic" data-modal-target="anthropic-setup-modal">
-            <span class="provider-button-icon" aria-hidden="true">↗</span>
-            <span><small>Configure provider</small><strong>Setup: Anthropic</strong></span>
-            <span class="provider-model-stats"><small>Models</small><strong data-provider-count>{{ anthropic_model_summary.total }}/{{ anthropic_model_summary.enabled }}</strong></span>
-            <span class="provider-button-arrow" aria-hidden="true">→</span>
-          </button>
-          <label class="provider-toggle-control">
-            <span><small>Provider state</small><strong data-provider-status>Checking…</strong></span>
-            <span class="provider-switch">
-              <input type="checkbox" data-provider-toggle disabled aria-label="Enable Anthropic provider">
-              <span></span>
-            </span>
-          </label>
-        </div>
-      </div>
-    </article>
-
-    <article class="provider-card provider-card--mistral">
-      <div class="provider-identity">
-        <span class="provider-card-index">06 / ONLINE</span>
-        <div class="provider-glyph" aria-hidden="true"><span>✦</span></div>
-        <div>
-          <span class="provider-eyebrow">Authenticated online catalog</span>
-          <h3>Mistral</h3>
-          <p>Load the Mistral catalog with your API key and choose which hosted models remain active.</p>
-        </div>
-        <span class="provider-protocol" data-provider-protocol>mistral.ai/v1</span>
-      </div>
-      <div class="provider-workflow">
-        <div class="provider-workflow-header">
-          <div><span class="provider-state"><i></i> Provider available</span><h3>Online model catalog</h3></div>
-          <span class="provider-mark" aria-hidden="true">06</span>
-        </div>
-        <ol class="provider-steps" aria-label="Mistral setup process">
-          <li><span>01</span><div><strong>Authenticate</strong><small>Enter API key</small></div></li>
-          <li><span>02</span><div><strong>Discover</strong><small>Read online models</small></div></li>
-          <li><span>03</span><div><strong>Curate</strong><small>Save enabled states</small></div></li>
-        </ol>
-        <div class="provider-action-bar">
-          <button class="provider-setup-button" type="button" data-provider-setup data-provider="mistral" data-modal-target="mistral-setup-modal">
-            <span class="provider-button-icon" aria-hidden="true">↗</span>
-            <span><small>Configure provider</small><strong>Setup: Mistral</strong></span>
-            <span class="provider-model-stats"><small>Models</small><strong data-provider-count>{{ mistral_model_summary.total }}/{{ mistral_model_summary.enabled }}</strong></span>
-            <span class="provider-button-arrow" aria-hidden="true">→</span>
-          </button>
-          <label class="provider-toggle-control">
-            <span><small>Provider state</small><strong data-provider-status>Checking…</strong></span>
-            <span class="provider-switch">
-              <input type="checkbox" data-provider-toggle disabled aria-label="Enable Mistral provider">
-              <span></span>
-            </span>
-          </label>
-        </div>
-      </div>
-    </article>
-
-    <article class="provider-card provider-card--deepseek">
-      <div class="provider-identity">
-        <span class="provider-card-index">07 / ONLINE</span>
-        <div class="provider-glyph" aria-hidden="true"><span>✦</span></div>
-        <div>
-          <span class="provider-eyebrow">Authenticated online catalog</span>
-          <h3>DeepSeek</h3>
-          <p>Load the DeepSeek catalog with your API key and choose which hosted models remain active.</p>
-        </div>
-        <span class="provider-protocol" data-provider-protocol>api.deepseek.com/v1</span>
-      </div>
-      <div class="provider-workflow">
-        <div class="provider-workflow-header">
-          <div><span class="provider-state"><i></i> Provider available</span><h3>Online model catalog</h3></div>
-          <span class="provider-mark" aria-hidden="true">07</span>
-        </div>
-        <ol class="provider-steps" aria-label="DeepSeek setup process">
-          <li><span>01</span><div><strong>Authenticate</strong><small>Enter API key</small></div></li>
-          <li><span>02</span><div><strong>Discover</strong><small>Read online models</small></div></li>
-          <li><span>03</span><div><strong>Curate</strong><small>Save enabled states</small></div></li>
-        </ol>
-        <div class="provider-action-bar">
-          <button class="provider-setup-button" type="button" data-provider-setup data-provider="deepseek" data-modal-target="deepseek-setup-modal">
-            <span class="provider-button-icon" aria-hidden="true">↗</span>
-            <span><small>Configure provider</small><strong>Setup: DeepSeek</strong></span>
-            <span class="provider-model-stats"><small>Models</small><strong data-provider-count>{{ deepseek_model_summary.total }}/{{ deepseek_model_summary.enabled }}</strong></span>
-            <span class="provider-button-arrow" aria-hidden="true">→</span>
-          </button>
-          <label class="provider-toggle-control">
-            <span><small>Provider state</small><strong data-provider-status>Checking…</strong></span>
-            <span class="provider-switch">
-              <input type="checkbox" data-provider-toggle disabled aria-label="Enable DeepSeek provider">
-              <span></span>
-            </span>
-          </label>
-        </div>
-      </div>
-    </article>
-
-    <article class="provider-card provider-card--opencode">
-      <div class="provider-identity">
-        <span class="provider-card-index">08 / ONLINE</span>
-        <div class="provider-glyph" aria-hidden="true"><span>✦</span></div>
-        <div>
-          <span class="provider-eyebrow">Authenticated online catalog</span>
-          <h3>OpenCode</h3>
-          <p>Load the OpenCode catalog with your API key and choose which hosted models remain active.</p>
-        </div>
-        <span class="provider-protocol" data-provider-protocol>opencode.ai/inference</span>
-      </div>
-      <div class="provider-workflow">
-        <div class="provider-workflow-header">
-          <div><span class="provider-state"><i></i> Provider available</span><h3>Online model catalog</h3></div>
-          <span class="provider-mark" aria-hidden="true">08</span>
-        </div>
-        <ol class="provider-steps" aria-label="OpenCode setup process">
-          <li><span>01</span><div><strong>Authenticate</strong><small>Enter API key</small></div></li>
-          <li><span>02</span><div><strong>Discover</strong><small>Read online models</small></div></li>
-          <li><span>03</span><div><strong>Curate</strong><small>Save enabled states</small></div></li>
-        </ol>
-        <div class="provider-action-bar">
-          <button class="provider-setup-button" type="button" data-provider-setup data-provider="opencode" data-modal-target="opencode-setup-modal">
-            <span class="provider-button-icon" aria-hidden="true">↗</span>
-            <span><small>Configure provider</small><strong>Setup: OpenCode</strong></span>
-            <span class="provider-model-stats"><small>Models</small><strong data-provider-count>{{ opencode_model_summary.total }}/{{ opencode_model_summary.enabled }}</strong></span>
-            <span class="provider-button-arrow" aria-hidden="true">→</span>
-          </button>
-          <label class="provider-toggle-control">
-            <span><small>Provider state</small><strong data-provider-status>Checking…</strong></span>
-            <span class="provider-switch">
-              <input type="checkbox" data-provider-toggle disabled aria-label="Enable OpenCode provider">
-              <span></span>
-            </span>
-          </label>
-        </div>
-      </div>
-    </article>
-
-    <article class="provider-card provider-card--opencode-zen">
-      <div class="provider-identity">
-        <span class="provider-card-index">09 / ONLINE</span>
-        <div class="provider-glyph" aria-hidden="true"><span>✦</span></div>
-        <div>
-          <span class="provider-eyebrow">Authenticated online catalog</span>
-          <h3>OpenCode-ZEN</h3>
-          <p>Load the OpenCode Zen gateway catalog with your Zen API key and choose which hosted models remain active.</p>
-        </div>
-        <span class="provider-protocol" data-provider-protocol>opencode.ai/zen/v1</span>
-      </div>
-      <div class="provider-workflow">
-        <div class="provider-workflow-header">
-          <div><span class="provider-state"><i></i> Provider available</span><h3>Online model catalog</h3></div>
-          <span class="provider-mark" aria-hidden="true">09</span>
-        </div>
-        <ol class="provider-steps" aria-label="OpenCode-ZEN setup process">
-          <li><span>01</span><div><strong>Authenticate</strong><small>Enter API key</small></div></li>
-          <li><span>02</span><div><strong>Discover</strong><small>Read online models</small></div></li>
-          <li><span>03</span><div><strong>Curate</strong><small>Save enabled states</small></div></li>
-        </ol>
-        <div class="provider-action-bar">
-          <button class="provider-setup-button" type="button" data-provider-setup data-provider="opencode-zen" data-modal-target="opencode-zen-setup-modal">
-            <span class="provider-button-icon" aria-hidden="true">↗</span>
-            <span><small>Configure provider</small><strong>Setup: OpenCode-ZEN</strong></span>
-            <span class="provider-model-stats"><small>Models</small><strong data-provider-count>{{ opencode_zen_model_summary.total }}/{{ opencode_zen_model_summary.enabled }}</strong></span>
-            <span class="provider-button-arrow" aria-hidden="true">→</span>
-          </button>
-          <label class="provider-toggle-control">
-            <span><small>Provider state</small><strong data-provider-status>Checking…</strong></span>
-            <span class="provider-switch">
-              <input type="checkbox" data-provider-toggle disabled aria-label="Enable OpenCode-ZEN provider">
-              <span></span>
-            </span>
-          </label>
-        </div>
-      </div>
-    </article>
-
-    <article class="provider-card provider-card--zai">
-      <div class="provider-identity">
-        <span class="provider-card-index">10 / ONLINE</span>
-        <div class="provider-glyph" aria-hidden="true"><span>✦</span></div>
-        <div>
-          <span class="provider-eyebrow">Authenticated online catalog</span>
-          <h3>Z.ai</h3>
-          <p>Load the Z.ai catalog with your API key and choose which hosted models remain active.</p>
-        </div>
-        <span class="provider-protocol" data-provider-protocol>api.z.ai/api/paas/v4</span>
-      </div>
-      <div class="provider-workflow">
-        <div class="provider-workflow-header">
-          <div><span class="provider-state"><i></i> Provider available</span><h3>Online model catalog</h3></div>
-          <span class="provider-mark" aria-hidden="true">10</span>
-        </div>
-        <ol class="provider-steps" aria-label="Z.ai setup process">
-          <li><span>01</span><div><strong>Authenticate</strong><small>Enter API key</small></div></li>
-          <li><span>02</span><div><strong>Discover</strong><small>Read online models</small></div></li>
-          <li><span>03</span><div><strong>Curate</strong><small>Save enabled states</small></div></li>
-        </ol>
-        <div class="provider-action-bar">
-          <button class="provider-setup-button" type="button" data-provider-setup data-provider="zai" data-modal-target="zai-setup-modal">
-            <span class="provider-button-icon" aria-hidden="true">↗</span>
-            <span><small>Configure provider</small><strong>Setup: Z.ai</strong></span>
-            <span class="provider-model-stats"><small>Models</small><strong data-provider-count>{{ zai_model_summary.total }}/{{ zai_model_summary.enabled }}</strong></span>
-            <span class="provider-button-arrow" aria-hidden="true">→</span>
-          </button>
-          <label class="provider-toggle-control">
-            <span><small>Provider state</small><strong data-provider-status>Checking…</strong></span>
-            <span class="provider-switch">
-              <input type="checkbox" data-provider-toggle disabled aria-label="Enable Z.ai provider">
-              <span></span>
-            </span>
-          </label>
-        </div>
-      </div>
-    </article>
-
-    <article class="provider-card provider-card--grok">
-      <div class="provider-identity">
-        <span class="provider-card-index">11 / ONLINE</span>
-        <div class="provider-glyph" aria-hidden="true"><span>✦</span></div>
-        <div>
-          <span class="provider-eyebrow">Authenticated online catalog</span>
-          <h3>Grok</h3>
-          <p>Load the Grok catalog with your API key and choose which hosted models remain active.</p>
-        </div>
-        <span class="provider-protocol" data-provider-protocol>x.ai/v1</span>
-      </div>
-      <div class="provider-workflow">
-        <div class="provider-workflow-header">
-          <div><span class="provider-state"><i></i> Provider available</span><h3>Online model catalog</h3></div>
-          <span class="provider-mark" aria-hidden="true">11</span>
-        </div>
-        <ol class="provider-steps" aria-label="Grok setup process">
-          <li><span>01</span><div><strong>Authenticate</strong><small>Enter API key</small></div></li>
-          <li><span>02</span><div><strong>Discover</strong><small>Read online models</small></div></li>
-          <li><span>03</span><div><strong>Curate</strong><small>Save enabled states</small></div></li>
-        </ol>
-        <div class="provider-action-bar">
-          <button class="provider-setup-button" type="button" data-provider-setup data-provider="grok" data-modal-target="grok-setup-modal">
-            <span class="provider-button-icon" aria-hidden="true">↗</span>
-            <span><small>Configure provider</small><strong>Setup: Grok</strong></span>
-            <span class="provider-model-stats"><small>Models</small><strong data-provider-count>{{ grok_model_summary.total }}/{{ grok_model_summary.enabled }}</strong></span>
-            <span class="provider-button-arrow" aria-hidden="true">→</span>
-          </button>
-          <label class="provider-toggle-control">
-            <span><small>Provider state</small><strong data-provider-status>Checking…</strong></span>
-            <span class="provider-switch">
-              <input type="checkbox" data-provider-toggle disabled aria-label="Enable Grok provider">
-              <span></span>
-            </span>
-          </label>
-        </div>
-      </div>
-    </article>
-
-    <article class="provider-card provider-card--google">
-      <div class="provider-identity">
-        <span class="provider-card-index">12 / ONLINE</span>
-        <div class="provider-glyph" aria-hidden="true"><span>✦</span></div>
-        <div>
-          <span class="provider-eyebrow">Authenticated online catalog</span>
-          <h3>Google Gemini</h3>
-          <p>Load the Gemini API catalog with your Google AI Studio key and choose which text-generation models remain active.</p>
-        </div>
-        <span class="provider-protocol" data-provider-protocol>generativelanguage.googleapis.com/v1beta</span>
-      </div>
-      <div class="provider-workflow">
-        <div class="provider-workflow-header">
-          <div><span class="provider-state"><i></i> Provider available</span><h3>Online model catalog</h3></div>
-          <span class="provider-mark" aria-hidden="true">12</span>
-        </div>
-        <ol class="provider-steps" aria-label="Google Gemini setup process">
-          <li><span>01</span><div><strong>Authenticate</strong><small>Enter API key</small></div></li>
-          <li><span>02</span><div><strong>Discover</strong><small>Read online models</small></div></li>
-          <li><span>03</span><div><strong>Curate</strong><small>Save enabled states</small></div></li>
-        </ol>
-        <div class="provider-action-bar">
-          <button class="provider-setup-button" type="button" data-provider-setup data-provider="google" data-modal-target="google-setup-modal">
-            <span class="provider-button-icon" aria-hidden="true">↗</span>
-            <span><small>Configure provider</small><strong>Setup: Google Gemini</strong></span>
-            <span class="provider-model-stats"><small>Models</small><strong data-provider-count>{{ google_model_summary.total }}/{{ google_model_summary.enabled }}</strong></span>
-            <span class="provider-button-arrow" aria-hidden="true">→</span>
-          </button>
-          <label class="provider-toggle-control">
-            <span><small>Provider state</small><strong data-provider-status>Checking…</strong></span>
-            <span class="provider-switch">
-              <input type="checkbox" data-provider-toggle disabled aria-label="Enable Google Gemini provider">
-              <span></span>
-            </span>
-          </label>
-        </div>
-      </div>
-    </article>
+    {% for provider in providers %}
+      {{ provider_card(provider) }}
+    {% endfor %}
   </div>
 </div>
 
-{{ provider_modal("llama", "llama.cpp", "llama.cpp", 8080) }}
-{{ provider_modal("vllm", "vllm", "vLLM", 8001, true) }}
-{{ provider_modal("openrouter", "openrouter", "OpenRouter", 443, false, true, "https://openrouter.ai/api/v1") }}
-{{ provider_modal("openai", "openai", "OpenAI", 443, false, true, "https://api.openai.com/v1") }}
-{{ provider_modal("anthropic", "anthropic", "Anthropic", 443, false, true, "https://api.anthropic.com") }}
-{{ provider_modal("mistral", "mistral", "Mistral", 443, false, true, "https://api.mistral.ai/v1") }}
-{{ provider_modal("deepseek", "deepseek", "DeepSeek", 443, false, true, "https://api.deepseek.com/v1") }}
-{{ provider_modal("opencode", "opencode", "OpenCode", 443, false, true, "https://opencode.ai/inference/openai/v1", "GET /inference/v1/models") }}
-{{ provider_modal("opencode-zen", "opencode-zen", "OpenCode-ZEN", 443, false, true, "https://opencode.ai/zen/v1", "GET /zen/v1/models") }}
-{{ provider_modal("zai", "zai", "Z.ai", 443, false, true, "https://api.z.ai/api/paas/v4") }}
-{{ provider_modal("grok", "grok", "Grok", 443, false, true, "https://api.x.ai/v1") }}
-{{ provider_modal("google", "google", "Google Gemini", 443, false, true, "https://generativelanguage.googleapis.com/v1beta", "GET /v1beta/models") }}
+{% for provider in providers %}
+  {{ provider_modal(provider) }}
+{% endfor %}
 {% endblock %}
 
 {% block scripts %}

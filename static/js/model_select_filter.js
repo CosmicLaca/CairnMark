@@ -6,6 +6,8 @@
             widget.classList.remove("is-open");
             const panel = widget.querySelector(".searchable-select-panel");
             if (panel) panel.hidden = true;
+            widget.querySelector(".searchable-select-toggle")
+                ?.setAttribute("aria-expanded", "false");
         });
     };
 
@@ -13,7 +15,6 @@
         if (select.dataset.searchableReady === "true") return;
         select.dataset.searchableReady = "true";
         select.classList.add("searchable-select-source");
-        select.style.display = "none";
 
         const wrapper = document.createElement("div");
         wrapper.className = "searchable-select";

@@ -520,3 +520,6 @@
         width: 100%;
     }
 }
+.searchable-select-source {
+    display: none;
+}

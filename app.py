@@ -6,9 +6,7 @@ import logging
 import os
 import socket
 
-import markdown
 from flask import Flask
-from markupsafe import Markup
 
 from config import CONFIGS
 from models import init_storage
@@ -55,15 +53,6 @@ def create_app(config_name=None, config_overrides=None):
     app.logger.setLevel(getattr(logging, app.config["LOG_LEVEL"], logging.INFO))
     init_storage(app)
     init_routes(app)
-
-    markdown_extensions = ("fenced_code", "tables", "sane_lists")
-
-    @app.template_filter("markdown")
-    def render_markdown_filter(value):
-        """Render trusted Markdown text as HTML for templates."""
-        return Markup(
-            markdown.markdown(str(value or ""), extensions=markdown_extensions)
-        )
 
     return app
 

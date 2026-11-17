@@ -1,6 +1,7 @@
-"""Shared SQLite connection and schema lifecycle support."""
+"""Shared SQLite connection, query, and schema lifecycle support."""
 
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 
 from flask import current_app
@@ -39,6 +40,33 @@ class SQLiteStore:
     def connect(self):
         """Open the database and safely apply idempotent schema updates."""
         return self._open(self.path())
+
+    def fetch(self, statement, parameters=(), *, one=False):
+        """Run a read query and return one row or every matching row."""
+        with self.transaction(commit=False) as connection:
+            cursor = connection.execute(statement, parameters)
+            return cursor.fetchone() if one else cursor.fetchall()
+
+    def execute(self, statement, parameters=(), *, many=False):
+        """Commit one write and return its ``(rowcount, lastrowid)`` values."""
+        with self.transaction() as connection:
+            operation = connection.executemany if many else connection.execute
+            cursor = operation(statement, parameters)
+            return cursor.rowcount, cursor.lastrowid
+
+    @contextmanager
+    def transaction(self, *, commit=True):
+        """Yield a connection and consistently commit, roll back, and close it."""
+        connection = self.connect()
+        try:
+            yield connection
+            if commit:
+                connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
 
     def configure(self, app, *, create=True):
         """Normalize the application path and optionally create the schema."""

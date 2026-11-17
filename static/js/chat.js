@@ -153,14 +153,6 @@
         video.addEventListener("ended", () => { video.currentTime = 0; });
     });
 
-    // Attach hover listeners to any server-rendered preview thumbnails.
-    document.querySelectorAll(".chat-user-preview").forEach((img) => {
-        if (img.tagName !== "IMG") return;
-        img.addEventListener("mouseenter", (event) => showHoverPreview(img.src, event));
-        img.addEventListener("mousemove", positionHoverPreview);
-        img.addEventListener("mouseleave", hideHoverPreview);
-    });
-
     if (historyEl) {
         historyEl.addEventListener("mouseover", (event) => {
             const img = event.target && event.target.closest
@@ -204,6 +196,46 @@
             historyEl.prepend(emptyStateEl);
         }
         emptyStateEl.hidden = false;
+    };
+
+    const attachAssistantActions = (contentEl, raw) => {
+        rawSource.set(contentEl, raw);
+        contentEl.innerHTML = renderMarkdown(raw);
+        const message = contentEl.parentElement;
+        if (!message || message.querySelector(".chat-message-actions")) return;
+
+        const actions = document.createElement("div");
+        actions.className = "chat-message-actions";
+        const toggleBtn = document.createElement("button");
+        toggleBtn.type = "button";
+        toggleBtn.className = "chat-view-toggle";
+        toggleBtn.textContent = "Raw";
+        toggleBtn.addEventListener("click", () => {
+            const showingRaw = toggleBtn.textContent === "Rendered";
+            if (showingRaw) {
+                contentEl.innerHTML = renderMarkdown(rawSource.get(contentEl));
+                toggleBtn.textContent = "Raw";
+            } else {
+                contentEl.textContent = rawSource.get(contentEl);
+                toggleBtn.textContent = "Rendered";
+            }
+        });
+
+        const copyBtn = document.createElement("button");
+        copyBtn.type = "button";
+        copyBtn.className = "chat-copy-button";
+        copyBtn.textContent = "Copy";
+        copyBtn.addEventListener("click", async () => {
+            try {
+                await navigator.clipboard.writeText(rawSource.get(contentEl));
+                copyBtn.textContent = "Copied";
+            } catch (error) {
+                copyBtn.textContent = "Failed";
+            }
+            setTimeout(() => { copyBtn.textContent = "Copy"; }, 1500);
+        });
+        actions.append(toggleBtn, copyBtn);
+        message.appendChild(actions);
     };
 
     const appendMessage = (role, content, meta) => {
@@ -291,50 +323,8 @@
         contentDiv.className =
             role === "assistant" ? "chat-content markdown-content" : "chat-content";
         if (role === "assistant") {
-            rawSource.set(contentDiv, content);
-            if (meta && meta.response_html) {
-                contentDiv.innerHTML = meta.response_html;
-            } else {
-                contentDiv.innerHTML = renderMarkdown(content);
-            }
             div.appendChild(contentDiv);
-            // actions row
-            const actions = document.createElement("div");
-            actions.className = "chat-message-actions";
-            // toggle button
-            const toggleBtn = document.createElement("button");
-            toggleBtn.type = "button";
-            toggleBtn.className = "chat-view-toggle";
-            toggleBtn.textContent = "Raw";
-            let showingRaw = false;
-            toggleBtn.addEventListener("click", () => {
-                showingRaw = !showingRaw;
-                if (showingRaw) {
-                    contentDiv.textContent = rawSource.get(contentDiv);
-                    toggleBtn.textContent = "Rendered";
-                } else {
-                    contentDiv.innerHTML = renderMarkdown(rawSource.get(contentDiv));
-                    toggleBtn.textContent = "Raw";
-                }
-            });
-            actions.appendChild(toggleBtn);
-            // copy button
-            const copyBtn = document.createElement("button");
-            copyBtn.type = "button";
-            copyBtn.className = "chat-copy-button";
-            copyBtn.textContent = "Copy";
-            copyBtn.addEventListener("click", async () => {
-                try {
-                    await navigator.clipboard.writeText(content);
-                    copyBtn.textContent = "Copied";
-                    setTimeout(() => { copyBtn.textContent = "Copy"; }, 1500);
-                } catch (error) {
-                    copyBtn.textContent = "Failed";
-                    setTimeout(() => { copyBtn.textContent = "Copy"; }, 1500);
-                }
-            });
-            actions.appendChild(copyBtn);
-            div.appendChild(actions);
+            attachAssistantActions(contentDiv, content);
         } else {
             const previewImages =
                 meta && Array.isArray(meta.preview_images)
@@ -368,9 +358,6 @@
                     img.src = String(src).startsWith("data:")
                         ? src
                         : `/chat/preview/${encodeURIComponent(src)}`;
-                    img.addEventListener("mouseenter", (event) => showHoverPreview(img.src, event));
-                    img.addEventListener("mousemove", positionHoverPreview);
-                    img.addEventListener("mouseleave", hideHoverPreview);
                     img.addEventListener("error", () => {
                         hideHoverPreview();
                         const broken = document.createElement("span");
@@ -390,8 +377,6 @@
                     video.className = "chat-user-media-player";
                     video.src = src;
                     video.preload = "metadata";
-                    video.style.height = "100px";
-                    video.style.width = "auto";
                     video.addEventListener("ended", () => { video.currentTime = 0; });
                     wrap.appendChild(video);
                     const controls = document.createElement("div");
@@ -668,7 +653,6 @@
                     output_tokens: finalPayload.output_tokens,
                     saved_system_prompt_name: finalPayload.saved_system_prompt_name,
                     system_prompt: finalPayload.system_prompt,
-                    response_html: finalPayload.response_html,
                     request_body: finalPayload.request_body,
                 });
             } else if (accumulated) {
@@ -990,7 +974,6 @@
     const setMoreParamsLoading = (active) => {
         if (!moreParamsLoading) return;
         moreParamsLoading.hidden = !active;
-        moreParamsLoading.style.display = active ? "flex" : "none";
     };
 
     const setMoreParamsDeleteVisible = (visible) => {
@@ -1414,8 +1397,6 @@
                 video.height = 130;
                 video.controls = false;
                 video.preload = "metadata";
-                video.style.height = "130px";
-                video.style.width = "auto";
                 videoWrap.appendChild(video);
 
                 const controls = document.createElement("div");
@@ -1464,7 +1445,7 @@
         const input = document.createElement("input");
         input.type = "file";
         input.accept = icon.accept;
-        input.style.display = "none";
+        input.className = "chat-file-input";
         document.body.appendChild(input);
         input.addEventListener("change", async () => {
             const file = input.files && input.files[0];
@@ -1581,48 +1562,7 @@
     // Render server-side assistant messages as markdown.
     if (historyEl) {
         historyEl.querySelectorAll(".chat-message--assistant .chat-content").forEach((el) => {
-            const raw = el.dataset.raw || el.textContent;
-            rawSource.set(el, raw);
-            // Match newly received and toggled messages on initial page load.
-            // The server-rendered HTML remains available as a no-JavaScript fallback.
-            el.innerHTML = renderMarkdown(raw);
-            const parent = el.parentElement;
-            if (parent && !parent.querySelector(".chat-message-actions")) {
-                const actions = document.createElement("div");
-                actions.className = "chat-message-actions";
-                const toggleBtn = document.createElement("button");
-                toggleBtn.type = "button";
-                toggleBtn.className = "chat-view-toggle";
-                toggleBtn.textContent = "Raw";
-                let showingRaw = false;
-                toggleBtn.addEventListener("click", () => {
-                    showingRaw = !showingRaw;
-                    if (showingRaw) {
-                        el.textContent = rawSource.get(el);
-                        toggleBtn.textContent = "Rendered";
-                    } else {
-                        el.innerHTML = renderMarkdown(rawSource.get(el));
-                        toggleBtn.textContent = "Raw";
-                    }
-                });
-                actions.appendChild(toggleBtn);
-                const copyBtn = document.createElement("button");
-                copyBtn.type = "button";
-                copyBtn.className = "chat-copy-button";
-                copyBtn.textContent = "Copy";
-                copyBtn.addEventListener("click", async () => {
-                    try {
-                        await navigator.clipboard.writeText(raw);
-                        copyBtn.textContent = "Copied";
-                        setTimeout(() => { copyBtn.textContent = "Copy"; }, 1500);
-                    } catch (error) {
-                        copyBtn.textContent = "Failed";
-                        setTimeout(() => { copyBtn.textContent = "Copy"; }, 1500);
-                    }
-                });
-                actions.appendChild(copyBtn);
-                parent.appendChild(actions);
-            }
+            attachAssistantActions(el, el.dataset.raw || el.textContent);
         });
     }
 

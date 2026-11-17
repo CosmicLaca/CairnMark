@@ -52,22 +52,6 @@
                 if (nameInput) nameInput.focus();
                 topicList.appendChild(fragment);
 
-                // Wire up the dynamically added row's controls so its trash
-                // button and Enter-on-name behave like the initial row.
-                const newRemoveBtn = row.querySelector("[data-topic-remove]");
-                const newNameInput = row.querySelector("[data-topic-name]");
-                if (newRemoveBtn) {
-                    newRemoveBtn.addEventListener("click", () => removeTopicRow(newRemoveBtn));
-                }
-                if (newNameInput) {
-                    newNameInput.addEventListener("keydown", (e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                            e.preventDefault();
-                            addButton?.focus();
-                        }
-                    });
-                }
-
                 topicIndex++;
                 updateTopicCount();
             }
@@ -94,24 +78,9 @@
         updateTopicCount();
     };
 
-    const bindTopicRowEvents = () => {
-        topicList.querySelectorAll("[data-topic-remove]").forEach((button) => {
-            button.addEventListener("click", () => removeTopicRow(button));
-        });
-        topicList.querySelectorAll("[data-topic-name]").forEach((input) => {
-            input.addEventListener("keydown", (e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    addButton?.focus();
-                }
-            });
-        });
-    };
-
     const resetTopics = () => {
         topicList.innerHTML = initialTopicListHTML;
         topicIndex = 1;
-        bindTopicRowEvents();
         updateTopicCount();
     };
 
@@ -121,6 +90,19 @@
         addButton.addEventListener("click", addTopicRow);
     }
 
-    bindTopicRowEvents();
+    topicList.addEventListener("click", (event) => {
+        const removeButton = event.target.closest("[data-topic-remove]");
+        if (removeButton) removeTopicRow(removeButton);
+    });
+    topicList.addEventListener("keydown", (event) => {
+        if (
+            event.target.matches("[data-topic-name]")
+            && event.key === "Enter"
+            && !event.shiftKey
+        ) {
+            event.preventDefault();
+            addButton?.focus();
+        }
+    });
     updateTopicCount();
 })();
