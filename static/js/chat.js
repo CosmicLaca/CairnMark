@@ -526,13 +526,17 @@
             window.alert("Model is required.");
             return;
         }
+        const saveOriginalMedia = attachmentPreferences.get("save_original_media");
         const userPreviewImages = pendingAttachments
-            .filter((attachment) => (attachment.type === "image" || attachment.type === "video") && attachment.previewUrl && !attachmentPreferences.get("save_original_media"))
+            .filter((attachment) => attachment.previewUrl && (
+                attachment.type === "image"
+                || (attachment.type === "video" && !saveOriginalMedia)
+            ))
             .map((attachment) => attachment.previewUrl);
         const hasAudioAttachment = pendingAttachments.some(
             (attachment) => attachment.type === "audio"
         );
-        const immediateMedia = attachmentPreferences.get("save_original_media")
+        const immediateMedia = saveOriginalMedia
             ? pendingAttachments
                 .filter((attachment) => attachment.type === "video" || attachment.type === "audio")
                 .map((attachment) => ({
@@ -543,8 +547,8 @@
             : [];
         const userMessageEl = appendMessage("user", message, {
             preview_images: userPreviewImages,
-            has_audio: hasAudioAttachment && !attachmentPreferences.get("save_original_media"),
-            save_original_media: attachmentPreferences.get("save_original_media"),
+            has_audio: hasAudioAttachment && !saveOriginalMedia,
+            save_original_media: saveOriginalMedia,
             preview_media: immediateMedia,
         });
         if (inputEl) inputEl.value = "";
@@ -564,7 +568,7 @@
                 attach_audio: attachment.type === "video" ? attachmentPreferences.get("attach_audio") : undefined,
                 original_name: attachment.name,
             }));
-            requestBody.save_original_media = attachmentPreferences.get("save_original_media");
+            requestBody.save_original_media = saveOriginalMedia;
         }
 
         const controller = new AbortController();

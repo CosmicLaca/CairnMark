@@ -1144,12 +1144,19 @@ class ChatController:
         if not name:
             return jsonify({"error": "Chat name is required."}), 400
         saved = get_saved_chat(name)
-        filenames = self.previews.filenames(saved) if saved else []
-        referenced = [list_chat_messages()] + [
+        if saved is None:
+            return jsonify({"error": "Saved chat not found."}), 404
+
+        current_messages = list_chat_messages()
+        filenames = self.previews.filenames(saved) + self.previews.filenames(
+            current_messages
+        )
+        referenced = [
             get_saved_chat(other) or [] for other in list_saved_chats() if other != name
         ]
         if not delete_saved_chat(name):
             return jsonify({"error": "Saved chat not found."}), 404
+        clear_chat_messages()
         self.previews.delete_unreferenced(filenames, *referenced)
         return jsonify({"message": "Chat deleted.", "name": name})
 
