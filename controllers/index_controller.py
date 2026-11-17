@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import markdown
-from flask import current_app, render_template
+from flask import current_app, render_template, send_from_directory
 from markupsafe import Markup
 
 from controllers.benchmark_controller import benchmark_controller
@@ -127,6 +127,13 @@ class IndexController:
         if context_provider:
             context.update(context_provider())
         return render_template(template, **context)
+
+    def manual_asset(self, filename):
+        """Serve an image referenced by the repository README."""
+        return send_from_directory(
+            current_app.config["MANUAL_DIRECTORY"],
+            filename,
+        )
 
 
 index_controller = IndexController()

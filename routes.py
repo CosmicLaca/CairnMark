@@ -21,6 +21,12 @@ CREATE_BENCHMARK_PAGE = next(
 
 APPLICATION_ROUTES = (
     (
+        "/manual/<path:filename>",
+        "manual_asset",
+        index_controller.manual_asset,
+        ("GET",),
+    ),
+    (
         "/chat/send",
         "chat_send",
         chat_controller.send,

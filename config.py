@@ -16,6 +16,7 @@ class Config:
     PARAMETER_DATABASE_PATH = PROJECT_ROOT / "instance" / "parameters.db"
     BENCHMARK_DIRECTORY = PROJECT_ROOT / "Benchmark-prompts"
     SYSTEM_PROMPT_DIRECTORY = PROJECT_ROOT / "System-prompts"
+    MANUAL_DIRECTORY = PROJECT_ROOT / "manual"
     LOG_LEVEL = os.environ.get("CAIRNMARK_LOG_LEVEL", "INFO").upper()
     # Enabled by the --dev launcher flag; public launches hide unfinished pages.
     DEV_MODE = False
