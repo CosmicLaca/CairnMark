@@ -540,8 +540,11 @@ class ProviderSdkClient:
 
     @staticmethod
     def _openai_messages_with_attachments(messages, attachments):
-        images = [item for item in (attachments or []) if item.get("type") == "image"]
-        if not images:
+        media = [
+            item for item in (attachments or [])
+            if item.get("type") in ("image", "audio", "video")
+        ]
+        if not media:
             return messages
         converted = [dict(message) if isinstance(message, dict) else message for message in (messages or [])]
         last_user = None
@@ -556,15 +559,31 @@ class ProviderSdkClient:
         if not isinstance(original, str):
             original = str(original or "")
         content = [{"type": "text", "text": original}]
-        for item in images:
-            content.append(
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:{item['mime_type']};base64,{item['data']}"
-                    },
-                }
-            )
+        for item in media:
+            attachment_type = item.get("type")
+            if attachment_type == "image":
+                content.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{item['mime_type']};base64,{item['data']}"
+                        },
+                    }
+                )
+            elif attachment_type == "audio":
+                content.append(
+                    {
+                        "type": "input_audio",
+                        "input_audio": {"data": item["data"]},
+                    }
+                )
+            elif attachment_type == "video":
+                content.append(
+                    {
+                        "type": "input_video",
+                        "input_video": {"data": item["data"]},
+                    }
+                )
         converted[last_user]["content"] = content
         return converted
 
@@ -746,8 +765,10 @@ class ProviderSdkClient:
                     text=str(message.get("content", ""))
                 )
             ]
-            if is_last_user and image_attachments:
-                for item in image_attachments:
+            if is_last_user:
+                for item in (attachments or []):
+                    if item.get("type") not in ("image", "audio", "video"):
+                        continue
                     try:
                         parts.append(
                             google_types.Part.from_bytes(
@@ -1868,12 +1889,10 @@ class ModelProviderService:
                                                 mime_type=item["mime_type"],
                                             )
                                             for item in (attachments or [])
-                                            if item.get("type") == "image"
+                                            if item.get("type") in ("image", "audio", "video")
                                             and m.get("role") != "assistant"
                                             and m is conversation[-1]
                                         ]
-                                        if True
-                                        else []
                                     )
                                 ),
                             )
