@@ -261,7 +261,7 @@ def _preview_directory():
 
 
 def _save_preview_image(data):
-    """Create a 100px-high JPEG preview and return its randomized filename."""
+    """Create a 300px-high JPEG preview and return its randomized filename."""
     try:
         from PIL import Image
     except ImportError:
@@ -271,9 +271,9 @@ def _save_preview_image(data):
         with Image.open(io.BytesIO(decoded)) as image:
             if image.height <= 0:
                 return None
-            scale = 100 / image.height
+            scale = 300 / image.height
             width = max(1, int(image.width * scale))
-            resized = image.resize((width, 100), Image.LANCZOS)
+            resized = image.resize((width, 300), Image.LANCZOS)
             if resized.mode in ("RGBA", "P"):
                 resized = resized.convert("RGB")
             filename = f"preview-{uuid.uuid4().hex}.jpg"

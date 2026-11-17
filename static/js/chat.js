@@ -56,6 +56,71 @@
     // Toggle state per message
     const rawSource = new WeakMap();
 
+    // Floating hover preview keeps the embedded thumbnail size unchanged.
+    let hoverPreviewEl = null;
+    let hoverPreviewImg = null;
+    let lastHoverPoint = null;
+
+    const ensureHoverPreview = () => {
+        if (hoverPreviewEl) return hoverPreviewEl;
+        hoverPreviewEl = document.createElement("div");
+        hoverPreviewEl.className = "chat-hover-preview";
+        hoverPreviewEl.hidden = true;
+        hoverPreviewImg = document.createElement("img");
+        hoverPreviewImg.alt = "Expanded attachment preview";
+        hoverPreviewImg.addEventListener("load", () => {
+            if (lastHoverPoint && !hoverPreviewEl.hidden) {
+                positionHoverPreview(lastHoverPoint);
+            }
+        });
+        hoverPreviewEl.appendChild(hoverPreviewImg);
+        document.body.appendChild(hoverPreviewEl);
+        return hoverPreviewEl;
+    };
+
+    const positionHoverPreview = (event) => {
+        if (!hoverPreviewEl || hoverPreviewEl.hidden) return;
+        lastHoverPoint = { clientX: event.clientX, clientY: event.clientY };
+        const pad = 12;
+        const offset = 16;
+        const natural = hoverPreviewImg.naturalWidth && hoverPreviewImg.naturalHeight
+            ? hoverPreviewImg.naturalWidth / hoverPreviewImg.naturalHeight
+            : null;
+        const cardWidth = natural
+            ? Math.min(300 * natural + 12, window.innerWidth - pad * 2)
+            : hoverPreviewEl.offsetWidth;
+        const cardHeight = natural
+            ? Math.min(300, window.innerHeight - pad * 2) + 12
+            : hoverPreviewEl.offsetHeight;
+        let x = event.clientX + offset;
+        let y = event.clientY + offset;
+        if (x + cardWidth > window.innerWidth - pad) {
+            x = Math.max(pad, event.clientX - cardWidth - offset);
+        }
+        if (y + cardHeight > window.innerHeight - pad) {
+            y = Math.max(pad, window.innerHeight - cardHeight - pad);
+        }
+        hoverPreviewEl.style.left = `${x}px`;
+        hoverPreviewEl.style.top = `${y}px`;
+    };
+
+    const showHoverPreview = (src, event) => {
+        const el = ensureHoverPreview();
+        if (hoverPreviewImg.getAttribute("src") !== src) {
+            hoverPreviewImg.setAttribute("src", src);
+        }
+        el.hidden = false;
+        positionHoverPreview(event);
+    };
+
+    const hideHoverPreview = () => {
+        if (hoverPreviewEl) hoverPreviewEl.hidden = true;
+        lastHoverPoint = null;
+    };
+
+    // Capture phase catches scrolling inside the chat history container too.
+    window.addEventListener("scroll", hideHoverPreview, true);
+
     const syncEmptyState = () => {
         if (!historyEl || !emptyStateEl) return;
         const hasMessages = Boolean(historyEl.querySelector(".chat-message"));
@@ -214,7 +279,11 @@
                     img.src = String(src).startsWith("data:")
                         ? src
                         : `/chat/preview/${encodeURIComponent(src)}`;
+                    img.addEventListener("mouseenter", (event) => showHoverPreview(img.src, event));
+                    img.addEventListener("mousemove", positionHoverPreview);
+                    img.addEventListener("mouseleave", hideHoverPreview);
                     img.addEventListener("error", () => {
+                        hideHoverPreview();
                         const broken = document.createElement("span");
                         broken.className = "chat-user-preview--broken";
                         broken.textContent = "🔗";
@@ -241,6 +310,7 @@
 
     const renderHistory = (messages) => {
         if (!historyEl) return;
+        hideHoverPreview();
         historyEl.replaceChildren(emptyStateEl);
         (messages || []).forEach((m) => {
             appendMessage(m.role, m.content, {
