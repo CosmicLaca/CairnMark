@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS chat_attachment_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     save_original_media INTEGER NOT NULL DEFAULT 0,
     attach_audio INTEGER NOT NULL DEFAULT 0,
+    video_fps REAL NOT NULL DEFAULT 2,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -98,6 +99,18 @@ def _migrate_chat_settings(connection):
                 connection.execute("ALTER TABLE mineru_settings ADD COLUMN api_key TEXT")
         except sqlite3.Error:
             pass
+        # Ensure video_fps exists for older databases.
+        try:
+            attachment_columns = {
+                row[1]
+                for row in connection.execute("PRAGMA table_info(chat_attachment_settings)")
+            }
+            if attachment_columns and "video_fps" not in attachment_columns:
+                connection.execute(
+                    "ALTER TABLE chat_attachment_settings ADD COLUMN video_fps REAL NOT NULL DEFAULT 2"
+                )
+        except sqlite3.Error:
+            pass
         return
 
     select_columns = ", ".join(
@@ -118,6 +131,18 @@ def _migrate_chat_settings(connection):
         }
         if columns and "api_key" not in columns:
             connection.execute("ALTER TABLE mineru_settings ADD COLUMN api_key TEXT")
+    except sqlite3.Error:
+        pass
+    # Ensure video_fps exists for older databases.
+    try:
+        attachment_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(chat_attachment_settings)")
+        }
+        if attachment_columns and "video_fps" not in attachment_columns:
+            connection.execute(
+                "ALTER TABLE chat_attachment_settings ADD COLUMN video_fps REAL NOT NULL DEFAULT 2"
+            )
     except sqlite3.Error:
         pass
 

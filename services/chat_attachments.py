@@ -49,8 +49,8 @@ def resize_image_attachment(attachment):
         return attachment
 
 
-def convert_video_attachment(attachment):
-    """Re-encode video to silent MP4 with a 480px maximum side and 2 fps."""
+def convert_video_attachment(attachment, fps=2):
+    """Re-encode video to silent MP4 with a 480px maximum side and the given fps."""
     if not isinstance(attachment, dict) or attachment.get("type") != "video":
         return attachment
     try:
@@ -93,7 +93,7 @@ def convert_video_attachment(attachment):
                     480 if width >= height else -2,
                     -2 if width >= height else 480,
                 )
-            video = video.filter("fps", fps=2)
+            video = video.filter("fps", fps=fps)
             ffmpeg.output(
                 video,
                 str(output_path),

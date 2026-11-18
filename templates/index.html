@@ -210,6 +210,21 @@
               </span>
               <span class="chat-save-original-tooltip" role="tooltip">Attach audio</span>
             </button>
+            <div class="chat-fps-control" data-chat-video-fps-control hidden>
+              <span class="chat-fps-label">FPS:</span>
+              <input
+                type="range"
+                class="chat-fps-slider"
+                data-chat-video-fps
+                min="0"
+                max="7"
+                step="1"
+                value="4"
+                title="Set FPS"
+                aria-label="Set FPS"
+              >
+              <span class="chat-fps-value" data-chat-video-fps-value>2</span>
+            </div>
           </div>
         </div>
       </div>

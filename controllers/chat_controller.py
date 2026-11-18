@@ -278,11 +278,11 @@ def _attachment_values(value):
     return cleaned
 
 
-def _process_attachments(attachments):
+def _process_attachments(attachments, fps=2):
     result = []
     for item in attachments or []:
         if isinstance(item, dict) and item.get("type") == "video":
-            result.append(_convert_video_attachment(item))
+            result.append(_convert_video_attachment(item, fps=fps))
         elif isinstance(item, dict) and item.get("type") == "image":
             result.append(_resize_image_attachment(item))
         elif isinstance(item, dict) and item.get("type") == "audio":
@@ -312,12 +312,12 @@ def _audio_analysis_messages(messages):
     return audio_messages
 
 
-def _prepare_attachment_plan(attachments, messages):
+def _prepare_attachment_plan(attachments, messages, fps=2):
     """Convert attachments into the model request layout they require."""
     attachments = attachments or []
     if not _requires_split_attachment_request(attachments):
         return AttachmentRequestPlan(
-            primary_attachments=_process_attachments(attachments),
+            primary_attachments=_process_attachments(attachments, fps=fps),
             primary_messages=messages,
             audio_attachments=[],
             audio_messages=[],
@@ -329,7 +329,7 @@ def _prepare_attachment_plan(attachments, messages):
         if not isinstance(item, dict):
             primary_attachments.append(item)
         elif item.get("type") == "video":
-            primary_attachments.append(_convert_video_attachment(item))
+            primary_attachments.append(_convert_video_attachment(item, fps=fps))
             if item.get("attach_audio") and _video_has_audio(item.get("data", "")):
                 audio_attachment = _extract_video_audio_attachment(item)
                 if audio_attachment is not None:

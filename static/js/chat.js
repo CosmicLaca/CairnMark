@@ -57,8 +57,12 @@
     const audioAttachmentsEl = document.querySelector("[data-chat-audio-attachments]");
     const saveOriginalSwitch = document.querySelector("[data-chat-save-original]");
     const attachAudioSwitch = document.querySelector("[data-chat-attach-audio]");
+    const fpsControl = document.querySelector("[data-chat-video-fps-control]");
+    const fpsSlider = document.querySelector("[data-chat-video-fps]");
+    const fpsValue = document.querySelector("[data-chat-video-fps-value]");
     const modelNctxEl = document.querySelector("[data-chat-model-nctx]");
     const attachmentSettings = window.CairnmarkChatAttachmentSettings || {};
+    const videoFpsValues = [0.1, 0.25, 0.5, 1, 2, 4, 8, 16];
     const attachmentPreferences = new window.CairnmarkChatAttachmentPreferences({
         api,
         initial: attachmentSettings,
@@ -1527,6 +1531,9 @@
         if (attachAudioSwitch) {
             attachAudioSwitch.hidden = !hasVideo;
         }
+        if (fpsControl) {
+            fpsControl.hidden = !hasVideo;
+        }
         if (pendingAttachments.length === 0) {
             if (attachmentsEl) attachmentsEl.hidden = true;
             if (audioAttachmentsEl) audioAttachmentsEl.hidden = true;
@@ -1878,6 +1885,16 @@
             attachAssistantActions(el, el.dataset.raw || el.textContent);
         });
     }
+
+    const updateFpsValue = () => {
+        if (!fpsSlider || !fpsValue) return;
+        const index = Number(fpsSlider.value) || 0;
+        const value = videoFpsValues[index] != null ? videoFpsValues[index] : videoFpsValues[0];
+        fpsValue.textContent = String(value);
+        fpsSlider.title = `Set FPS: ${value}`;
+    };
+    fpsSlider?.addEventListener("input", updateFpsValue);
+    updateFpsValue();
 
     seedSwitch?.addEventListener("click", () => {
         if (!seedSwitch) return;
