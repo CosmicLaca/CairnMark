@@ -467,9 +467,40 @@
   </div>
 </div>
 
+<div class="modal more-params-modal" id="mineru-settings-modal" data-mineru-settings-modal hidden aria-modal="true" role="dialog">
+  <div class="modal-content">
+    <header class="modal-header">
+      <h2>MinerU settings</h2>
+      <button type="button" class="close-modal-button" data-mineru-settings-close>&times;</button>
+    </header>
+    <div class="modal-body">
+      <div class="field-group">
+        <label for="mineru-endpoint">MinerU API endpoint</label>
+        <input type="text" id="mineru-endpoint" data-mineru-endpoint value="{{ mineru_settings.endpoint }}">
+        <p class="field-hint">Example: http://127.0.0.1:8100</p>
+      </div>
+      <div class="field-group">
+        <label for="mineru-api-key">API key (optional)</label>
+        <input type="password" id="mineru-api-key" data-mineru-api-key value="{{ mineru_settings.api_key }}">
+      </div>
+    </div>
+    <footer class="modal-footer more-params-footer">
+      <div class="more-params-footer-actions">
+        <button type="button" class="modal-cancel-button" data-mineru-settings-close>Cancel</button>
+        <button type="button" class="modal-save-button" data-mineru-settings-save>
+          <span aria-hidden="true">✓</span> Save
+        </button>
+      </div>
+    </footer>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
+  <script>
+    window.CairnmarkMineruSettings = {{ mineru_settings|tojson }};
+  </script>
   <script>
     window.CairnmarkChatAttachmentSettings = {
       save_original_media: {{ chat_attachment_settings.save_original_media|tojson }},

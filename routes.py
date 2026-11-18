@@ -81,6 +81,18 @@ APPLICATION_ROUTES = (
         ("GET",),
     ),
     (
+        "/chat/mineru_settings",
+        "chat_mineru_settings",
+        chat_controller.mineru_settings_get,
+        ("GET",),
+    ),
+    (
+        "/chat/save_mineru_settings",
+        "chat_save_mineru_settings",
+        chat_controller.save_mineru_settings,
+        ("POST",),
+    ),
+    (
         "/chat/preview/<path:filename>",
         "chat_preview",
         chat_controller.preview,

@@ -47,6 +47,11 @@
     const moreParamsStateSign = document.querySelector("[data-more-params-state]");
     const moreParamsDeleteBtn = document.querySelector("[data-more-params-delete]");
     const moreParamsSaveModelBtn = document.querySelector("[data-more-params-save-model]");
+    const mineruModal = document.querySelector("[data-mineru-settings-modal]");
+    const mineruEndpointInput = document.querySelector("[data-mineru-endpoint]");
+    const mineruApiKeyInput = document.querySelector("[data-mineru-api-key]");
+    const mineruSaveBtn = document.querySelector("[data-mineru-settings-save]");
+    const mineruCloseBtns = document.querySelectorAll("[data-mineru-settings-close]");
     const mediaUploadsEl = document.querySelector("[data-chat-media-uploads]");
     const attachmentsEl = document.querySelector("[data-chat-attachments]");
     const audioAttachmentsEl = document.querySelector("[data-chat-audio-attachments]");
@@ -66,6 +71,10 @@
         },
     });
     let moreParamsModelKey = "";
+    let mineruConfigured = Boolean(window.CairnmarkMineruSettings && window.CairnmarkMineruSettings.configured);
+    let mineruEndpoint = (window.CairnmarkMineruSettings && window.CairnmarkMineruSettings.endpoint) || "http://127.0.0.1:8100";
+    let mineruApiKey = (window.CairnmarkMineruSettings && window.CairnmarkMineruSettings.api_key) || "";
+    let pendingDocumentPicker = false;
     const pendingAttachments = [];
     const renderMarkdown = window.CairnmarkMarkdown.render;
     const chatMedia = window.CairnmarkChatMedia;
@@ -1147,7 +1156,20 @@
         tooltip.setAttribute("role", "tooltip");
         tooltip.textContent = item.label;
         button.append(glyph, tooltip);
-        button.addEventListener("click", () => openFilePicker(item));
+        button.addEventListener("click", () => {
+            if (item.key === "document" && !mineruConfigured) {
+                pendingDocumentPicker = true;
+                openMineruSettings();
+                return;
+            }
+            openFilePicker(item);
+        });
+        if (item.key === "document") {
+            button.addEventListener("contextmenu", (event) => {
+                event.preventDefault();
+                openMineruSettings();
+            });
+        }
         return button;
     };
 
@@ -1666,6 +1688,49 @@
         }
     };
 
+    const openMineruSettings = () => {
+        if (mineruModal) {
+            mineruModal.hidden = false;
+            if (mineruEndpointInput) mineruEndpointInput.value = mineruEndpoint;
+            if (mineruApiKeyInput) mineruApiKeyInput.value = mineruApiKey;
+        }
+    };
+    const closeMineruSettings = () => {
+        if (mineruModal) mineruModal.hidden = true;
+    };
+    const saveMineruSettings = async () => {
+        const endpoint = mineruEndpointInput?.value?.trim() || "";
+        const api_key = mineruApiKeyInput?.value?.trim() || "";
+        if (!endpoint) {
+            window.alert("MinerU endpoint is required.");
+            return;
+        }
+        if (mineruSaveBtn) mineruSaveBtn.disabled = true;
+        try {
+            const payload = await api.json("/chat/save_mineru_settings", {
+                method: "POST",
+                body: { endpoint, api_key },
+            });
+            mineruEndpoint = payload.endpoint || endpoint;
+            mineruApiKey = payload.api_key || api_key;
+            mineruConfigured = true;
+            window.CairnmarkMineruSettings = {
+                endpoint: mineruEndpoint,
+                api_key: mineruApiKey,
+                configured: true,
+            };
+            closeMineruSettings();
+            if (pendingDocumentPicker) {
+                pendingDocumentPicker = false;
+                openFilePicker(DOCUMENT_UPLOAD_ICON);
+            }
+        } catch (error) {
+            window.alert(`Save failed: ${error}`);
+        } finally {
+            if (mineruSaveBtn) mineruSaveBtn.disabled = false;
+        }
+    };
+
     const handleSaveSystemPrompt = async () => {
         const name = saveSpNameInput?.value?.trim() || "";
         if (!name) {
@@ -1757,6 +1822,11 @@
     moreParamsBtn?.addEventListener("click", openMoreParamsModal);
     moreParamsDeleteBtn?.addEventListener("click", handleDeleteMoreParams);
     moreParamsSaveModelBtn?.addEventListener("click", handleSaveMoreParamsModel);
+    mineruCloseBtns.forEach((btn) => btn.addEventListener("click", closeMineruSettings));
+    mineruSaveBtn?.addEventListener("click", saveMineruSettings);
+    mineruModal?.addEventListener("click", (event) => {
+        if (event.target === mineruModal) closeMineruSettings();
+    });
     moreParamsCloseBtns.forEach((b) => b.addEventListener("click", () => {
         resetMoreParamsModal();
         closeMoreParamsModal();

@@ -21,6 +21,7 @@ from models.chat_settings import (
     chat_attachment_settings,
     chat_seed_settings,
     get_chat_settings,
+    mineru_settings,
     save_chat_settings,
 )
 from models.chat_storage import (
@@ -517,6 +518,7 @@ class ChatController:
             "chat_settings": settings,
             "chat_attachment_settings": chat_attachment_settings(),
             "chat_seed_settings": chat_seed_settings(),
+            "mineru_settings": mineru_settings(),
             "chat_messages": messages,
             "active_models": self.service.active_models(),
             "saved_chats": list_saved("chat"),
@@ -844,16 +846,49 @@ class ChatController:
         self.previews.delete_unreferenced(filenames, *saved_messages)
         return jsonify({"message": "Chat cleared."})
 
+    def _mineru_check(self, endpoint, api_key=None):
+        endpoint = str(endpoint or "").strip().rstrip("/")
+        if not endpoint:
+            return False
+        urls = (
+            f"{endpoint}/v1/health",
+            f"{endpoint}/",
+        )
+        headers = {}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        for url in urls:
+            try:
+                request_obj = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(request_obj, timeout=3) as response:
+                    if getattr(response, "status", None) == 200:
+                        return True
+            except Exception:  # noqa: BLE001
+                continue
+        return False
+
     def mineru_available(self):
         """Report whether the local MinerU document service is reachable."""
-        url = "http://127.0.0.1:8100/v1/health"
-        available = False
-        try:
-            with urllib.request.urlopen(url, timeout=3) as response:
-                available = getattr(response, "status", None) == 200
-        except Exception:  # noqa: BLE001
-            available = False
-        return jsonify({"available": bool(available)})
+        settings = mineru_settings()
+        endpoint = settings.get("endpoint", "http://127.0.0.1:8100")
+        api_key = settings.get("api_key", "")
+        return jsonify({"available": bool(self._mineru_check(endpoint, api_key))})
+
+    def mineru_settings_get(self):
+        """Return the saved MinerU endpoint settings."""
+        return jsonify(mineru_settings())
+
+    def save_mineru_settings(self):
+        """Validate and persist the MinerU endpoint settings."""
+        data = request.get_json(silent=True) or {}
+        endpoint = str(data.get("endpoint") or "").strip()
+        api_key = str(data.get("api_key") or "").strip()
+        if not endpoint:
+            return jsonify({"error": "MinerU endpoint is required."}), 400
+        if not self._mineru_check(endpoint, api_key):
+            return jsonify({"error": "MinerU endpoint is not reachable."}), 400
+        saved = mineru_settings({"endpoint": endpoint, "api_key": api_key})
+        return jsonify({"message": "MinerU settings saved.", **saved})
 
     def abort(self):
         messages = list_chat_messages()

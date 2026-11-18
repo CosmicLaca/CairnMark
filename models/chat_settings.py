@@ -1,5 +1,7 @@
 """SQLite persistence for chat form and attachment defaults."""
 
+import sqlite3
+
 from config import PROJECT_ROOT
 from models.sqlite_store import SQLiteStore
 
@@ -62,6 +64,13 @@ CREATE TABLE IF NOT EXISTS chat_seed_settings (
     randomize_seed INTEGER NOT NULL DEFAULT 0,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS mineru_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    endpoint TEXT NOT NULL DEFAULT 'http://127.0.0.1:8100',
+    api_key TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -80,6 +89,15 @@ def _migrate_chat_settings(connection):
         or bool(extra_columns)
     )
     if not needs_rebuild:
+        # Still ensure optional MinerU columns exist for older databases.
+        try:
+            columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(mineru_settings)")
+            }
+            if columns and "api_key" not in columns:
+                connection.execute("ALTER TABLE mineru_settings ADD COLUMN api_key TEXT")
+        except sqlite3.Error:
+            pass
         return
 
     select_columns = ", ".join(
@@ -94,7 +112,14 @@ def _migrate_chat_settings(connection):
     )
     connection.execute("DROP TABLE chat_settings")
     connection.execute("ALTER TABLE chat_settings_new RENAME TO chat_settings")
-
+    try:
+        columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(mineru_settings)")
+        }
+        if columns and "api_key" not in columns:
+            connection.execute("ALTER TABLE mineru_settings ADD COLUMN api_key TEXT")
+    except sqlite3.Error:
+        pass
 
 SETTINGS_STORE = SQLiteStore(
     "DATABASE_PATH",
@@ -196,6 +221,52 @@ def chat_seed_settings(updates=None):
         (1 if randomize_seed else 0,),
     )
     return {"randomize_seed": randomize_seed}
+
+
+def mineru_settings(updates=None):
+    """Read or update the saved MinerU API endpoint."""
+    defaults = {
+        "endpoint": "http://127.0.0.1:8100",
+        "api_key": "",
+        "configured": False,
+    }
+    if updates is None:
+        if not SETTINGS_STORE.path().exists():
+            return defaults
+        row = SETTINGS_STORE.fetch(
+            "SELECT endpoint, api_key FROM mineru_settings WHERE id = 1",
+            one=True,
+        )
+        if not row:
+            return defaults
+        return {
+            "endpoint": str(row[0] or defaults["endpoint"]).strip()
+            or defaults["endpoint"],
+            "api_key": str(row[1] or "").strip(),
+            "configured": True,
+        }
+
+    values = {**defaults, **updates}
+    endpoint = str(values.get("endpoint") or "").strip().rstrip("/")
+    if not endpoint:
+        endpoint = defaults["endpoint"]
+    api_key = str(values.get("api_key") or "").strip()
+    SETTINGS_STORE.execute(
+        """
+        INSERT INTO mineru_settings (id, endpoint, api_key)
+        VALUES (1, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            endpoint = excluded.endpoint,
+            api_key = excluded.api_key,
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (endpoint, api_key or None),
+    )
+    return {
+        "endpoint": endpoint,
+        "api_key": api_key,
+        "configured": True,
+    }
 
 
 def chat_attachment_settings(updates=None):
