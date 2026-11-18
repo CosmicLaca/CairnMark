@@ -1,7 +1,11 @@
 """Chat interface context and message handling for the home page."""
 
 import base64
+import io
+import json
+import time
 import urllib.request
+import zipfile
 import json
 import re
 import time
@@ -889,6 +893,136 @@ class ChatController:
             return jsonify({"error": "MinerU endpoint is not reachable."}), 400
         saved = mineru_settings({"endpoint": endpoint, "api_key": api_key})
         return jsonify({"message": "MinerU settings saved.", **saved})
+
+    def process_document(self):
+        """Process a binary document through the configured MinerU service."""
+        data = request.get_json(silent=True) or {}
+        filename = str(data.get("filename") or data.get("name") or "document").strip()
+        raw_data = data.get("data")
+        if not isinstance(raw_data, str) or not raw_data.strip():
+            return jsonify({"error": "Document data is required."}), 400
+        try:
+            file_bytes = base64.b64decode(raw_data.strip(), validate=True)
+        except Exception as error:  # noqa: BLE001
+            return jsonify({"error": "Document data must be valid base64."}), 400
+        if not file_bytes:
+            return jsonify({"error": "Document data is empty."}), 400
+
+        settings = mineru_settings()
+        endpoint = str(settings.get("endpoint") or "").strip().rstrip("/")
+        api_key = str(settings.get("api_key") or "").strip()
+        if not endpoint:
+            return jsonify({"error": "MinerU endpoint is not configured."}), 400
+
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        # Create task.
+        try:
+            create_payload = {"files": [{"file_name": filename, "bytes": len(file_bytes)}]}
+            create_request = urllib.request.Request(
+                f"{endpoint}/v1/tasks",
+                data=json.dumps(create_payload).encode("utf-8"),
+                headers=headers,
+                method="POST",
+            )
+            with urllib.request.urlopen(create_request, timeout=30) as response:
+                created = json.loads(response.read().decode("utf-8"))
+        except Exception as error:  # noqa: BLE001
+            return jsonify({"error": f"MinerU task creation failed: {error}"}), 502
+
+        task_id = created.get("task_id")
+        files = created.get("files") or []
+        if not task_id or not files:
+            return jsonify({"error": "MinerU did not return a task."}), 502
+        file_info = files[0]
+        file_id = file_info.get("file_id")
+        upload = file_info.get("upload") or {}
+        upload_url = upload.get("url")
+        upload_headers = dict(upload.get("headers") or {})
+        if api_key:
+            upload_headers.setdefault("Authorization", f"Bearer {api_key}")
+
+        # Upload file.
+        try:
+            upload_request = urllib.request.Request(
+                upload_url,
+                data=file_bytes,
+                headers=upload_headers,
+                method="PUT",
+            )
+            with urllib.request.urlopen(upload_request, timeout=60):
+                pass
+        except Exception as error:  # noqa: BLE001
+            return jsonify({"error": f"MinerU upload failed: {error}"}), 502
+
+        # Poll task status.
+        deadline = time.monotonic() + 120
+        status = created.get("status")
+        detail = None
+        while time.monotonic() < deadline:
+            try:
+                status_request = urllib.request.Request(
+                    f"{endpoint}/v1/tasks/{task_id}",
+                    headers=headers,
+                    method="GET",
+                )
+                with urllib.request.urlopen(status_request, timeout=30) as response:
+                    detail = json.loads(response.read().decode("utf-8"))
+                status = detail.get("status")
+                if status in {"completed", "partial", "failed", "canceled"}:
+                    break
+            except Exception as error:  # noqa: BLE001
+                return jsonify({"error": f"MinerU status check failed: {error}"}), 502
+            time.sleep(1)
+
+        if not detail or status not in {"completed", "partial"}:
+            file_error = None
+            if detail and detail.get("files"):
+                file_error = detail["files"][0].get("error")
+            message = "MinerU processing failed."
+            if file_error:
+                message = f"{message} {file_error.get('message', '')}".strip()
+            return jsonify({"error": message}), 502
+
+        file_detail = (detail.get("files") or [{}])[0]
+        result_url = file_detail.get("result_url")
+        if not result_url:
+            return jsonify({"error": "MinerU did not return a result."}), 502
+
+        # Download result ZIP and extract text.
+        try:
+            result_request = urllib.request.Request(result_url, headers=headers, method="GET")
+            with urllib.request.urlopen(result_request, timeout=60) as response:
+                result_bytes = response.read()
+        except Exception as error:  # noqa: BLE001
+            return jsonify({"error": f"MinerU result download failed: {error}"}), 502
+
+        extracted = ""
+        try:
+            archive = zipfile.ZipFile(io.BytesIO(result_bytes))
+            if "markdown.md" in archive.namelist():
+                extracted = archive.read("markdown.md").decode("utf-8", errors="replace").strip()
+            if not extracted and "middle_json.json" in archive.namelist():
+                middle = json.loads(archive.read("middle_json.json").decode("utf-8"))
+                texts = []
+                for page in middle.get("pages", []) or []:
+                    for block in page.get("blocks", []) or []:
+                        if block.get("type") != "text":
+                            continue
+                        for content_item in block.get("content", []) or []:
+                            if isinstance(content_item, dict) and content_item.get("type") == "text":
+                                value = content_item.get("content")
+                                if isinstance(value, str) and value.strip():
+                                    texts.append(value.strip())
+                extracted = "\n\n".join(texts).strip()
+        except Exception as error:  # noqa: BLE001
+            return jsonify({"error": f"MinerU result parsing failed: {error}"}), 502
+
+        if not extracted:
+            return jsonify({"error": "MinerU did not return text content."}), 502
+        return jsonify({"content": extracted})
 
     def abort(self):
         messages = list_chat_messages()

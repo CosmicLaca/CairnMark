@@ -555,10 +555,12 @@
                 }))
             : [];
         const documentPreviewMedia = pendingAttachments
-            .filter((attachment) => attachment.type === "document" && attachment.documentPayload)
+            .filter((attachment) => attachment.type === "document")
             .map((attachment) => ({
                 type: "document",
-                original_name: attachment.documentPayload.filename,
+                original_name: attachment.documentPayload
+                    ? attachment.documentPayload.filename
+                    : attachment.name,
                 filename: "",
             }));
         const userMessageEl = appendMessage("user", message, {
@@ -569,6 +571,51 @@
         });
         if (inputEl) inputEl.value = "";
         if (sendBtn) sendBtn.disabled = true;
+
+        const controller = new AbortController();
+        let aborted = false;
+        const loadingEl = showLoading(() => {
+            aborted = true;
+            controller.abort();
+        });
+
+        const binaryDocuments = pendingAttachments.filter(
+            (attachment) => attachment.type === "document" && !attachment.documentPayload
+        );
+        if (binaryDocuments.length > 0) {
+            if (loadingEl && loadingEl.loadingText) {
+                loadingEl.loadingText.textContent = "Document processing…";
+            }
+            for (const attachment of binaryDocuments) {
+                try {
+                    const payload = await api.json("/chat/process_document", {
+                        method: "POST",
+                        body: {
+                            filename: attachment.name,
+                            mime_type: attachment.mime,
+                            data: attachment.data,
+                        },
+                    });
+                    const ext = String(attachment.name || "").split(".").pop().toLowerCase();
+                    attachment.documentPayload = {
+                        filename: attachment.name,
+                        mime_type: attachment.mime,
+                        extension: ext,
+                        size: attachment.size || 0,
+                        content: payload.content,
+                    };
+                    // Update the already-rendered document icon? Not needed.
+                } catch (error) {
+                    if (loadingEl && loadingEl.element) loadingEl.element.remove();
+                    window.alert(`Document processing failed: ${error}`);
+                    if (sendBtn) sendBtn.disabled = false;
+                    return;
+                }
+            }
+        }
+        if (loadingEl && loadingEl.loadingText) {
+            loadingEl.loadingText.textContent = "thinking…";
+        }
 
         const requestBody = { message, ...settings };
 
@@ -605,13 +652,6 @@
         if (Object.keys(modelParams).length > 0) {
             requestBody.model_params = modelParams;
         }
-
-        const controller = new AbortController();
-        let aborted = false;
-        const loadingEl = showLoading(() => {
-            aborted = true;
-            controller.abort();
-        });
 
         try {
             const response = await fetch("/chat/send?stream=1", {
@@ -1352,6 +1392,30 @@
             const isText = textExtensions.has(ext)
                 || String(file.type || "").startsWith("text/")
                 || file.type === "application/json";
+
+            let mineruAvailable = false;
+            try {
+                const payload = await api.request("/chat/mineru_available");
+                mineruAvailable = Boolean(payload && payload.available);
+            } catch (error) {
+                mineruAvailable = false;
+            }
+
+            if (!isText && !mineruAvailable) {
+                window.alert("MinerU is offline. Only text documents can be uploaded.");
+                return null;
+            }
+
+            const compatibleExtensions = new Set([
+                "pdf", "jpg", "jpeg", "png", "doc", "docx", "ppt", "pptx",
+                "xls", "xlsx", "rtf", "odt", "ods", "odp", "epub", "html",
+                "htm", "mhtml", "ofd", "csv", "tsv",
+            ]);
+            if (!isText && mineruAvailable && !compatibleExtensions.has(ext)) {
+                window.alert("This file type is not supported by MinerU.");
+                return null;
+            }
+
             if (isText) {
                 const content = await readFileAsText(file);
                 const mime = file.type || mimeForName(file.name, "text/plain");
@@ -1431,6 +1495,7 @@
             name: file.name,
             mime,
             data: parts[1] || "",
+            size: file.size,
             previewUrl: null,
             audioUrl: null,
             videoUrl: null,

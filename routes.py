@@ -81,6 +81,12 @@ APPLICATION_ROUTES = (
         ("GET",),
     ),
     (
+        "/chat/process_document",
+        "chat_process_document",
+        chat_controller.process_document,
+        ("POST",),
+    ),
+    (
         "/chat/mineru_settings",
         "chat_mineru_settings",
         chat_controller.mineru_settings_get,
