@@ -219,11 +219,11 @@
                 min="0"
                 max="7"
                 step="1"
-                value="4"
+                value="{{ chat_video_fps_index }}"
                 title="Set FPS"
                 aria-label="Set FPS"
               >
-              <span class="chat-fps-value" data-chat-video-fps-value>2</span>
+              <span class="chat-fps-value" data-chat-video-fps-value>{{ '%g'|format(chat_attachment_settings.video_fps) }}</span>
             </div>
           </div>
         </div>
@@ -521,6 +521,7 @@
     window.CairnmarkChatAttachmentSettings = {
       save_original_media: {{ chat_attachment_settings.save_original_media|tojson }},
       attach_audio: {{ chat_attachment_settings.attach_audio|tojson }},
+      video_fps: {{ chat_attachment_settings.video_fps|tojson }},
       randomize_seed: {{ chat_seed_settings.randomize_seed|tojson }}
     };
     window.CairnmarkSeedSettings = {

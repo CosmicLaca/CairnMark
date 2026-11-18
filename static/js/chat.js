@@ -63,6 +63,10 @@
     const modelNctxEl = document.querySelector("[data-chat-model-nctx]");
     const attachmentSettings = window.CairnmarkChatAttachmentSettings || {};
     const videoFpsValues = [0.1, 0.25, 0.5, 1, 2, 4, 8, 16];
+    const savedVideoFpsIndex = videoFpsValues.indexOf(Number(attachmentSettings.video_fps));
+    if (fpsSlider && savedVideoFpsIndex >= 0) {
+        fpsSlider.value = String(savedVideoFpsIndex);
+    }
     const attachmentPreferences = new window.CairnmarkChatAttachmentPreferences({
         api,
         initial: attachmentSettings,
@@ -528,6 +532,11 @@
         saved_system_prompt_name: savedSpSelect?.value || "",
     });
 
+    const selectedVideoFps = () => {
+        const index = Number(fpsSlider?.value);
+        return videoFpsValues[index] != null ? videoFpsValues[index] : 2;
+    };
+
     const handleSend = async () => {
         const message = inputEl?.value?.trim() || "";
         if (!message) return;
@@ -622,7 +631,11 @@
             loadingEl.loadingText.textContent = "thinking…";
         }
 
-        const requestBody = { message, ...settings };
+        const requestBody = {
+            message,
+            ...settings,
+            video_fps: selectedVideoFps(),
+        };
 
         const binaryAttachments = pendingAttachments.filter(
             (attachment) => attachment.type !== "document"

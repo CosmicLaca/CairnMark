@@ -22,6 +22,9 @@ CHAT_PARAMETER_CONVERTERS = {
     "history_limit": int,
 }
 
+VIDEO_FPS_VALUES = (0.1, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0)
+DEFAULT_VIDEO_FPS = 2.0
+
 CHAT_SETTINGS_COLUMNS = (
     "id",
     "model_name",
@@ -296,7 +299,12 @@ def mineru_settings(updates=None):
 
 def chat_attachment_settings(updates=None):
     """Read or partially update the last-used attachment and seed switches."""
-    defaults = {"save_original_media": False, "attach_audio": False, "randomize_seed": False}
+    defaults = {
+        "save_original_media": False,
+        "attach_audio": False,
+        "video_fps": DEFAULT_VIDEO_FPS,
+        "randomize_seed": False,
+    }
     seed_state = chat_seed_settings()
     defaults["randomize_seed"] = seed_state["randomize_seed"]
 
@@ -304,13 +312,14 @@ def chat_attachment_settings(updates=None):
         if not SETTINGS_STORE.path().exists():
             return defaults
         row = SETTINGS_STORE.fetch(
-            "SELECT save_original_media, attach_audio "
+            "SELECT save_original_media, attach_audio, video_fps "
             "FROM chat_attachment_settings WHERE id = 1",
             one=True,
         )
         result = defaults if not row else {
             "save_original_media": bool(row[0]),
             "attach_audio": bool(row[1]),
+            "video_fps": _stored_video_fps(row[2]),
             "randomize_seed": chat_seed_settings()["randomize_seed"],
         }
         return result
@@ -321,20 +330,32 @@ def chat_attachment_settings(updates=None):
     SETTINGS_STORE.execute(
         """
         INSERT INTO chat_attachment_settings
-            (id, save_original_media, attach_audio)
-        VALUES (1, ?, ?)
+            (id, save_original_media, attach_audio, video_fps)
+        VALUES (1, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             save_original_media = excluded.save_original_media,
             attach_audio = excluded.attach_audio,
+            video_fps = excluded.video_fps,
             updated_at = CURRENT_TIMESTAMP
         """,
         (
             1 if values["save_original_media"] else 0,
             1 if values["attach_audio"] else 0,
+            _stored_video_fps(values["video_fps"]),
         ),
     )
     return {
         "save_original_media": bool(values["save_original_media"]),
         "attach_audio": bool(values["attach_audio"]),
+        "video_fps": _stored_video_fps(values["video_fps"]),
         "randomize_seed": chat_seed_settings()["randomize_seed"],
     }
+
+
+def _stored_video_fps(value):
+    """Return a supported FPS value, falling back for corrupt saved data."""
+    try:
+        fps = float(value)
+    except (TypeError, ValueError):
+        return DEFAULT_VIDEO_FPS
+    return fps if fps in VIDEO_FPS_VALUES else DEFAULT_VIDEO_FPS

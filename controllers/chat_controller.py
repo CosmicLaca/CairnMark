@@ -22,6 +22,7 @@ from flask import (
 )
 
 from models.chat_settings import (
+    VIDEO_FPS_VALUES,
     chat_attachment_settings,
     chat_seed_settings,
     get_chat_settings,
@@ -108,6 +109,7 @@ class ChatRequestData:
     saved_prompt_name: str
     parameters: dict
     extra_parameters: dict
+    video_fps: float
     attachments: list
     documents: list
 
@@ -138,6 +140,18 @@ def _model_parameter_values(value):
             raise ValueError("Model parameter names must be simple identifiers.")
         cleaned[key] = _model_parameter_value(item)
     return cleaned
+
+
+def _video_fps_value(value):
+    """Validate one of the FPS values offered by the video slider."""
+    try:
+        fps = float(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError("Video FPS must be a valid number.") from error
+    if fps not in VIDEO_FPS_VALUES:
+        supported = ", ".join(str(value) for value in VIDEO_FPS_VALUES)
+        raise ValueError(f"Video FPS must be one of: {supported}.")
+    return fps
 
 
 def _model_parameter_value(item):
@@ -518,9 +532,13 @@ class ChatController:
     def context(self):
         settings = get_chat_settings()
         messages = list_chat_messages()
+        attachment_settings = chat_attachment_settings()
         return {
             "chat_settings": settings,
-            "chat_attachment_settings": chat_attachment_settings(),
+            "chat_attachment_settings": attachment_settings,
+            "chat_video_fps_index": VIDEO_FPS_VALUES.index(
+                attachment_settings["video_fps"]
+            ),
             "chat_seed_settings": chat_seed_settings(),
             "mineru_settings": mineru_settings(),
             "chat_messages": messages,
@@ -531,6 +549,7 @@ class ChatController:
 
     def _parse_request(self):
         data = request.get_json(silent=True) or {}
+        attachment_settings = chat_attachment_settings()
         model_spec = (data.get("model") or "").strip()
         user_message = (data.get("message") or "").strip()
         system_prompt = data.get("system_prompt") or ""
@@ -551,6 +570,9 @@ class ChatController:
             saved_prompt_name=saved_name,
             parameters=_parameter_values(data),
             extra_parameters=_model_parameter_values(data.get("model_params")),
+            video_fps=_video_fps_value(
+                data.get("video_fps", attachment_settings["video_fps"])
+            ),
             attachments=_attachment_values(data.get("attachments")),
             documents=_document_values(data.get("documents")),
         )
@@ -563,6 +585,9 @@ class ChatController:
 
         if not chat_request.user_message:
             return jsonify({"error": "Message is required."}), 400
+        attachment_settings = chat_attachment_settings()
+        attachment_settings["video_fps"] = chat_request.video_fps
+        chat_attachment_settings(attachment_settings)
         try:
             provider, model = self.service.resolve_online_model(chat_request.model_spec)
         except ProviderValidationError as error:
@@ -575,6 +600,7 @@ class ChatController:
             preview_data = self.previews.save_attachments(
                 chat_request.attachments,
                 save_original_media=save_original_media,
+                video_fps=chat_request.video_fps,
             )
         except AttachmentProcessingError as error:
             return jsonify({"error": str(error)}), 422
@@ -630,7 +656,11 @@ class ChatController:
         if not stream_requested:
             started = time.monotonic()
             try:
-                plan = _prepare_attachment_plan(chat_request.attachments, messages)
+                plan = _prepare_attachment_plan(
+                    chat_request.attachments,
+                    messages,
+                    fps=chat_request.video_fps,
+                )
                 request_body = _build_plan_request_body(
                     self.service,
                     provider,
@@ -694,7 +724,11 @@ class ChatController:
                         "text": "Converting attachment…",
                     }
                     yield f"data: {json.dumps(status)}\n\n"
-                plan = _prepare_attachment_plan(chat_request.attachments, messages)
+                plan = _prepare_attachment_plan(
+                    chat_request.attachments,
+                    messages,
+                    fps=chat_request.video_fps,
+                )
                 if needs_conversion:
                     status = {"type": "status", "text": "thinking…"}
                     yield f"data: {json.dumps(status)}\n\n"
@@ -809,6 +843,11 @@ class ChatController:
                 if not isinstance(data[key], bool):
                     return jsonify({"error": f"{key} must be a boolean."}), 400
                 settings[key] = data[key]
+        if "video_fps" in data:
+            try:
+                settings["video_fps"] = _video_fps_value(data["video_fps"])
+            except ValueError as error:
+                return jsonify({"error": str(error)}), 400
         seed_value = self._seed_switch_value(data)
         if seed_value is not None:
             settings["randomize_seed"] = seed_value

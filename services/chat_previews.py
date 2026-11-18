@@ -58,7 +58,13 @@ class ChatPreviewStore:
             current_app.logger.exception("Chat preview could not be saved")
             return None
 
-    def save_attachments(self, attachments, *, save_original_media=False):
+    def save_attachments(
+        self,
+        attachments,
+        *,
+        save_original_media=False,
+        video_fps=2,
+    ):
         """Persist requested previews and return message metadata for them."""
         preview_images = []
         preview_media = []
@@ -82,7 +88,7 @@ class ChatPreviewStore:
                             self._media_record("audio", filename, attachment)
                         )
             elif attachment_type == "video" and save_original_media:
-                converted = convert_video_attachment(attachment)
+                converted = convert_video_attachment(attachment, fps=video_fps)
                 data = converted["data"]
                 if attachment.get("attach_audio") and video_has_audio(
                     attachment.get("data", "")
