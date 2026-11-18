@@ -1,10 +1,11 @@
 # CairnMark
 
-**A private, local workspace for chatting with AI models and creating, organizing, and running benchmark prompt sets.**
+> A private, local workspace for chatting with AI models 
+> and creating, organizing, and running benchmark prompt sets. 
 
-**Preview release · single user · localhost only**
-
-Created by Primere Development · [GitHub repository](https://github.com/CosmicLaca/Cairnmark)
+**Preview release · single user · localhost only** 
+ 
+> Created by Primere Development [GitHub repository](https://github.com/CosmicLaca/Cairnmark)
 
 ---
 
