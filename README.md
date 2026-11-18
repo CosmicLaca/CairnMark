@@ -237,7 +237,10 @@ their randomized filenames.
 ### Save chat content
 
 - **Save chat** creates or replaces a named conversation.
-- **Saved chats** loads or deletes a stored conversation.
+- **Saved chats** loads or deletes a stored conversation. Select a saved chat,
+  continue the conversation, then choose **Replace chat** to overwrite that
+  saved chat with the current conversation. A saved chat must be selected
+  before it can be replaced.
 - **Clear chat** clears the current conversation.
 - Saved system prompts can be created, loaded, and deleted separately.
 

@@ -1081,7 +1081,7 @@ class ChatController:
         return jsonify({"message": "Request aborted.", "deleted": deleted})
 
     def saved_chat(self, action):
-        """List, save, load, or delete a named chat."""
+        """List, save, load, replace, or delete a named chat."""
         if action == "list":
             return jsonify({"names": list_saved("chat")})
         data = request.get_json(silent=True) or {}
@@ -1101,6 +1101,20 @@ class ChatController:
                     "messages": list_chat_messages(),
                 }
             )
+        if action == "replace":
+            saved = get_saved("chat", name)
+            if saved is None:
+                return jsonify({"error": "Saved chat not found."}), 404
+            current_messages = list_chat_messages()
+            replaced_filenames = self.previews.filenames(saved)
+            save_saved("chat", name, current_messages)
+            referenced = [current_messages] + [
+                get_saved("chat", other) or []
+                for other in list_saved("chat")
+                if other != name
+            ]
+            self.previews.delete_unreferenced(replaced_filenames, *referenced)
+            return jsonify({"message": "Chat replaced.", "name": name})
 
         saved = get_saved("chat", name)
         if saved is None:

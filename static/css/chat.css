@@ -458,10 +458,15 @@
 
 .chat-content.markdown-content table,
 .prompt-modal-text.markdown-content table {
-    display: block;
+    width: max-content;
+    min-width: 100%;
+    border-collapse: collapse;
+}
+
+.chat-content.markdown-content .markdown-table-wrap,
+.prompt-modal-text.markdown-content .markdown-table-wrap {
     max-width: 100%;
     overflow-x: auto;
-    border-collapse: collapse;
 }
 
 .chat-content.markdown-content th,
@@ -476,6 +481,16 @@
 .chat-content.markdown-content th,
 .prompt-modal-text.markdown-content th {
     background: #e4e1d7;
+}
+
+.chat-content.markdown-content .markdown-table-align-center,
+.prompt-modal-text.markdown-content .markdown-table-align-center {
+    text-align: center;
+}
+
+.chat-content.markdown-content .markdown-table-align-right,
+.prompt-modal-text.markdown-content .markdown-table-align-right {
+    text-align: right;
 }
 
 .chat-content p,
@@ -1549,6 +1564,36 @@
     color: #b04a39;
     border-color: rgba(176, 74, 57, 0.38);
     background: rgba(176, 74, 57, 0.07);
+}
+
+.chat-replace-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 36px;
+    padding: 6px 10px;
+    color: var(--sidebar);
+    border: 1px solid rgba(37, 107, 96, 0.3);
+    border-radius: 2px 9px 2px 2px;
+    background: rgba(111, 214, 195, 0.1);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.68rem;
+    font-weight: 800;
+    white-space: nowrap;
+    transition: color var(--motion), border-color var(--motion), background var(--motion);
+}
+
+.chat-replace-button:hover,
+.chat-replace-button:focus-visible {
+    color: #f3f8ec;
+    border-color: var(--sidebar);
+    background: var(--sidebar);
+}
+
+.chat-replace-button:disabled {
+    cursor: wait;
+    opacity: 0.65;
 }
 
 .prompt-modal-content {

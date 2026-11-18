@@ -17,6 +17,7 @@
     const saveBtn = document.querySelector("[data-chat-save-settings]");
     const clearBtn = document.querySelector("[data-chat-clear]");
     const savedSelect = document.querySelector("[data-chat-saved]");
+    const replaceBtn = document.querySelector("[data-chat-replace]");
     const deleteBtn = document.querySelector("[data-chat-delete]");
     const saveOpenBtn = document.querySelector("[data-chat-save-open]");
     const saveModal = document.querySelector("[data-save-chat-modal]");
@@ -911,6 +912,26 @@
             }
         } catch (error) {
             window.alert(`Delete chat failed: ${error}`);
+        }
+    };
+
+    const handleReplaceChat = async () => {
+        const name = savedSelect?.value || "";
+        if (!name) {
+            window.alert("Select a saved chat to replace.");
+            return;
+        }
+        if (replaceBtn) replaceBtn.disabled = true;
+        try {
+            await api.json("/chat/replace_chat", {
+                method: "POST",
+                body: { name },
+            });
+            await refreshSavedChats(name);
+        } catch (error) {
+            window.alert(`Replace chat failed: ${error}`);
+        } finally {
+            if (replaceBtn) replaceBtn.disabled = false;
         }
     };
 
@@ -1929,6 +1950,7 @@
     saveConfirmBtn?.addEventListener("click", handleSaveChat);
     saveCloseBtns.forEach((b) => b.addEventListener("click", closeSaveModal));
     savedSelect?.addEventListener("change", handleLoadChat);
+    replaceBtn?.addEventListener("click", handleReplaceChat);
     deleteBtn?.addEventListener("click", handleDeleteChat);
     savedSpSelect?.addEventListener("change", handleLoadSystemPrompt);
     deleteSpBtn?.addEventListener("click", handleDeleteSystemPrompt);

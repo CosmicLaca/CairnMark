@@ -123,6 +123,12 @@ APPLICATION_ROUTES = (
         ("POST",),
     ),
     (
+        "/chat/replace_chat",
+        "chat_replace_chat",
+        partial(chat_controller.saved_chat, "replace"),
+        ("POST",),
+    ),
+    (
         "/chat/delete_chat",
         "chat_delete_chat",
         partial(chat_controller.saved_chat, "delete"),
