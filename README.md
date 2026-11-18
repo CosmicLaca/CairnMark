@@ -184,7 +184,7 @@ when the selected local model reports those capabilities.
 | Attachment | Processing |
 | --- | --- |
 | Image | Images above 1.2 megapixels are resized before sending |
-| Video | Re-encoded as MP4, scaled to a 480 px maximum side, reduced to 2 fps, and sent without audio by default |
+| Video | Re-encoded as MP4, scaled to a 480 px maximum side, converted at the selected FPS, and sent without audio by default |
 | Audio | Converted to a 64 kbit/s MP3 when conversion is available |
 | Document | Plain-text files are sent directly; supported binary formats are converted to Markdown through a configured MinerU service |
 
@@ -195,10 +195,19 @@ per request.
   request when necessary.
 - **Save the original attachment** saves the processed video/audio under
   `instance/preview/` so a player remains available in chat history.
+- **FPS** appears after attaching a video. Use its slider to choose `0.1`,
+  `0.25`, `0.5`, `1`, `2`, `4`, `8`, or `16` frames per second for both the
+  video sent to the model and the processed video saved for preview. For
+  example, `0.1` keeps one frame every 10 seconds, `0.25` keeps one every four
+  seconds, and `2` keeps two frames per second. Lower values reduce the amount
+  of video data sent but provide less temporal detail.
 
 Both switches remember their last-used values in `instance/cairnmark.db`. Their
 values remain selected after removing or sending an attachment and after
-restarting Cairnmark.
+restarting Cairnmark. The FPS selection is saved to the same database only when
+you click **Send**; moving the slider without sending does not overwrite the
+saved value. The saved FPS is restored when the Home page is loaded and remains
+the default for the next attached video.
 
 ### Documents and MinerU
 
