@@ -347,7 +347,8 @@
                 div.appendChild(player);
             });
             const videoMedia = previewMedia.filter((m) => m && m.type === "video");
-            const hasPreviews = previewImages.length > 0 || videoMedia.length > 0;
+            const documentMedia = previewMedia.filter((m) => m && m.type === "document");
+            const hasPreviews = previewImages.length > 0 || videoMedia.length > 0 || documentMedia.length > 0;
             if (hasPreviews) {
                 const body = document.createElement("div");
                 body.className = "chat-user-body";
@@ -398,6 +399,14 @@
                     wrap.appendChild(controls);
                     chatMedia.wire(wrap, "video");
                     previews.appendChild(wrap);
+                });
+                documentMedia.forEach((item) => {
+                    const name = item.original_name || item.filename || "Document";
+                    const icon = document.createElement("span");
+                    icon.className = "chat-document-icon";
+                    icon.textContent = documentIconFor(name);
+                    icon.title = name;
+                    previews.appendChild(icon);
                 });
                 body.appendChild(previews);
                 contentDiv.textContent = content;
@@ -536,11 +545,18 @@
                     original_name: attachment.name,
                 }))
             : [];
+        const documentPreviewMedia = pendingAttachments
+            .filter((attachment) => attachment.type === "document" && attachment.documentPayload)
+            .map((attachment) => ({
+                type: "document",
+                original_name: attachment.documentPayload.filename,
+                filename: "",
+            }));
         const userMessageEl = appendMessage("user", message, {
             preview_images: userPreviewImages,
             has_audio: hasAudioAttachment && !saveOriginalMedia,
             save_original_media: saveOriginalMedia,
-            preview_media: immediateMedia,
+            preview_media: immediateMedia.concat(documentPreviewMedia),
         });
         if (inputEl) inputEl.value = "";
         if (sendBtn) sendBtn.disabled = true;
@@ -1178,6 +1194,20 @@
                 modelNctxEl.textContent = "";
             }
         }
+    };
+
+    const documentIconFor = (name) => {
+        const lower = String(name || "").toLowerCase();
+        if (lower.endsWith(".pdf")) return "📕";
+        if (lower.endsWith(".doc") || lower.endsWith(".docx")) return "📘";
+        if (lower.endsWith(".ppt") || lower.endsWith(".pptx")) return "📙";
+        if (lower.endsWith(".xls") || lower.endsWith(".xlsx")) return "📗";
+        if (lower.endsWith(".json")) return "📋";
+        if (lower.endsWith(".csv") || lower.endsWith(".tsv")) return "📊";
+        if (lower.endsWith(".html") || lower.endsWith(".mhtml") || lower.endsWith(".htm")) return "🌐";
+        if (lower.endsWith(".md")) return "📝";
+        if (lower.endsWith(".txt")) return "📄";
+        return "📄";
     };
 
     const mimeForName = (name, fallback) => {

@@ -572,6 +572,18 @@ class ChatController:
             )
         except AttachmentProcessingError as error:
             return jsonify({"error": str(error)}), 422
+        document_preview_media = [
+            {
+                "type": "document",
+                "filename": "",
+                "original_name": str(document.get("filename") or "Document"),
+            }
+            for document in (chat_request.documents or [])
+        ]
+        if document_preview_media:
+            preview_data.setdefault("preview_media", []).extend(
+                document_preview_media
+            )
         add_chat_message(
             "user",
             chat_request.user_message,

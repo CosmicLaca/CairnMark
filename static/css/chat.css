@@ -1753,3 +1753,13 @@
         flex: 1;
     }
 }
+
+.chat-document-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin: 4px 6px 0 0;
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: default;
+}

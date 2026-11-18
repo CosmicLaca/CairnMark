@@ -99,6 +99,14 @@ class ChatPreviewStore:
                 filename = self.save(attachment["preview_data"], "jpg")
                 if filename:
                     preview_images.append(filename)
+            elif attachment_type == "document":
+                preview_media.append(
+                    {
+                        "type": "document",
+                        "filename": "",
+                        "original_name": attachment.get("original_name", ""),
+                    }
+                )
         return {
             "preview_images": preview_images,
             "preview_media": preview_media,
