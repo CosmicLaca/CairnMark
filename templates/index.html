@@ -130,7 +130,8 @@
                 {% set doc_name = media.original_name or media.filename or 'Document' %}
                 {% set doc_lower = doc_name|lower %}
                 <span class="chat-document-icon" title="{{ doc_name }}">
-                  {% if doc_lower.endswith('.pdf') %}📕
+                  {% if doc_lower.endswith('.jpg') or doc_lower.endswith('.jpeg') or doc_lower.endswith('.png') %}📷
+                  {% elif doc_lower.endswith('.pdf') %}📕
                   {% elif doc_lower.endswith('.doc') or doc_lower.endswith('.docx') %}📘
                   {% elif doc_lower.endswith('.ppt') or doc_lower.endswith('.pptx') %}📙
                   {% elif doc_lower.endswith('.xls') or doc_lower.endswith('.xlsx') %}📗

@@ -1260,6 +1260,7 @@
 
     const documentIconFor = (name) => {
         const lower = String(name || "").toLowerCase();
+        if (lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png")) return "📷";
         if (lower.endsWith(".pdf")) return "📕";
         if (lower.endsWith(".doc") || lower.endsWith(".docx")) return "📘";
         if (lower.endsWith(".ppt") || lower.endsWith(".pptx")) return "📙";
@@ -1424,10 +1425,12 @@
                     name: file.name,
                     mime,
                     data: null,
+                    size: file.size,
                     previewUrl: null,
                     audioUrl: null,
                     videoUrl: null,
                     previewData: null,
+                    needsMineru: false,
                     documentPayload: {
                         filename: file.name,
                         mime_type: mime,
@@ -1437,6 +1440,24 @@
                     },
                 };
             }
+
+            // Binary document compatible with MinerU.
+            const dataUrl = await readFileAsDataURL(file);
+            const parts = dataUrl.split(",");
+            const mime = file.type || mimeForName(file.name);
+            return {
+                type: "document",
+                name: file.name,
+                mime,
+                data: parts[1] || "",
+                size: file.size,
+                previewUrl: null,
+                audioUrl: null,
+                videoUrl: null,
+                previewData: null,
+                needsMineru: true,
+                documentPayload: null,
+            };
         }
         if (attachmentType === "image") {
             const processed = await processImageFile(file);
@@ -1536,7 +1557,39 @@
                 renderAttachments();
             };
 
-            if (attachment.type === "audio") {
+            if (attachment.type === "document") {
+                const item = document.createElement("div");
+                item.className = "chat-attachment";
+                item.setAttribute("data-chat-attachment", attachment.type);
+
+                const icon = document.createElement("span");
+                icon.className = "chat-attachment-document-icon";
+                icon.textContent = documentIconFor(attachment.name);
+                item.appendChild(icon);
+
+                const name = document.createElement("span");
+                name.className = "chat-attachment-name";
+                name.textContent = attachment.name;
+                name.title = attachment.name;
+                item.appendChild(name);
+
+                if (attachment.needsMineru) {
+                    const badge = document.createElement("span");
+                    badge.className = "chat-attachment-mineru-badge";
+                    badge.textContent = "MinerU";
+                    item.appendChild(badge);
+                }
+
+                const removeBtn = document.createElement("button");
+                removeBtn.type = "button";
+                removeBtn.className = "chat-attachment-remove";
+                removeBtn.textContent = "×";
+                removeBtn.title = "Remove attachment";
+                removeBtn.addEventListener("click", removeAttachment);
+                item.appendChild(removeBtn);
+                attachmentsEl.appendChild(item);
+                return;
+            } else if (attachment.type === "audio") {
                 if (!audioAttachmentsEl) return;
                 const item = chatMedia.createAudio(
                     attachment.audioUrl,
@@ -1625,7 +1678,16 @@
         const input = document.createElement("input");
         input.type = "file";
         let accept = icon.accept;
+        let checkingEl = null;
         if (icon.attachmentType === "document") {
+            checkingEl = document.createElement("div");
+            checkingEl.className = "chat-checking-attachment";
+            checkingEl.innerHTML = '<span class="chat-spinner" aria-hidden="true"></span><span>Checking attachment…</span>';
+            const container = attachmentsEl || document.querySelector(".chat-media-row");
+            if (container) {
+                container.appendChild(checkingEl);
+                container.hidden = false;
+            }
             try {
                 const payload = await api.request("/chat/mineru_available");
                 accept = payload && payload.available
@@ -1633,6 +1695,13 @@
                     : ".txt,.md,.json";
             } catch (error) {
                 accept = ".txt,.md,.json";
+            } finally {
+                if (checkingEl && checkingEl.parentNode) {
+                    checkingEl.parentNode.removeChild(checkingEl);
+                }
+                if (attachmentsEl && attachmentsEl.children.length === 0) {
+                    attachmentsEl.hidden = true;
+                }
             }
         }
         input.accept = accept;
