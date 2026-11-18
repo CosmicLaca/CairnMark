@@ -160,14 +160,18 @@ API keys are never returned to the browser after saving. They are encrypted in
 
 The standard fields are system prompt, temperature, top p, top k, seed, and
 recent-message limit. **Save setup** stores only the selected model and these
-standard fields as defaults for the next page load.
+standard fields as defaults for the next page load. The seed field has a
+**Randomize seed** switch; when it is on, each send generates a new seed and
+stores the switch state in `instance/cairnmark.db`.
 
 The additional-parameters dialog is session-only:
 
-- **Save** keeps its current inputs for later requests on the same page;
-- **Cancel** removes those inputs; and
+- **Set** keeps its current inputs for later requests on the same page;
+- **Unset** removes those inputs; and
 - **Delete from local DB** removes cached defaults for a local model, so the
   next open reads and caches fresh values from the provider.
+- **Save settings per model** stores the edited defaults for the selected model
+  in `instance/parameters.db`, so they are reused on later opens.
 
 Only allowlisted local sampling fields are forwarded to llama.cpp and vLLM.
 Hosted providers ignore these additional local-model values.
@@ -182,6 +186,7 @@ when the selected local model reports those capabilities.
 | Image | Images above 1.2 megapixels are resized before sending |
 | Video | Re-encoded as MP4, scaled to a 480 px maximum side, reduced to 2 fps, and sent without audio by default |
 | Audio | Converted to a 64 kbit/s MP3 when conversion is available |
+| Document | Plain-text files are sent directly; supported binary formats are converted to Markdown through a configured MinerU service |
 
 The maximum submitted attachment size is 100 MB, with up to eight attachments
 per request.
@@ -194,6 +199,28 @@ per request.
 Both switches remember their last-used values in `instance/cairnmark.db`. Their
 values remain selected after removing or sending an attachment and after
 restarting Cairnmark.
+
+### Documents and MinerU
+
+The document button is always available. Plain-text files (`.txt`, `.md`,
+`.json`, `.csv`, `.tsv`, `.html`, `.xml`, `.rtf`) are sent to the model as
+text. Binary formats (PDF, images, Office documents, EPUB, and the other
+MinerU-supported types) are converted to Markdown before sending when a MinerU
+service is configured.
+
+To use MinerU:
+
+1. Right-click the document button, or click it when no endpoint is saved.
+2. Enter the MinerU API endpoint (default `http://127.0.0.1:8100`) and an
+   optional API key.
+3. Select **Save**. Cairnmark checks the endpoint and stores it only when it
+   responds.
+4. Attach a supported binary document. Cairnmark shows "Document processing…"
+   while MinerU converts it, then "thinking…" while the model replies.
+
+The endpoint and API key are stored in `instance/cairnmark.db` and can be
+changed later by right-clicking the document button. Unsupported file types are
+rejected before upload.
 
 Small image previews are stored in `instance/preview/`; chat history stores only
 their randomized filenames.
