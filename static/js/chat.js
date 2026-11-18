@@ -546,20 +546,43 @@
         if (sendBtn) sendBtn.disabled = true;
 
         const requestBody = { message, ...settings };
+
+        const binaryAttachments = pendingAttachments.filter(
+            (attachment) => attachment.type !== "document"
+        );
+        const documentAttachments = pendingAttachments
+            .filter((attachment) => attachment.type === "document" && attachment.documentPayload)
+            .map((attachment) => ({
+                type: "document",
+                data: attachment.documentPayload.content,
+                mime_type: attachment.documentPayload.mime_type,
+                original_name: attachment.documentPayload.filename,
+            }));
+        const allAttachments = binaryAttachments.concat(documentAttachments);
+        if (allAttachments.length > 0) {
+            requestBody.attachments = allAttachments.map((attachment) => {
+                if (attachment.type === "document") {
+                    return {
+                        type: "document",
+                        data: attachment.data,
+                        mime_type: attachment.mime_type,
+                        original_name: attachment.original_name,
+                    };
+                }
+                return {
+                    type: attachment.type,
+                    data: attachment.data,
+                    mime_type: attachment.mime,
+                    preview_data: attachment.previewData || undefined,
+                    attach_audio: attachment.type === "video" ? attachmentPreferences.get("attach_audio") : undefined,
+                    original_name: attachment.name,
+                };
+            });
+            requestBody.save_original_media = saveOriginalMedia;
+        }
         const modelParams = collectMoreParams();
         if (Object.keys(modelParams).length > 0) {
             requestBody.model_params = modelParams;
-        }
-        if (pendingAttachments.length > 0) {
-            requestBody.attachments = pendingAttachments.map((attachment) => ({
-                type: attachment.type,
-                data: attachment.data,
-                mime_type: attachment.mime,
-                preview_data: attachment.previewData || undefined,
-                attach_audio: attachment.type === "video" ? attachmentPreferences.get("attach_audio") : undefined,
-                original_name: attachment.name,
-            }));
-            requestBody.save_original_media = saveOriginalMedia;
         }
 
         const controller = new AbortController();
@@ -1181,6 +1204,13 @@
         reader.readAsDataURL(file);
     });
 
+    const readFileAsText = (file) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(reader.error || new Error("File read failed"));
+        reader.readAsText(file);
+    });
+
     const processImageFile = (file) => new Promise((resolve, reject) => {
         const url = URL.createObjectURL(file);
         const img = new Image();
@@ -1266,6 +1296,36 @@
 
     const processSelectedFile = async (file, attachmentType) => {
         if (!file) return null;
+        if (attachmentType === "document") {
+            const ext = String(file.name || "").split(".").pop().toLowerCase();
+            const textExtensions = new Set([
+                "txt", "md", "json", "csv", "tsv", "html", "htm", "xml", "rtf",
+            ]);
+            const isText = textExtensions.has(ext)
+                || String(file.type || "").startsWith("text/")
+                || file.type === "application/json";
+            if (isText) {
+                const content = await readFileAsText(file);
+                const mime = file.type || mimeForName(file.name, "text/plain");
+                return {
+                    type: "document",
+                    name: file.name,
+                    mime,
+                    data: null,
+                    previewUrl: null,
+                    audioUrl: null,
+                    videoUrl: null,
+                    previewData: null,
+                    documentPayload: {
+                        filename: file.name,
+                        mime_type: mime,
+                        extension: ext,
+                        size: file.size,
+                        content,
+                    },
+                };
+            }
+        }
         if (attachmentType === "image") {
             const processed = await processImageFile(file);
             return {
@@ -1448,10 +1508,21 @@
         }
     };
 
-    const openFilePicker = (icon) => {
+    const openFilePicker = async (icon) => {
         const input = document.createElement("input");
         input.type = "file";
-        input.accept = icon.accept;
+        let accept = icon.accept;
+        if (icon.attachmentType === "document") {
+            try {
+                const payload = await api.request("/chat/mineru_available");
+                accept = payload && payload.available
+                    ? ".pdf,.jpg,.jpeg,.png,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.rtf,.odt,.ods,.odp,.epub,.html,.mhtml,.ofd,.csv,.tsv,.txt,.md,.json"
+                    : ".txt,.md,.json";
+            } catch (error) {
+                accept = ".txt,.md,.json";
+            }
+        }
+        input.accept = accept;
         input.className = "chat-file-input";
         document.body.appendChild(input);
         input.addEventListener("change", async () => {

@@ -75,6 +75,12 @@ APPLICATION_ROUTES = (
         ("POST",),
     ),
     (
+        "/chat/mineru_available",
+        "chat_mineru_available",
+        chat_controller.mineru_available,
+        ("GET",),
+    ),
+    (
         "/chat/preview/<path:filename>",
         "chat_preview",
         chat_controller.preview,

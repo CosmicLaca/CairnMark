@@ -1,6 +1,7 @@
 """Chat interface context and message handling for the home page."""
 
 import base64
+import urllib.request
 import json
 import re
 import time
@@ -103,6 +104,7 @@ class ChatRequestData:
     parameters: dict
     extra_parameters: dict
     attachments: list
+    documents: list
 
 
 @dataclass(frozen=True)
@@ -173,6 +175,42 @@ def _mime_for_name(name):
     return "application/octet-stream"
 
 
+def _document_values(value):
+    """Validate and normalize chat documents submitted by the browser."""
+    if value in (None, ""):
+        return []
+    if not isinstance(value, list):
+        raise ValueError("Documents must be a list.")
+    cleaned = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise ValueError("Documents must be objects.")
+        filename = str(item.get("filename") or item.get("name") or "").strip()
+        content = item.get("content")
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("Document content is required.")
+        mime_type = str(item.get("mime_type") or "").strip()
+        if not mime_type:
+            mime_type = _mime_for_name(filename)
+        extension = str(item.get("extension") or "").strip()
+        if not extension and "." in filename:
+            extension = filename.rsplit(".", 1)[-1].lower()
+        size = item.get("size")
+        if not isinstance(size, int) or size < 0:
+            size = len(content.encode("utf-8"))
+        cleaned.append(
+            {
+                "id": str(item.get("id") or f"doc_{len(cleaned) + 1:03d}").strip(),
+                "filename": filename,
+                "mime_type": mime_type,
+                "extension": extension,
+                "size": size,
+                "content": content,
+            }
+        )
+    return cleaned
+
+
 def _attachment_values(value):
     """Validate and normalize chat attachments submitted by the browser."""
     if value in (None, ""):
@@ -194,12 +232,17 @@ def _attachment_values(value):
         if not isinstance(data, str) or not data.strip():
             raise ValueError("Attachment data is required.")
         data = data.strip()
-        try:
-            decoded = base64.b64decode(data, validate=True)
-        except Exception as error:  # noqa: BLE001
-            raise ValueError("Attachment data must be valid base64.") from error
-        if not decoded or len(decoded) > ATTACHMENT_DATA_LIMIT:
-            raise ValueError("Attachment data is too large.")
+        attachment_type = str(item.get("type") or "").strip().lower()
+        if attachment_type == "document":
+            if len(data) > ATTACHMENT_DATA_LIMIT:
+                raise ValueError("Attachment data is too large.")
+        else:
+            try:
+                decoded = base64.b64decode(data, validate=True)
+            except Exception as error:  # noqa: BLE001
+                raise ValueError("Attachment data must be valid base64.") from error
+            if not decoded or len(decoded) > ATTACHMENT_DATA_LIMIT:
+                raise ValueError("Attachment data is too large.")
         mime_type = str(item.get("mime_type") or "").strip()
         if not mime_type:
             mime_type = _mime_for_name(item.get("name"))
@@ -308,6 +351,7 @@ def _build_chat_request_body(
     request_parameters,
     extra_parameters,
     attachments=None,
+    documents=None,
 ):
     """Return the JSON-serializable body sent for an assistant chat turn."""
     body = {"model": model, "messages": messages}
@@ -329,6 +373,8 @@ def _build_chat_request_body(
             }
             for item in attachments
         ]
+    if documents:
+        body["documents"] = documents
     return body
 
 
@@ -339,6 +385,7 @@ def _build_plan_request_body(
     plan,
     request_parameters,
     extra_parameters,
+    documents=None,
 ):
     """Build the persisted request body for an attachment plan."""
     primary_body = _build_chat_request_body(
@@ -349,6 +396,7 @@ def _build_plan_request_body(
         request_parameters,
         extra_parameters,
         attachments=plan.primary_attachments,
+        documents=documents,
     )
     if not plan.audio_attachments:
         return primary_body
@@ -360,6 +408,7 @@ def _build_plan_request_body(
         request_parameters,
         extra_parameters,
         attachments=plan.audio_attachments,
+        documents=documents,
     )
     return {"video_request": primary_body, "audio_request": audio_body}
 
@@ -371,6 +420,7 @@ def _complete_attachment_plan(
     plan,
     request_parameters,
     extra_parameters,
+    documents=None,
 ):
     """Run every request in an attachment plan and combine its result."""
     primary_text, primary_usage = service.chat_completion_with_params(
@@ -380,6 +430,7 @@ def _complete_attachment_plan(
         **request_parameters,
         extra_parameters=extra_parameters,
         attachments=plan.primary_attachments,
+        documents=documents,
     )
     audio_text = ""
     audio_usage = {}
@@ -391,6 +442,7 @@ def _complete_attachment_plan(
             **request_parameters,
             extra_parameters=extra_parameters,
             attachments=plan.audio_attachments,
+            documents=documents,
         )
     response_text = primary_text
     if audio_text:
@@ -494,6 +546,7 @@ class ChatController:
             parameters=_parameter_values(data),
             extra_parameters=_model_parameter_values(data.get("model_params")),
             attachments=_attachment_values(data.get("attachments")),
+            documents=_document_values(data.get("documents")),
         )
 
     def send(self):
@@ -567,6 +620,7 @@ class ChatController:
                     plan,
                     request_parameters,
                     chat_request.extra_parameters,
+                    documents=chat_request.documents,
                 )
                 response_text, usage = _complete_attachment_plan(
                     self.service,
@@ -575,6 +629,7 @@ class ChatController:
                     plan,
                     request_parameters,
                     chat_request.extra_parameters,
+                    documents=chat_request.documents,
                 )
             except AttachmentProcessingError as error:
                 return jsonify({"error": str(error)}), 422
@@ -632,6 +687,7 @@ class ChatController:
                     plan,
                     request_parameters,
                     chat_request.extra_parameters,
+                    documents=chat_request.documents,
                 )
                 if plan.split:
                     response_text, usage = _complete_attachment_plan(
@@ -641,6 +697,7 @@ class ChatController:
                         plan,
                         request_parameters,
                         chat_request.extra_parameters,
+                        documents=chat_request.documents,
                     )
                 else:
                     for event in self.service.chat_completion_with_params_stream(
@@ -650,6 +707,7 @@ class ChatController:
                         **request_parameters,
                         extra_parameters=chat_request.extra_parameters,
                         attachments=plan.primary_attachments,
+                        documents=chat_request.documents,
                     ):
                         if event.get("type") == "chunk":
                             response_text += event.get("text", "")
@@ -773,6 +831,17 @@ class ChatController:
         clear_chat_messages()
         self.previews.delete_unreferenced(filenames, *saved_messages)
         return jsonify({"message": "Chat cleared."})
+
+    def mineru_available(self):
+        """Report whether the local MinerU document service is reachable."""
+        url = "http://127.0.0.1:8100/v1/health"
+        available = False
+        try:
+            with urllib.request.urlopen(url, timeout=3) as response:
+                available = getattr(response, "status", None) == 200
+        except Exception:  # noqa: BLE001
+            available = False
+        return jsonify({"available": bool(available)})
 
     def abort(self):
         messages = list_chat_messages()

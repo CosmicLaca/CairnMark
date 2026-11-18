@@ -544,7 +544,11 @@ class ProviderSdkClient:
             item for item in (attachments or [])
             if item.get("type") in ("image", "audio", "video")
         ]
-        if not media:
+        documents = [
+            item for item in (attachments or [])
+            if item.get("type") == "document"
+        ]
+        if not media and not documents:
             return messages
         converted = [dict(message) if isinstance(message, dict) else message for message in (messages or [])]
         last_user = None
@@ -559,6 +563,14 @@ class ProviderSdkClient:
         if not isinstance(original, str):
             original = str(original or "")
         content = [{"type": "text", "text": original}]
+        for item in documents:
+            filename = item.get("original_name") or item.get("filename") or "document"
+            content.append(
+                {
+                    "type": "text",
+                    "text": f"Document: {filename}\n{item.get('data', '')}",
+                }
+            )
         for item in media:
             attachment_type = item.get("type")
             if attachment_type == "image":
@@ -640,7 +652,7 @@ class ProviderSdkClient:
 
     def _openai_completion(
         self, spec, api_key, model, messages, parameters, timeout, base_url,
-        extra_body=None, attachments=None,
+        extra_body=None, attachments=None, documents=None,
     ):
         kwargs = self._provided_parameters(
             parameters,
@@ -654,6 +666,11 @@ class ProviderSdkClient:
             **self._extra_body(spec, parameters),
             **(extra_body or {}),
         }
+        document_attachments = [
+            item for item in (attachments or []) if item.get("type") == "document"
+        ]
+        if document_attachments:
+            body_parameters = {**body_parameters, "attachments": document_attachments}
         if body_parameters:
             kwargs["extra_body"] = body_parameters
         if attachments:
@@ -901,6 +918,7 @@ class ProviderSdkClient:
         timeout=300,
         extra_body=None,
         attachments=None,
+        documents=None,
     ):
         """Send messages through the provider SDK and normalize the result."""
         try:
@@ -915,6 +933,7 @@ class ProviderSdkClient:
                     base_url,
                     extra_body=extra_body,
                     attachments=attachments,
+                    documents=documents,
                 )
             if spec.sdk_client == "anthropic":
                 return self._anthropic_completion(
@@ -1717,6 +1736,7 @@ class ModelProviderService:
         min_p=None, repeat_penalty=None, repeat_last_n=None,
         dry_multiplier=None, seed=None, timeout=300, extra_parameters=None,
         attachments=None,
+        documents=None,
     ):
         """Send a chat history with provider-specific parameter handling."""
         spec, configuration, base_url = self._completion_context(provider)
@@ -1741,6 +1761,7 @@ class ModelProviderService:
             timeout=timeout,
             extra_body=self.local_extra_parameters(provider, extra_parameters),
             attachments=attachments,
+            documents=documents,
         )
 
     def chat_completion_with_params_stream(
@@ -1748,6 +1769,7 @@ class ModelProviderService:
         min_p=None, repeat_penalty=None, repeat_last_n=None,
         dry_multiplier=None, seed=None, timeout=300, extra_parameters=None,
         attachments=None,
+        documents=None,
     ):
         """Yield chat response chunks as they are produced by the provider."""
         spec, configuration, base_url = self._completion_context(provider)
@@ -1797,6 +1819,11 @@ class ModelProviderService:
                 **self.catalog_client.sdk_client._extra_body(spec, parameters),
                 **extra_body,
             }
+            document_attachments = [
+                item for item in (attachments or []) if item.get("type") == "document"
+            ]
+            if document_attachments:
+                body_parameters = {**body_parameters, "attachments": document_attachments}
             if body_parameters:
                 kwargs["extra_body"] = body_parameters
             factory = self.catalog_client.sdk_client.openai_factory
