@@ -666,15 +666,22 @@ class ProviderSdkClient:
             **self._extra_body(spec, parameters),
             **(extra_body or {}),
         }
-        document_attachments = [
-            item for item in (attachments or []) if item.get("type") == "document"
-        ]
-        if document_attachments:
-            body_parameters = {**body_parameters, "attachments": document_attachments}
+        combined_attachments = list(attachments or [])
+        for document in (documents or []):
+            combined_attachments.append(
+                {
+                    "type": "document",
+                    "data": document.get("content", ""),
+                    "mime_type": document.get("mime_type", "text/plain"),
+                    "original_name": document.get("filename", "document"),
+                }
+            )
+        if combined_attachments:
+            messages = self._openai_messages_with_attachments(
+                messages, combined_attachments
+            )
         if body_parameters:
             kwargs["extra_body"] = body_parameters
-        if attachments:
-            messages = self._openai_messages_with_attachments(messages, attachments)
         with self.openai_factory(
             api_key=api_key or "not-needed",
             base_url=base_url,
@@ -1803,10 +1810,6 @@ class ModelProviderService:
 
         # OpenAI-compatible providers.
         if spec.sdk_client == "openai":
-            if attachments:
-                messages = self.catalog_client.sdk_client._openai_messages_with_attachments(
-                    messages, attachments
-                )
             kwargs = self.catalog_client.sdk_client._provided_parameters(
                 parameters,
                 {
@@ -1819,11 +1822,20 @@ class ModelProviderService:
                 **self.catalog_client.sdk_client._extra_body(spec, parameters),
                 **extra_body,
             }
-            document_attachments = [
-                item for item in (attachments or []) if item.get("type") == "document"
-            ]
-            if document_attachments:
-                body_parameters = {**body_parameters, "attachments": document_attachments}
+            combined_attachments = list(attachments or [])
+            for document in (documents or []):
+                combined_attachments.append(
+                    {
+                        "type": "document",
+                        "data": document.get("content", ""),
+                        "mime_type": document.get("mime_type", "text/plain"),
+                        "original_name": document.get("filename", "document"),
+                    }
+                )
+            if combined_attachments:
+                messages = self.catalog_client.sdk_client._openai_messages_with_attachments(
+                    messages, combined_attachments
+                )
             if body_parameters:
                 kwargs["extra_body"] = body_parameters
             factory = self.catalog_client.sdk_client.openai_factory

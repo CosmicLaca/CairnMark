@@ -550,36 +550,32 @@
         const binaryAttachments = pendingAttachments.filter(
             (attachment) => attachment.type !== "document"
         );
-        const documentAttachments = pendingAttachments
-            .filter((attachment) => attachment.type === "document" && attachment.documentPayload)
-            .map((attachment) => ({
-                type: "document",
-                data: attachment.documentPayload.content,
-                mime_type: attachment.documentPayload.mime_type,
-                original_name: attachment.documentPayload.filename,
+        if (binaryAttachments.length > 0) {
+            requestBody.attachments = binaryAttachments.map((attachment) => ({
+                type: attachment.type,
+                data: attachment.data,
+                mime_type: attachment.mime,
+                preview_data: attachment.previewData || undefined,
+                attach_audio: attachment.type === "video" ? attachmentPreferences.get("attach_audio") : undefined,
+                original_name: attachment.name,
             }));
-        const allAttachments = binaryAttachments.concat(documentAttachments);
-        if (allAttachments.length > 0) {
-            requestBody.attachments = allAttachments.map((attachment) => {
-                if (attachment.type === "document") {
-                    return {
-                        type: "document",
-                        data: attachment.data,
-                        mime_type: attachment.mime_type,
-                        original_name: attachment.original_name,
-                    };
-                }
-                return {
-                    type: attachment.type,
-                    data: attachment.data,
-                    mime_type: attachment.mime,
-                    preview_data: attachment.previewData || undefined,
-                    attach_audio: attachment.type === "video" ? attachmentPreferences.get("attach_audio") : undefined,
-                    original_name: attachment.name,
-                };
-            });
             requestBody.save_original_media = saveOriginalMedia;
         }
+
+        const documents = pendingAttachments
+            .filter((attachment) => attachment.type === "document" && attachment.documentPayload)
+            .map((attachment, index) => ({
+                id: `doc_${String(index + 1).padStart(3, "0")}`,
+                filename: attachment.documentPayload.filename,
+                mime_type: attachment.documentPayload.mime_type,
+                extension: attachment.documentPayload.extension,
+                size: attachment.documentPayload.size,
+                content: attachment.documentPayload.content,
+            }));
+        if (documents.length > 0) {
+            requestBody.documents = documents;
+        }
+
         const modelParams = collectMoreParams();
         if (Object.keys(modelParams).length > 0) {
             requestBody.model_params = modelParams;
