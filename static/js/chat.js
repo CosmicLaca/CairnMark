@@ -463,6 +463,7 @@
                 preview_images: m.preview_images || [],
                 has_audio: Boolean(m.has_audio),
                 preview_media: m.preview_media || [],
+                request_body: m.request_body,
             });
         });
         syncEmptyState();
