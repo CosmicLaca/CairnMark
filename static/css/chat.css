@@ -1045,6 +1045,17 @@
     margin-left: auto;
 }
 
+.more-params-footer-left {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.more-params-save-model-button[hidden] {
+    display: none;
+}
+
 .more-params-delete-button[hidden] {
     display: none;
 }

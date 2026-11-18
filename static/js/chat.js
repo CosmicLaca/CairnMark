@@ -46,6 +46,7 @@
     const moreParamsDisabledSign = document.querySelector("[data-more-params-disabled]");
     const moreParamsStateSign = document.querySelector("[data-more-params-state]");
     const moreParamsDeleteBtn = document.querySelector("[data-more-params-delete]");
+    const moreParamsSaveModelBtn = document.querySelector("[data-more-params-save-model]");
     const mediaUploadsEl = document.querySelector("[data-chat-media-uploads]");
     const attachmentsEl = document.querySelector("[data-chat-attachments]");
     const audioAttachmentsEl = document.querySelector("[data-chat-audio-attachments]");
@@ -983,6 +984,7 @@
 
     const setMoreParamsDeleteVisible = (visible) => {
         if (moreParamsDeleteBtn) moreParamsDeleteBtn.hidden = !visible;
+        if (moreParamsSaveModelBtn) moreParamsSaveModelBtn.hidden = !visible;
     };
 
     const showMoreParamsNote = (message) => {
@@ -1545,6 +1547,28 @@
         if (moreParamsDeleteBtn) moreParamsDeleteBtn.disabled = false;
     };
 
+    const handleSaveMoreParamsModel = async () => {
+        const modelValue = modelSelect?.value || "";
+        const parts = modelValue.split("::");
+        const provider = (parts[0] || "").trim();
+        const model = parts.slice(1).join("::").trim();
+        if (!provider || !model) return;
+
+        const params = collectMoreParams();
+        if (moreParamsSaveModelBtn) moreParamsSaveModelBtn.disabled = true;
+        try {
+            await api.json("/setup_models/model_params/save", {
+                method: "POST",
+                body: { provider, model, params },
+            });
+            window.alert("Model parameters saved.");
+        } catch (error) {
+            window.alert(`Save failed: ${error}`);
+        } finally {
+            if (moreParamsSaveModelBtn) moreParamsSaveModelBtn.disabled = false;
+        }
+    };
+
     const handleSaveSystemPrompt = async () => {
         const name = saveSpNameInput?.value?.trim() || "";
         if (!name) {
@@ -1635,6 +1659,7 @@
 
     moreParamsBtn?.addEventListener("click", openMoreParamsModal);
     moreParamsDeleteBtn?.addEventListener("click", handleDeleteMoreParams);
+    moreParamsSaveModelBtn?.addEventListener("click", handleSaveMoreParamsModel);
     moreParamsCloseBtns.forEach((b) => b.addEventListener("click", () => {
         resetMoreParamsModal();
         closeMoreParamsModal();

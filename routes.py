@@ -201,6 +201,12 @@ APPLICATION_ROUTES = (
         ("POST",),
     ),
     (
+        "/setup_models/model_params/save",
+        "save_model_params",
+        provider_controller.save_model_params,
+        ("POST",),
+    ),
+    (
         "/setup_models/props_available",
         "get_props_available",
         provider_controller.props_available,

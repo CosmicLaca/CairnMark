@@ -1473,10 +1473,7 @@ class ModelProviderService:
         if isinstance(saved_params, dict):
             params = saved_params.get("params")
             if isinstance(params, dict):
-                return {
-                    key: ModelProviderService._round_model_param_value(value)
-                    for key, value in params.items()
-                }
+                return params
         return saved_params if isinstance(saved_params, dict) else {}
 
     @staticmethod
@@ -1532,6 +1529,22 @@ class ModelProviderService:
                 "Additional parameters are only available for local providers"
             )
         return delete_model_parameters(f"{provider}::{model}")
+
+    @staticmethod
+    def save_model_params(provider, model, params):
+        """Persist custom default parameters for one local provider model."""
+        if provider not in ("llama.cpp", "vllm"):
+            raise ProviderValidationError(
+                "Additional parameters are only available for local providers"
+            )
+        if not isinstance(params, dict):
+            raise ProviderValidationError("Parameters must be an object")
+        parameter_key = f"{provider}::{model}"
+        existing = get_model_parameters(parameter_key)
+        full = existing if isinstance(existing, dict) else {}
+        full["params"] = params
+        save_model_parameters(parameter_key, full)
+        return full
 
     def status(self, provider):
         """Return live reachability and persisted state for one provider."""

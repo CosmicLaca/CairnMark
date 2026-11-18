@@ -150,6 +150,43 @@ class ProviderController:
             return jsonify({"error": "Could not delete saved model parameters"}), 500
         return jsonify({"deleted": deleted})
 
+    def save_model_params(self):
+        """Persist custom default parameters for a local provider model."""
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            data = {}
+        provider = str(data.get("provider", "")).strip()
+        model = str(data.get("model", "")).strip()
+        if not provider or not model or len(provider) > 100 or len(model) > 300:
+            return jsonify({"error": "A valid provider and model are required"}), 400
+
+        params = None
+        for key in ("params", "model_params", "parameters", "values"):
+            if key in data and isinstance(data[key], dict):
+                params = data[key]
+                break
+        if params is None:
+            params = {
+                key: value
+                for key, value in data.items()
+                if key not in {"provider", "model"}
+            }
+        try:
+            saved = self.service.save_model_params(provider, model, params)
+        except ProviderValidationError as error:
+            return jsonify({"error": str(error)}), 400
+        except sqlite3.Error:
+            current_app.logger.exception(
+                "Could not save model parameters for %s/%s", provider, model
+            )
+            return jsonify({"error": "Could not save model parameters"}), 500
+        except CATALOG_ERRORS:
+            current_app.logger.exception(
+                "Could not save model parameters for %s/%s", provider, model
+            )
+            return jsonify({"error": "Could not save model parameters"}), 502
+        return jsonify({"saved": True, "params": saved.get("params", params)})
+
     def status(self):
         """Return live health and persisted state for one provider."""
         provider = request.args.get("provider", "").strip()

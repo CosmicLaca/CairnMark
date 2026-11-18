@@ -432,14 +432,20 @@
       <div data-more-params-content></div>
     </div>
     <footer class="modal-footer more-params-footer">
-      <button type="button" class="chat-delete-button more-params-delete-button" data-more-params-delete hidden>
-        <span aria-hidden="true">×</span>
-        Delete from local DB
-      </button>
+      <div class="more-params-footer-left">
+        <button type="button" class="chat-delete-button more-params-delete-button" data-more-params-delete hidden>
+          <span aria-hidden="true">×</span>
+          Delete from local DB
+        </button>
+        <button type="button" class="chat-delete-button more-params-save-model-button" data-more-params-save-model hidden>
+          <span aria-hidden="true">◆</span>
+          Save settings per model
+        </button>
+      </div>
       <div class="more-params-footer-actions">
-        <button type="button" class="modal-cancel-button" data-more-params-close>Cancel</button>
+        <button type="button" class="modal-cancel-button" data-more-params-close>Unset</button>
         <button type="button" class="modal-save-button" data-more-params-save>
-          <span aria-hidden="true">✓</span> Save
+          <span aria-hidden="true">✓</span> Set
         </button>
       </div>
     </footer>
