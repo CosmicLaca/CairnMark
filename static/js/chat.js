@@ -1394,26 +1394,13 @@
                 || String(file.type || "").startsWith("text/")
                 || file.type === "application/json";
 
-            let mineruAvailable = false;
-            try {
-                const payload = await api.request("/chat/mineru_available");
-                mineruAvailable = Boolean(payload && payload.available);
-            } catch (error) {
-                mineruAvailable = false;
-            }
-
-            if (!isText && !mineruAvailable) {
-                window.alert("MinerU is offline. Only text documents can be uploaded.");
-                return null;
-            }
-
             const compatibleExtensions = new Set([
                 "pdf", "jpg", "jpeg", "png", "doc", "docx", "ppt", "pptx",
                 "xls", "xlsx", "rtf", "odt", "ods", "odp", "epub", "html",
                 "htm", "mhtml", "ofd", "csv", "tsv",
             ]);
-            if (!isText && mineruAvailable && !compatibleExtensions.has(ext)) {
-                window.alert("This file type is not supported by MinerU.");
+            if (!isText && !compatibleExtensions.has(ext)) {
+                window.alert("This file type is not supported.");
                 return null;
             }
 
@@ -1683,7 +1670,7 @@
             checkingEl = document.createElement("div");
             checkingEl.className = "chat-checking-attachment";
             checkingEl.innerHTML = '<span class="chat-spinner" aria-hidden="true"></span><span>Checking attachment…</span>';
-            const container = attachmentsEl || document.querySelector(".chat-media-row");
+            const container = mediaUploadsEl || document.querySelector(".chat-media-row");
             if (container) {
                 container.appendChild(checkingEl);
                 container.hidden = false;
