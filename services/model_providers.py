@@ -1395,6 +1395,11 @@ class ModelProviderService:
         # Default generation settings (existing behaviour).
         settings = payload.get("default_generation_settings") or {}
         params = settings.get("params") if isinstance(settings, dict) else None
+        if isinstance(params, dict):
+            params = {
+                key: ModelProviderService._round_model_param_value(value)
+                for key, value in params.items()
+            }
 
         # New capability fields.
         modalities = payload.get("modalities") if isinstance(payload, dict) else None
@@ -1428,6 +1433,35 @@ class ModelProviderService:
         }
 
     @staticmethod
+    def _round_model_param_value(value):
+        """Round a model parameter to the nearest 0.005 (3 decimals)."""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            rounded = round(value / 0.005) * 0.005
+            rounded = round(rounded, 3)
+            if isinstance(value, int) and float(rounded).is_integer():
+                return int(rounded)
+            return rounded
+        if isinstance(value, dict):
+            return {
+                key: ModelProviderService._round_model_param_value(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [
+                ModelProviderService._round_model_param_value(item)
+                for item in value
+            ]
+        return value
+
+    # Backwards/alternative names for the same rounding helper.
+    _round_param_value = _round_model_param_value
+    _round_params = _round_model_param_value
+    _round_to_accuracy = _round_model_param_value
+    round_model_param = _round_model_param_value
+
+    @staticmethod
     def _display_params(saved_params):
         """Return only the generation parameters for the modal.
 
@@ -1439,7 +1473,10 @@ class ModelProviderService:
         if isinstance(saved_params, dict):
             params = saved_params.get("params")
             if isinstance(params, dict):
-                return params
+                return {
+                    key: ModelProviderService._round_model_param_value(value)
+                    for key, value in params.items()
+                }
         return saved_params if isinstance(saved_params, dict) else {}
 
     @staticmethod

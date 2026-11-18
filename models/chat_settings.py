@@ -56,6 +56,12 @@ CREATE TABLE IF NOT EXISTS chat_attachment_settings (
     attach_audio INTEGER NOT NULL DEFAULT 0,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS chat_seed_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    randomize_seed INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -162,9 +168,42 @@ def save_chat_settings(settings):
     )
 
 
+def chat_seed_settings(updates=None):
+    """Read or partially update the seed randomizer switch state."""
+    defaults = {"randomize_seed": False}
+    if updates is None:
+        if not SETTINGS_STORE.path().exists():
+            return defaults
+        row = SETTINGS_STORE.fetch(
+            "SELECT randomize_seed FROM chat_seed_settings WHERE id = 1",
+            one=True,
+        )
+        return defaults if not row else {
+            "randomize_seed": bool(row[0]),
+        }
+
+    values = {**defaults, **updates}
+    randomize_seed = bool(values.get("randomize_seed", defaults["randomize_seed"]))
+    SETTINGS_STORE.execute(
+        """
+        INSERT INTO chat_seed_settings
+            (id, randomize_seed)
+        VALUES (1, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            randomize_seed = excluded.randomize_seed,
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (1 if randomize_seed else 0,),
+    )
+    return {"randomize_seed": randomize_seed}
+
+
 def chat_attachment_settings(updates=None):
-    """Read or partially update the two last-used attachment switches."""
-    defaults = {"save_original_media": False, "attach_audio": False}
+    """Read or partially update the last-used attachment and seed switches."""
+    defaults = {"save_original_media": False, "attach_audio": False, "randomize_seed": False}
+    seed_state = chat_seed_settings()
+    defaults["randomize_seed"] = seed_state["randomize_seed"]
+
     if updates is None:
         if not SETTINGS_STORE.path().exists():
             return defaults
@@ -173,12 +212,16 @@ def chat_attachment_settings(updates=None):
             "FROM chat_attachment_settings WHERE id = 1",
             one=True,
         )
-        return defaults if not row else {
+        result = defaults if not row else {
             "save_original_media": bool(row[0]),
             "attach_audio": bool(row[1]),
+            "randomize_seed": chat_seed_settings()["randomize_seed"],
         }
+        return result
 
     values = {**defaults, **updates}
+    if "randomize_seed" in updates:
+        chat_seed_settings({"randomize_seed": bool(updates.get("randomize_seed"))})
     SETTINGS_STORE.execute(
         """
         INSERT INTO chat_attachment_settings
@@ -194,4 +237,8 @@ def chat_attachment_settings(updates=None):
             1 if values["attach_audio"] else 0,
         ),
     )
-    return values
+    return {
+        "save_original_media": bool(values["save_original_media"]),
+        "attach_audio": bool(values["attach_audio"]),
+        "randomize_seed": chat_seed_settings()["randomize_seed"],
+    }

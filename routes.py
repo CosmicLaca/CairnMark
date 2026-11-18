@@ -45,6 +45,24 @@ APPLICATION_ROUTES = (
         ("POST",),
     ),
     (
+        "/chat/save_seed_settings",
+        "chat_save_seed_settings",
+        chat_controller.save_seed_settings,
+        ("POST",),
+    ),
+    (
+        "/chat/save_seed_switch",
+        "chat_save_seed_switch",
+        chat_controller.save_seed_settings,
+        ("POST",),
+    ),
+    (
+        "/chat/save_randomize_seed",
+        "chat_save_randomize_seed",
+        chat_controller.save_seed_settings,
+        ("POST",),
+    ),
+    (
         "/chat/clear",
         "chat_clear",
         chat_controller.clear,

@@ -12,6 +12,7 @@
     const topPEl = document.querySelector("[data-chat-top-p]");
     const topKEl = document.querySelector("[data-chat-top-k]");
     const seedEl = document.querySelector("[data-chat-seed]");
+    const seedSwitch = document.querySelector("[data-chat-seed-switch]");
     const historyLimitEl = document.querySelector("[data-chat-history-limit]");
     const saveBtn = document.querySelector("[data-chat-save-settings]");
     const clearBtn = document.querySelector("[data-chat-clear]");
@@ -506,6 +507,10 @@
     const handleSend = async () => {
         const message = inputEl?.value?.trim() || "";
         if (!message) return;
+        if (seedSwitch && seedSwitch.getAttribute("aria-checked") === "true" && seedEl) {
+            const randomSeed = Math.floor(Math.random() * 4294967296);
+            seedEl.value = String(randomSeed);
+        }
         const settings = gatherSettings();
         if (!settings.model) {
             window.alert("Model is required.");
@@ -1566,6 +1571,19 @@
         });
     }
 
+    seedSwitch?.addEventListener("click", () => {
+        if (!seedSwitch) return;
+        const next = seedSwitch.getAttribute("aria-checked") !== "true";
+        seedSwitch.setAttribute("aria-checked", next ? "true" : "false");
+        if (api) {
+            api.json("/chat/save_attachment_settings", {
+                method: "POST",
+                body: { randomize_seed: next },
+            }).catch((error) => {
+                console.error("Failed to save seed switch:", error);
+            });
+        }
+    });
     sendBtn?.addEventListener("click", handleSend);
     saveBtn?.addEventListener("click", handleSave);
     clearBtn?.addEventListener("click", handleClear);

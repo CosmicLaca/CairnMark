@@ -18,6 +18,7 @@ from flask import (
 
 from models.chat_settings import (
     chat_attachment_settings,
+    chat_seed_settings,
     get_chat_settings,
     save_chat_settings,
 )
@@ -463,6 +464,7 @@ class ChatController:
         return {
             "chat_settings": settings,
             "chat_attachment_settings": chat_attachment_settings(),
+            "chat_seed_settings": chat_seed_settings(),
             "chat_messages": messages,
             "active_models": self.service.active_models(),
             "saved_chats": list_saved("chat"),
@@ -731,8 +733,36 @@ class ChatController:
                 if not isinstance(data[key], bool):
                     return jsonify({"error": f"{key} must be a boolean."}), 400
                 settings[key] = data[key]
+        seed_value = self._seed_switch_value(data)
+        if seed_value is not None:
+            settings["randomize_seed"] = seed_value
+            chat_seed_settings({"randomize_seed": seed_value})
         chat_attachment_settings(settings)
         return jsonify({"message": "Attachment settings saved."})
+
+    def _seed_switch_value(self, data):
+        if not isinstance(data, dict):
+            return None
+        for key in ("randomize_seed", "seed_randomize", "randomize", "value", "enabled", "state", "checked"):
+            if key in data:
+                value = data[key]
+                if isinstance(value, bool):
+                    return value
+                if isinstance(value, (int, float)):
+                    return bool(value)
+                if isinstance(value, str):
+                    return value.strip().lower() in {"true", "1", "yes", "on"}
+        return None
+
+    def save_seed_settings(self):
+        """Persist the seed randomizer switch state."""
+        data = request.get_json(silent=True) or {}
+        value = self._seed_switch_value(data)
+        if value is None:
+            return jsonify({"error": "randomize_seed must be a boolean."}), 400
+        chat_seed_settings({"randomize_seed": value})
+        chat_attachment_settings({"randomize_seed": value})
+        return jsonify({"message": "Settings saved."})
 
     def clear(self):
         current_messages = list_chat_messages()

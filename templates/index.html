@@ -298,8 +298,26 @@
 
         <div class="field-group">
           {{ chat_parameter_label("chat-seed", "Seed", "Random seed for reproducible generation. Use -1 for a random seed.") }}
-          <input type="number" id="chat-seed" name="seed" step="1" min="-1"
-            value="{{ chat_settings.seed if chat_settings.seed is not none else '' }}" data-chat-seed>
+          <div class="chat-seed-control">
+            <button
+              type="button"
+              class="chat-seed-switch"
+              data-chat-seed-switch
+              data-chat-randomize-seed
+              data-seed-switch
+              role="switch"
+              aria-checked="{{ 'true' if chat_seed_settings.randomize_seed else 'false' }}"
+              aria-label="Randomize seed"
+              title="Randomize seed"
+            >
+              <span class="chat-seed-switch-track" aria-hidden="true">
+                <span class="chat-seed-switch-knob"></span>
+              </span>
+              <span class="chat-seed-switch-tooltip" role="tooltip">Randomize seed</span>
+            </button>
+            <input type="number" id="chat-seed" name="seed" step="1" min="-1"
+              value="{{ chat_settings.seed if chat_settings.seed is not none else '' }}" data-chat-seed>
+          </div>
         </div>
       </div>
 
@@ -434,7 +452,11 @@
   <script>
     window.CairnmarkChatAttachmentSettings = {
       save_original_media: {{ chat_attachment_settings.save_original_media|tojson }},
-      attach_audio: {{ chat_attachment_settings.attach_audio|tojson }}
+      attach_audio: {{ chat_attachment_settings.attach_audio|tojson }},
+      randomize_seed: {{ chat_seed_settings.randomize_seed|tojson }}
+    };
+    window.CairnmarkSeedSettings = {
+      randomize_seed: {{ chat_seed_settings.randomize_seed|tojson }}
     };
   </script>
   <script src="{{ url_for('static', filename='js/api_client.js') }}" defer></script>
