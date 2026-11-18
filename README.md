@@ -1,7 +1,6 @@
-# Cairnmark
+# CairnMark
 
-> A private, local workspace for chatting with AI models and creating,
-> organizing, and running benchmark prompt sets.
+**A private, local workspace for chatting with AI models and creating, organizing, and running benchmark prompt sets.**
 
 **Preview release · single user · localhost only**
 
@@ -9,7 +8,7 @@ Created by Primere Development · [GitHub repository](https://github.com/CosmicL
 
 ---
 
-## What Cairnmark does
+## What CairnMark does
 
 Cairnmark brings local and hosted model providers into one browser interface.
 You can:
@@ -23,10 +22,10 @@ You can:
 Benchmark files stay as readable JSON. Application settings and chat data use
 local SQLite databases. Hosted-provider API keys are encrypted at rest.
 
-> **Preview limitation**
->
-> Evaluation, result history, and export are under development. Their pages
-> appear only in development mode and are not working product features.
+**Preview limitation**
+
+Evaluation, result history, and export are under development. Their pages
+appear only in development mode and are not working product features.
 
 ## Quick navigation
 
