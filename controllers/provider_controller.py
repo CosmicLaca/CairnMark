@@ -101,6 +101,20 @@ class ProviderController:
             )
             return jsonify({"available": False})
 
+    def ctx_mode(self):
+        """Report the llama.cpp router-mode context setting mode."""
+        provider = request.args.get("provider", "").strip()
+        if not provider or len(provider) > 100:
+            return jsonify({"error": "A valid provider is required"}), 400
+        try:
+            mode = self.service.detect_ctx_mode(provider)
+            return jsonify({"ctx_mode": mode})
+        except Exception:  # noqa: BLE001
+            current_app.logger.exception(
+                "Could not detect ctx mode for %s", provider
+            )
+            return jsonify({"ctx_mode": None})
+
     def model_params(self):
         """Return default generation parameters for a local provider model."""
         provider = request.args.get("provider", "").strip()

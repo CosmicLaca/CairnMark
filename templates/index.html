@@ -385,6 +385,7 @@
             <input type="number" id="chat-history-limit" name="history_limit" step="1" min="0"
               value="{{ chat_settings.history_limit if chat_settings.history_limit is not none else '' }}" data-chat-history-limit>
           </div>
+          <div class="chat-token-usage" data-chat-token-usage></div>
         </div>
       </div>
     </fieldset>
@@ -546,6 +547,12 @@
 {% block scripts %}
   <script>
     window.CairnmarkMineruSettings = {{ mineru_settings|tojson }};
+  </script>
+  <script>
+    window.CairnmarkChatMessageTokens = [
+      {% for message in chat_messages %}{"input_tokens": {{ message.input_tokens or 0 }}, "output_tokens": {{ message.output_tokens or 0 }}}{% if not loop.last %},{% endif %}
+      {% endfor %}
+    ];
   </script>
   <script>
     window.CairnmarkChatAttachmentSettings = {

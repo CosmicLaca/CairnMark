@@ -4,6 +4,8 @@ import base64
 import json
 import urllib.parse
 import urllib.request
+
+# (No process-wide cache: the browser caches the mode for one page load.)
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -1355,6 +1357,58 @@ class ModelProviderService:
         }
 
     @staticmethod
+    def detect_ctx_mode(provider):
+        """Detect the llama.cpp router-mode context setting (--ctx-size/--fit)."""
+        if provider != "llama.cpp":
+            return None
+        # No process-wide cache: the browser caches the mode for one page load.
+        configuration = get_provider_configuration(provider)
+        if not configuration:
+            return None
+        ip = (configuration.get("ip") or "").rstrip("/")
+        port = configuration.get("port")
+        if not ip or not port:
+            return None
+        mode = None
+        try:
+            with urllib.request.urlopen(f"{ip}:{port}/models", timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except Exception:  # noqa: BLE001
+            return None
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(data, list) or not data:
+            return None
+        entry = None
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            status = item.get("status")
+            if isinstance(status, dict) and isinstance(status.get("args"), list):
+                entry = item
+                break
+        if entry is None:
+            entry = data[0]
+        status = entry.get("status") if isinstance(entry, dict) else None
+        args = status.get("args") if isinstance(status, dict) else None
+        if not isinstance(args, list):
+            args = []
+        index = 0
+        while index < len(args):
+            token = str(args[index])
+            if token == "--ctx-size" and index + 1 < len(args):
+                mode = "n_ctx"
+                break
+            if token == "--fit" and index + 1 < len(args):
+                value = str(args[index + 1]).strip().lower()
+                if value == "on":
+                    mode = "fit_on"
+                elif value == "off":
+                    mode = "fit_off"
+                break
+            index += 1
+        return mode
+
+    @staticmethod
     def check_props_available(provider):
         """Quickly check whether a local provider exposes the props endpoint."""
         if provider not in ("llama.cpp", "vllm"):
@@ -1381,14 +1435,32 @@ class ModelProviderService:
                 "Additional parameters are only available for local providers"
             )
         parameter_key = f"{provider}::{model}"
+        ctx_mode = (
+            ModelProviderService.detect_ctx_mode(provider)
+            if provider == "llama.cpp"
+            else None
+        )
         saved_params = get_model_parameters(parameter_key)
-        if saved_params is not None and ModelProviderService._display_n_ctx(
-            saved_params
-        ) is not None:
+        if saved_params is not None and ctx_mode is not None:
+            saved_n_ctx = ModelProviderService._display_n_ctx(saved_params, ctx_mode)
+            if saved_n_ctx is not None:
+                return {
+                    "params": ModelProviderService._display_params(saved_params),
+                    "modalities": ModelProviderService._display_field(
+                        saved_params, "modalities"
+                    ),
+                    "n_ctx": saved_n_ctx,
+                    "ctx_mode": ctx_mode,
+                    "source": "database",
+                }
+        if saved_params is not None and ctx_mode is None:
             return {
                 "params": ModelProviderService._display_params(saved_params),
-                "modalities": ModelProviderService._display_field(saved_params, "modalities"),
+                "modalities": ModelProviderService._display_field(
+                    saved_params, "modalities"
+                ),
                 "n_ctx": ModelProviderService._display_n_ctx(saved_params),
+                "ctx_mode": None,
                 "source": "database",
             }
 
@@ -1410,8 +1482,13 @@ class ModelProviderService:
             if saved_params is not None:
                 return {
                     "params": ModelProviderService._display_params(saved_params),
-                    "modalities": ModelProviderService._display_field(saved_params, "modalities"),
-                    "n_ctx": ModelProviderService._display_n_ctx(saved_params),
+                    "modalities": ModelProviderService._display_field(
+                        saved_params, "modalities"
+                    ),
+                    "n_ctx": ModelProviderService._display_n_ctx(
+                        saved_params, ctx_mode
+                    ),
+                    "ctx_mode": ctx_mode,
                     "source": "database",
                 }
             raise ProviderCatalogError(
@@ -1436,6 +1513,32 @@ class ModelProviderService:
         if n_ctx is None and isinstance(payload, dict):
             n_ctx = payload.get("n_ctx")
 
+        # When only the context size for a new mode is needed, keep the
+        # previously saved parameters/modalities and just add that mode.
+        updating_mode_only = (
+            saved_params is not None
+            and ctx_mode is not None
+            and ModelProviderService._display_n_ctx(saved_params, ctx_mode)
+            is None
+        )
+        if updating_mode_only:
+            merged = dict(saved_params) if isinstance(saved_params, dict) else {}
+            modes = merged.get("n_ctx_modes")
+            if not isinstance(modes, dict):
+                modes = {}
+            modes = dict(modes)
+            if n_ctx is not None:
+                modes[ctx_mode] = n_ctx
+                merged["n_ctx_modes"] = modes
+            save_model_parameters(parameter_key, merged)
+            return {
+                "params": ModelProviderService._display_params(merged),
+                "modalities": ModelProviderService._display_field(merged, "modalities"),
+                "n_ctx": n_ctx,
+                "ctx_mode": ctx_mode,
+                "source": "provider",
+            }
+
         # Store everything together so callers can read any subset.
         full = {}
         if params is not None:
@@ -1444,8 +1547,14 @@ class ModelProviderService:
             full["modalities"] = modalities
         if chat_template_caps is not None:
             full["chat_template_caps"] = chat_template_caps
-        if n_ctx is not None:
-            full["n_ctx"] = n_ctx
+        if ctx_mode is not None and n_ctx is not None:
+            modes = {}
+            if isinstance(saved_params, dict):
+                existing = saved_params.get("n_ctx_modes")
+                if isinstance(existing, dict):
+                    modes = dict(existing)
+            modes[ctx_mode] = n_ctx
+            full["n_ctx_modes"] = modes
 
         if not full:
             raise ProviderCatalogError("Unexpected parameter response")
@@ -1455,6 +1564,7 @@ class ModelProviderService:
             "params": params if isinstance(params, dict) else {},
             "modalities": modalities if isinstance(modalities, dict) else {},
             "n_ctx": n_ctx,
+            "ctx_mode": ctx_mode,
             "source": "provider",
         }
 
@@ -1510,10 +1620,13 @@ class ModelProviderService:
         return {}
 
     @staticmethod
-    def _display_n_ctx(saved_params):
-        """Return the saved context size, if present."""
-        if isinstance(saved_params, dict):
-            value = saved_params.get("n_ctx")
+    def _display_n_ctx(saved_params, mode=None):
+        """Return the saved context size for *mode*, if present."""
+        if not isinstance(saved_params, dict):
+            return None
+        modes = saved_params.get("n_ctx_modes")
+        if isinstance(modes, dict) and mode:
+            value = modes.get(mode)
             if isinstance(value, bool):
                 return None
             if isinstance(value, (int, float)):

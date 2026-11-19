@@ -16,6 +16,13 @@ const minPEl = document.querySelector("[data-chat-min-p]");
     const seedSwitch = document.querySelector("[data-chat-seed-switch]");
     const historyLimitEl = document.querySelector("[data-chat-history-limit]");
 const historySwitch = document.querySelector("[data-chat-history-switch], [data-chat-send-all], [data-chat-all-previous], [data-chat-history-all], [data-history-switch]");
+const tokenUsageEl = document.querySelector("[data-chat-token-usage]");
+let sessionCtxMode = null;
+let sessionCtxModeFetched = false;
+let currentNctx = null;
+const chatMessageTokens = Array.isArray(window.CairnmarkChatMessageTokens)
+    ? window.CairnmarkChatMessageTokens.slice()
+    : [];
     const saveBtn = document.querySelector("[data-chat-save-settings]");
     const clearBtn = document.querySelector("[data-chat-clear]");
     const savedSelect = document.querySelector("[data-chat-saved]");
@@ -581,6 +588,7 @@ const historySwitch = document.querySelector("[data-chat-history-switch], [data-
                     : attachment.name,
                 filename: "",
             }));
+        chatMessageTokens.push({ input_tokens: 0, output_tokens: 0 });
         const userMessageEl = appendMessage("user", message, {
             preview_images: userPreviewImages,
             has_audio: hasAudioAttachment && !saveOriginalMedia,
@@ -757,6 +765,11 @@ const historySwitch = document.querySelector("[data-chat-history-switch], [data-
             }
             if (loadingEl && loadingEl.element) loadingEl.element.remove();
             if (finalPayload) {
+                chatMessageTokens.push({
+                    input_tokens: finalPayload.input_tokens || 0,
+                    output_tokens: finalPayload.output_tokens || 0,
+                });
+                updateTokenUsage();
                 appendMessage("assistant", finalPayload.response || "", {
                     provider: finalPayload.provider,
                     model: finalPayload.model,
@@ -823,6 +836,8 @@ const historySwitch = document.querySelector("[data-chat-history-switch], [data-
                 syncEmptyState();
             }
             if (savedSelect) savedSelect.value = "";
+            chatMessageTokens.length = 0;
+            updateTokenUsage();
         } catch (error) {
             window.alert(`Clear failed: ${error}`);
         }
@@ -890,7 +905,16 @@ const historySwitch = document.querySelector("[data-chat-history-switch], [data-
                 method: "POST",
                 body: { name },
             });
-            renderHistory(payload.messages || []);
+            const messages = payload.messages || [];
+            renderHistory(messages);
+            chatMessageTokens.length = 0;
+            messages.forEach((message) => {
+                chatMessageTokens.push({
+                    input_tokens: message.input_tokens || 0,
+                    output_tokens: message.output_tokens || 0,
+                });
+            });
+            updateTokenUsage();
         } catch (error) {
             window.alert(`Load chat failed: ${error}`);
         }
@@ -1189,6 +1213,24 @@ const historySwitch = document.querySelector("[data-chat-history-switch], [data-
         if (moreParamsContent) moreParamsContent.replaceChildren();
         setMoreParamsDeleteVisible(false);
         setMoreParamsLoading(true);
+        if (provider === "llama.cpp") {
+            try {
+                const modePayload = await api.request(
+                    `/setup_models/ctx_mode?provider=${encodeURIComponent(provider)}`
+                );
+                const mode = modePayload && modePayload.ctx_mode;
+                if (mode) {
+                    const label = moreParamsLoading
+                        ? moreParamsLoading.querySelector("span:not(.chat-spinner)")
+                        : null;
+                    if (label) {
+                        label.textContent = `Getting ctx for ${mode} mode…`;
+                    }
+                }
+            } catch (error) {
+                // Keep the default loading label.
+            }
+        }
         try {
             const payload = await api.request(
                 `/setup_models/model_params?provider=${encodeURIComponent(provider)}&model=${encodeURIComponent(model)}`
@@ -1271,6 +1313,21 @@ const historySwitch = document.querySelector("[data-chat-history-switch], [data-
 
     let mediaUploadsSeq = 0;
 
+    const ensureCtxMode = async (provider) => {
+        if (provider !== "llama.cpp") return null;
+        if (sessionCtxModeFetched) return sessionCtxMode;
+        sessionCtxModeFetched = true;
+        try {
+            const payload = await api.request(
+                `/setup_models/ctx_mode?provider=${encodeURIComponent(provider)}`
+            );
+            sessionCtxMode = (payload && payload.ctx_mode) || null;
+        } catch (error) {
+            sessionCtxMode = null;
+        }
+        return sessionCtxMode;
+    };
+
     const refreshMediaUploads = async (provider, model) => {
         const requestSeq = ++mediaUploadsSeq;
         // Clear icons first: without saved modalities the default is false.
@@ -1283,14 +1340,26 @@ const historySwitch = document.querySelector("[data-chat-history-switch], [data-
             return;
         }
         try {
+            const mode = provider === "llama.cpp" ? await ensureCtxMode(provider) : null;
             const payload = await api.request(
                 `/setup_models/model_params?provider=${encodeURIComponent(provider)}&model=${encodeURIComponent(model)}`
             );
             if (requestSeq !== mediaUploadsSeq) return;
             renderMediaUploads(payload && payload.modalities);
-            if (modelNctxEl && payload && payload.n_ctx != null) {
-                modelNctxEl.textContent = `| N ctx: ${payload.n_ctx}`;
+            const resolvedMode = (payload && payload.ctx_mode) || mode;
+            if (payload && payload.n_ctx != null) {
+                currentNctx = payload.n_ctx;
             }
+            if (modelNctxEl) {
+                if (payload && payload.n_ctx != null && resolvedMode) {
+                    modelNctxEl.textContent = `| N ctx: ${payload.n_ctx} | ${resolvedMode}`;
+                } else if (resolvedMode) {
+                    modelNctxEl.textContent = `| ${resolvedMode}`;
+                } else {
+                    modelNctxEl.textContent = "";
+                }
+            }
+            updateTokenUsage();
         } catch (error) {
             if (requestSeq !== mediaUploadsSeq) return;
             renderMediaUploads(null);
@@ -1955,6 +2024,46 @@ const historySwitch = document.querySelector("[data-chat-history-switch], [data-
         historyLimitEl.disabled = allPrevious;
     };
 
+    const selectedUsageMessages = () => {
+        const allPrevious = Boolean(
+            historySwitch && historySwitch.getAttribute("aria-checked") === "true"
+        );
+        const rawLimit = historyLimitEl ? String(historyLimitEl.value || "").trim() : "";
+        const limit = rawLimit ? parseInt(rawLimit, 10) : NaN;
+        if (allPrevious || !Number.isFinite(limit) || limit < 0) {
+            return chatMessageTokens.slice();
+        }
+        const history = chatMessageTokens;
+        if (history.length === 0) return [];
+        const currentTurn = history.slice(-1);
+        const previous = history.slice(0, -1);
+        if (limit <= 0) {
+            return currentTurn.slice();
+        }
+        const keptPrevious = limit * 2;
+        let start = Math.max(0, previous.length - keptPrevious);
+        if (start % 2) start += 1;
+        const selectedPrevious = previous.slice(start);
+        return selectedPrevious.concat(currentTurn);
+    };
+
+    const updateTokenUsage = () => {
+        if (!tokenUsageEl) return;
+        const messages = selectedUsageMessages();
+        const used = messages.reduce(
+            (total, item) =>
+                total + (Number(item && item.input_tokens) || 0) +
+                (Number(item && item.output_tokens) || 0),
+            0
+        );
+        if (currentNctx) {
+            const percent = Math.round((used / currentNctx) * 100);
+            tokenUsageEl.textContent = `${used} / ${currentNctx} (${percent}%)`;
+        } else {
+            tokenUsageEl.textContent = `${used} tokens`;
+        }
+    };
+
     if (historySwitch) {
         const savedHistoryState =
             (window.CairnmarkChatAttachmentSettings &&
@@ -1970,13 +2079,17 @@ const historySwitch = document.querySelector("[data-chat-history-switch], [data-
             );
         }
         syncHistoryInputState();
+        updateTokenUsage();
     }
+
+    historyLimitEl?.addEventListener("input", updateTokenUsage);
 
     historySwitch?.addEventListener("click", () => {
         if (!historySwitch) return;
         const next = historySwitch.getAttribute("aria-checked") !== "true";
         historySwitch.setAttribute("aria-checked", next ? "true" : "false");
         syncHistoryInputState();
+        updateTokenUsage();
         if (api) {
             api.json("/chat/save_attachment_settings", {
                 method: "POST",
@@ -1986,6 +2099,7 @@ const historySwitch = document.querySelector("[data-chat-history-switch], [data-
             });
         }
     });
+    updateTokenUsage();
     sendBtn?.addEventListener("click", handleSend);
     saveBtn?.addEventListener("click", handleSave);
     clearBtn?.addEventListener("click", handleClear);

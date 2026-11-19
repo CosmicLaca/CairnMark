@@ -261,6 +261,12 @@ APPLICATION_ROUTES = (
         ("GET",),
     ),
     (
+        "/setup_models/ctx_mode",
+        "get_ctx_mode",
+        provider_controller.ctx_mode,
+        ("GET",),
+    ),
+    (
         "/setup_models/provider_status",
         "get_provider_status",
         provider_controller.status,

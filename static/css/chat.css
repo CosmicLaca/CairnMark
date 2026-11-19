@@ -1171,6 +1171,13 @@
     width: 100%;
 }
 
+.chat-token-usage {
+    margin-top: 6px;
+    font-size: 0.72rem;
+    color: var(--ink-soft, #5a6b66);
+    text-align: right;
+}
+
 .chat-fps-control[hidden] {
     display: none;
 }
