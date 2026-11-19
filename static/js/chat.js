@@ -17,6 +17,8 @@ const minPEl = document.querySelector("[data-chat-min-p]");
     const historyLimitEl = document.querySelector("[data-chat-history-limit]");
 const historySwitch = document.querySelector("[data-chat-history-switch], [data-chat-send-all], [data-chat-all-previous], [data-chat-history-all], [data-history-switch]");
 const tokenUsageEl = document.querySelector("[data-chat-token-usage]");
+const contextBarEl = document.querySelector("[data-chat-context-bar]");
+const contextBarFillEl = document.querySelector("[data-chat-context-bar-fill]");
 let sessionCtxMode = null;
 let sessionCtxModeFetched = false;
 let currentNctx = null;
@@ -2064,14 +2066,27 @@ const chatMessageTokens = Array.isArray(window.CairnmarkChatMessageTokens)
                 "chat-token-usage--warn",
                 "chat-token-usage--over"
             );
+            if (contextBarFillEl) {
+                contextBarFillEl.classList.remove(
+                    "chat-context-bar-fill--ok",
+                    "chat-context-bar-fill--warn",
+                    "chat-context-bar-fill--over"
+                );
+            }
             let overLimit = false;
             if (percent <= 75) {
                 tokenUsageEl.classList.add("chat-token-usage--ok");
+                if (contextBarFillEl) contextBarFillEl.classList.add("chat-context-bar-fill--ok");
             } else if (percent <= 95) {
                 tokenUsageEl.classList.add("chat-token-usage--warn");
+                if (contextBarFillEl) contextBarFillEl.classList.add("chat-context-bar-fill--warn");
             } else {
                 tokenUsageEl.classList.add("chat-token-usage--over");
+                if (contextBarFillEl) contextBarFillEl.classList.add("chat-context-bar-fill--over");
                 overLimit = true;
+            }
+            if (contextBarFillEl) {
+                contextBarFillEl.style.width = `${Math.min(100, Math.max(0, percent))}%`;
             }
             if (sendBtn) {
                 sendBtn.disabled = overLimit;
@@ -2081,7 +2096,19 @@ const chatMessageTokens = Array.isArray(window.CairnmarkChatMessageTokens)
             }
         } else {
             tokenUsageEl.textContent = `${used} tokens`;
-            tokenUsageEl.classList.remove("chat-token-usage--over");
+            tokenUsageEl.classList.remove(
+                "chat-token-usage--ok",
+                "chat-token-usage--warn",
+                "chat-token-usage--over"
+            );
+            if (contextBarFillEl) {
+                contextBarFillEl.style.width = "0%";
+                contextBarFillEl.classList.remove(
+                    "chat-context-bar-fill--ok",
+                    "chat-context-bar-fill--warn",
+                    "chat-context-bar-fill--over"
+                );
+            }
             if (sendBtn) {
                 sendBtn.disabled = false;
                 sendBtn.title = "";

@@ -1206,6 +1206,35 @@
     cursor: not-allowed;
 }
 
+.chat-context-bar {
+    flex: 1 1 auto;
+    min-width: 60px;
+    height: 6px;
+    margin: 0 10px;
+    border-radius: 999px;
+    background: rgba(120, 130, 126, 0.25);
+    overflow: hidden;
+}
+
+.chat-context-bar-fill {
+    height: 100%;
+    width: 0%;
+    border-radius: 999px;
+    transition: width 0.2s ease, background 0.2s ease;
+}
+
+.chat-context-bar-fill--ok {
+    background: #15803d;
+}
+
+.chat-context-bar-fill--warn {
+    background: #c2410c;
+}
+
+.chat-context-bar-fill--over {
+    background: #b91c1c;
+}
+
 .chat-fps-control[hidden] {
     display: none;
 }
