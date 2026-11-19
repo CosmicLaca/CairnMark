@@ -808,7 +808,7 @@ const chatMessageTokens = Array.isArray(window.CairnmarkChatMessageTokens)
             }
             window.alert(`Request failed: ${error}`);
         } finally {
-            if (sendBtn) sendBtn.disabled = false;
+            updateTokenUsage();
         }
     };
 
@@ -2059,8 +2059,21 @@ const chatMessageTokens = Array.isArray(window.CairnmarkChatMessageTokens)
         if (currentNctx) {
             const percent = Math.round((used / currentNctx) * 100);
             tokenUsageEl.textContent = `${used} / ${currentNctx} (${percent}%)`;
+            const overLimit = percent > 98;
+            tokenUsageEl.classList.toggle("chat-token-usage--over", overLimit);
+            if (sendBtn) {
+                sendBtn.disabled = overLimit;
+                sendBtn.title = overLimit
+                    ? "The context window not enough to send new message"
+                    : "";
+            }
         } else {
             tokenUsageEl.textContent = `${used} tokens`;
+            tokenUsageEl.classList.remove("chat-token-usage--over");
+            if (sendBtn) {
+                sendBtn.disabled = false;
+                sendBtn.title = "";
+            }
         }
     };
 

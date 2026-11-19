@@ -1178,6 +1178,18 @@
     text-align: right;
 }
 
+.chat-token-usage--over {
+    background: #b91c1c;
+    color: #ffffff;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.chat-send-button:disabled {
+    cursor: not-allowed;
+}
+
 .chat-fps-control[hidden] {
     display: none;
 }
