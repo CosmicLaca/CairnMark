@@ -1342,6 +1342,20 @@ const chatMessageTokens = Array.isArray(window.CairnmarkChatMessageTokens)
             return;
         }
         try {
+            if (provider === "llama.cpp") {
+                if (tokenUsageEl) {
+                    tokenUsageEl.innerHTML =
+                        '<span class="chat-spinner" aria-hidden="true"></span> getting context data...';
+                }
+                if (contextBarFillEl) {
+                    contextBarFillEl.style.width = "100%";
+                    contextBarFillEl.classList.remove(
+                        "chat-context-bar-fill--warn",
+                        "chat-context-bar-fill--over"
+                    );
+                    contextBarFillEl.classList.add("chat-context-bar-fill--ok");
+                }
+            }
             const mode = provider === "llama.cpp" ? await ensureCtxMode(provider) : null;
             const payload = await api.request(
                 `/setup_models/model_params?provider=${encodeURIComponent(provider)}&model=${encodeURIComponent(model)}`
@@ -2095,19 +2109,19 @@ const chatMessageTokens = Array.isArray(window.CairnmarkChatMessageTokens)
                     : "";
             }
         } else {
-            tokenUsageEl.textContent = `${used} tokens`;
+            tokenUsageEl.textContent = "getting context data...";
             tokenUsageEl.classList.remove(
                 "chat-token-usage--ok",
                 "chat-token-usage--warn",
                 "chat-token-usage--over"
             );
             if (contextBarFillEl) {
-                contextBarFillEl.style.width = "0%";
+                contextBarFillEl.style.width = "100%";
                 contextBarFillEl.classList.remove(
-                    "chat-context-bar-fill--ok",
                     "chat-context-bar-fill--warn",
                     "chat-context-bar-fill--over"
                 );
+                contextBarFillEl.classList.add("chat-context-bar-fill--ok");
             }
             if (sendBtn) {
                 sendBtn.disabled = false;
