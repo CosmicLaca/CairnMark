@@ -354,12 +354,38 @@
               value="{{ chat_settings.seed if chat_settings.seed is not none else '' }}" data-chat-seed>
           </div>
         </div>
-      </div>
 
-      <div class="field-group">
-        {{ chat_parameter_label("chat-history-limit", "Recent messages kept", "How many previous user/assistant message pairs are sent with a new request. Lower values save context window and reduce cost; leave empty to send the full history.", end=True) }}
-        <input type="number" id="chat-history-limit" name="history_limit" step="1" min="0"
-          value="{{ chat_settings.history_limit if chat_settings.history_limit is not none else '' }}" data-chat-history-limit>
+        <div class="field-group">
+          {{ chat_parameter_label("chat-min-p", "Min P", "Minimum probability threshold for nucleus sampling. Lower values allow more tokens; common range: 0.0–0.1.") }}
+          <input type="number" id="chat-min-p" name="min_p" step="0.01" min="0" max="1"
+            value="{{ chat_settings.min_p if chat_settings.min_p is not none else '' }}" data-chat-min-p>
+        </div>
+
+        <div class="field-group">
+          {{ chat_parameter_label("chat-history-limit", "Prev. messages", "How many previous user/assistant message pairs are sent with a new request. Lower values save context window and reduce cost; leave empty to send the full history.", end=True) }}
+          <div class="chat-seed-control">
+            <button
+              type="button"
+              class="chat-seed-switch"
+              data-chat-history-switch
+              data-chat-send-all
+              data-chat-all-previous
+              data-chat-history-all
+              data-history-switch
+              role="switch"
+              aria-checked="{{ 'true' if chat_history_settings.send_all_previous else 'false' }}"
+              aria-label="Send all previous messages"
+              title="Send all previous messages"
+            >
+              <span class="chat-seed-switch-track" aria-hidden="true">
+                <span class="chat-seed-switch-knob"></span>
+              </span>
+              <span class="chat-seed-switch-tooltip" role="tooltip">Send all previous messages</span>
+            </button>
+            <input type="number" id="chat-history-limit" name="history_limit" step="1" min="0"
+              value="{{ chat_settings.history_limit if chat_settings.history_limit is not none else '' }}" data-chat-history-limit>
+          </div>
+        </div>
       </div>
     </fieldset>
 
@@ -526,10 +552,14 @@
       save_original_media: {{ chat_attachment_settings.save_original_media|tojson }},
       attach_audio: {{ chat_attachment_settings.attach_audio|tojson }},
       video_fps: {{ chat_attachment_settings.video_fps|tojson }},
-      randomize_seed: {{ chat_seed_settings.randomize_seed|tojson }}
+      randomize_seed: {{ chat_seed_settings.randomize_seed|tojson }},
+      send_all_previous: {{ chat_history_settings.send_all_previous|tojson }}
     };
     window.CairnmarkSeedSettings = {
       randomize_seed: {{ chat_seed_settings.randomize_seed|tojson }}
+    };
+    window.CairnmarkHistorySettings = {
+      send_all_previous: {{ chat_history_settings.send_all_previous|tojson }}
     };
   </script>
   <script src="{{ url_for('static', filename='js/api_client.js') }}" defer></script>

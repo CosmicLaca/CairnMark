@@ -24,6 +24,7 @@ from flask import (
 from models.chat_settings import (
     VIDEO_FPS_VALUES,
     chat_attachment_settings,
+    chat_history_settings,
     chat_seed_settings,
     get_chat_settings,
     mineru_settings,
@@ -51,7 +52,8 @@ CHAT_PARAMETER_CONVERTERS = {
     "top_p": (float, "Top P"),
     "top_k": (int, "Top K"),
     "seed": (int, "Seed"),
-    "history_limit": (int, "Recent messages kept"),
+    "history_limit": (int, "Prev. messages"),
+    "min_p": (float, "Min P"),
 }
 
 
@@ -540,6 +542,7 @@ class ChatController:
                 attachment_settings["video_fps"]
             ),
             "chat_seed_settings": chat_seed_settings(),
+            "chat_history_settings": chat_history_settings(),
             "mineru_settings": mineru_settings(),
             "chat_messages": messages,
             "active_models": self.service.active_models(),
@@ -632,10 +635,41 @@ class ChatController:
             for message in list_chat_messages()
             if message["role"] in ("user", "assistant")
         ]
+        history_limit = chat_request.parameters.get("history_limit")
+        send_all_previous = False
+        raw = chat_request.raw or {}
+        for key in (
+            "send_all_previous",
+            "send_all_previous_messages",
+            "all_previous",
+            "all_previous_messages",
+            "history_all",
+            "all_history",
+        ):
+            if key in raw:
+                value = raw.get(key)
+                if isinstance(value, bool):
+                    send_all_previous = value
+                elif isinstance(value, (int, float)):
+                    send_all_previous = bool(value)
+                elif isinstance(value, str):
+                    send_all_previous = value.strip().lower() in {
+                        "true",
+                        "1",
+                        "yes",
+                        "on",
+                    }
+                break
+        else:
+            send_all_previous = bool(
+                chat_history_settings().get("send_all_previous", False)
+            )
+        if send_all_previous:
+            history_limit = None
         messages = _conversation_messages(
             chat_request.system_prompt,
             history,
-            chat_request.parameters.get("history_limit"),
+            history_limit,
         )
 
         request_parameters = {
@@ -645,6 +679,7 @@ class ChatController:
                 "top_p",
                 "top_k",
                 "seed",
+                "min_p",
             )
         }
 
@@ -843,6 +878,10 @@ class ChatController:
                 if not isinstance(data[key], bool):
                     return jsonify({"error": f"{key} must be a boolean."}), 400
                 settings[key] = data[key]
+        history_value = self._history_switch_value(data)
+        if history_value is not None:
+            settings["send_all_previous"] = history_value
+            chat_history_settings({"send_all_previous": history_value})
         if "video_fps" in data:
             try:
                 settings["video_fps"] = _video_fps_value(data["video_fps"])
@@ -869,6 +908,31 @@ class ChatController:
                     return value.strip().lower() in {"true", "1", "yes", "on"}
         return None
 
+    def _history_switch_value(self, data):
+        if not isinstance(data, dict):
+            return None
+        for key in (
+            "send_all_previous",
+            "send_all_previous_messages",
+            "all_previous",
+            "all_previous_messages",
+            "history_all",
+            "all_history",
+            "value",
+            "enabled",
+            "state",
+            "checked",
+        ):
+            if key in data:
+                value = data[key]
+                if isinstance(value, bool):
+                    return value
+                if isinstance(value, (int, float)):
+                    return bool(value)
+                if isinstance(value, str):
+                    return value.strip().lower() in {"true", "1", "yes", "on"}
+        return None
+
     def save_seed_settings(self):
         """Persist the seed randomizer switch state."""
         data = request.get_json(silent=True) or {}
@@ -877,6 +941,16 @@ class ChatController:
             return jsonify({"error": "randomize_seed must be a boolean."}), 400
         chat_seed_settings({"randomize_seed": value})
         chat_attachment_settings({"randomize_seed": value})
+        return jsonify({"message": "Settings saved."})
+
+    def save_history_settings(self):
+        """Persist the history "send all previous" switch state."""
+        data = request.get_json(silent=True) or {}
+        value = self._history_switch_value(data)
+        if value is None:
+            return jsonify({"error": "send_all_previous must be a boolean."}), 400
+        chat_history_settings({"send_all_previous": value})
+        chat_attachment_settings({"send_all_previous": value})
         return jsonify({"message": "Settings saved."})
 
     def clear(self):

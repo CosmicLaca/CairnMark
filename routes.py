@@ -57,6 +57,24 @@ APPLICATION_ROUTES = (
         ("POST",),
     ),
     (
+        "/chat/save_history_settings",
+        "chat_save_history_settings",
+        chat_controller.save_history_settings,
+        ("POST",),
+    ),
+    (
+        "/chat/save_history_switch",
+        "chat_save_history_switch",
+        chat_controller.save_history_settings,
+        ("POST",),
+    ),
+    (
+        "/chat/save_send_all_previous",
+        "chat_save_send_all_previous",
+        chat_controller.save_history_settings,
+        ("POST",),
+    ),
+    (
         "/chat/save_randomize_seed",
         "chat_save_randomize_seed",
         chat_controller.save_seed_settings,

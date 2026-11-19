@@ -12,6 +12,7 @@ CHAT_PARAMETER_DEFAULTS = {
     "top_k": 40,
     "seed": 4294967295,
     "history_limit": 4,
+    "min_p": 0.05,
 }
 
 CHAT_PARAMETER_CONVERTERS = {
@@ -20,6 +21,7 @@ CHAT_PARAMETER_CONVERTERS = {
     "top_k": int,
     "seed": int,
     "history_limit": int,
+    "min_p": float,
 }
 
 VIDEO_FPS_VALUES = (0.1, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0)
@@ -42,11 +44,15 @@ CHAT_SETTINGS_COLUMNS_SQL = """
     top_k INTEGER,
     seed INTEGER,
     history_limit INTEGER,
+    min_p REAL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 """
 
 CHAT_SETTINGS_DEFAULT_SQL = {
-    **{key: repr(value) for key, value in CHAT_PARAMETER_DEFAULTS.items()},
+    **{
+        key: ("NULL" if value is None else repr(value))
+        for key, value in CHAT_PARAMETER_DEFAULTS.items()
+    },
     "model_name": "''",
     "system_prompt": "''",
     "updated_at": "CURRENT_TIMESTAMP",
@@ -60,12 +66,19 @@ CREATE TABLE IF NOT EXISTS chat_attachment_settings (
     save_original_media INTEGER NOT NULL DEFAULT 0,
     attach_audio INTEGER NOT NULL DEFAULT 0,
     video_fps REAL NOT NULL DEFAULT 2,
+    send_all_previous INTEGER NOT NULL DEFAULT 0,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS chat_seed_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     randomize_seed INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS chat_history_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    send_all_previous INTEGER NOT NULL DEFAULT 0,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -112,6 +125,29 @@ def _migrate_chat_settings(connection):
                 connection.execute(
                     "ALTER TABLE chat_attachment_settings ADD COLUMN video_fps REAL NOT NULL DEFAULT 2"
                 )
+            if attachment_columns and "send_all_previous" not in attachment_columns:
+                connection.execute(
+                    "ALTER TABLE chat_attachment_settings ADD COLUMN send_all_previous INTEGER NOT NULL DEFAULT 0"
+                )
+        except sqlite3.Error:
+            pass
+        # Ensure min_p exists for older databases.
+        try:
+            chat_columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(chat_settings)")
+            }
+            if chat_columns and "min_p" not in chat_columns:
+                connection.execute("ALTER TABLE chat_settings ADD COLUMN min_p REAL")
+        except sqlite3.Error:
+            pass
+        # Ensure the history settings table exists for older databases.
+        try:
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS chat_history_settings ("
+                "id INTEGER PRIMARY KEY CHECK (id = 1), "
+                "send_all_previous INTEGER NOT NULL DEFAULT 0, "
+                "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            )
         except sqlite3.Error:
             pass
         return
@@ -146,6 +182,29 @@ def _migrate_chat_settings(connection):
             connection.execute(
                 "ALTER TABLE chat_attachment_settings ADD COLUMN video_fps REAL NOT NULL DEFAULT 2"
             )
+        if attachment_columns and "send_all_previous" not in attachment_columns:
+            connection.execute(
+                "ALTER TABLE chat_attachment_settings ADD COLUMN send_all_previous INTEGER NOT NULL DEFAULT 0"
+            )
+    except sqlite3.Error:
+        pass
+    # Ensure min_p exists for older databases.
+    try:
+        chat_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(chat_settings)")
+        }
+        if chat_columns and "min_p" not in chat_columns:
+            connection.execute("ALTER TABLE chat_settings ADD COLUMN min_p REAL")
+    except sqlite3.Error:
+        pass
+    # Ensure the history settings table exists for older databases.
+    try:
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS chat_history_settings ("
+            "id INTEGER PRIMARY KEY CHECK (id = 1), "
+            "send_all_previous INTEGER NOT NULL DEFAULT 0, "
+            "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+        )
     except sqlite3.Error:
         pass
 
@@ -181,7 +240,7 @@ def get_chat_settings():
     )
     if not row:
         return defaults
-    return {
+    result = {
         "model_name": row[0] or "",
         "system_prompt": row[1] or "",
         **{
@@ -189,6 +248,9 @@ def get_chat_settings():
             for index, column in enumerate(parameter_columns, start=2)
         },
     }
+    if result.get("min_p") is None:
+        result["min_p"] = CHAT_PARAMETER_DEFAULTS.get("min_p", 0.05)
+    return result
 
 
 def save_chat_settings(settings):
@@ -215,6 +277,7 @@ def save_chat_settings(settings):
             top_k = excluded.top_k,
             seed = excluded.seed,
             history_limit = excluded.history_limit,
+            min_p = excluded.min_p,
             updated_at = CURRENT_TIMESTAMP
         """,
         values,
@@ -249,6 +312,38 @@ def chat_seed_settings(updates=None):
         (1 if randomize_seed else 0,),
     )
     return {"randomize_seed": randomize_seed}
+
+
+def chat_history_settings(updates=None):
+    """Read or partially update the history "send all previous" switch state."""
+    defaults = {"send_all_previous": False}
+    if updates is None:
+        if not SETTINGS_STORE.path().exists():
+            return defaults
+        row = SETTINGS_STORE.fetch(
+            "SELECT send_all_previous FROM chat_history_settings WHERE id = 1",
+            one=True,
+        )
+        return defaults if not row else {
+            "send_all_previous": bool(row[0]),
+        }
+
+    values = {**defaults, **updates}
+    send_all_previous = bool(
+        values.get("send_all_previous", defaults["send_all_previous"])
+    )
+    SETTINGS_STORE.execute(
+        """
+        INSERT INTO chat_history_settings
+            (id, send_all_previous)
+        VALUES (1, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            send_all_previous = excluded.send_all_previous,
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (1 if send_all_previous else 0,),
+    )
+    return {"send_all_previous": send_all_previous}
 
 
 def mineru_settings(updates=None):
@@ -304,15 +399,18 @@ def chat_attachment_settings(updates=None):
         "attach_audio": False,
         "video_fps": DEFAULT_VIDEO_FPS,
         "randomize_seed": False,
+        "send_all_previous": False,
     }
     seed_state = chat_seed_settings()
     defaults["randomize_seed"] = seed_state["randomize_seed"]
+    history_state = chat_history_settings()
+    defaults["send_all_previous"] = history_state["send_all_previous"]
 
     if updates is None:
         if not SETTINGS_STORE.path().exists():
             return defaults
         row = SETTINGS_STORE.fetch(
-            "SELECT save_original_media, attach_audio, video_fps "
+            "SELECT save_original_media, attach_audio, video_fps, send_all_previous "
             "FROM chat_attachment_settings WHERE id = 1",
             one=True,
         )
@@ -321,27 +419,34 @@ def chat_attachment_settings(updates=None):
             "attach_audio": bool(row[1]),
             "video_fps": _stored_video_fps(row[2]),
             "randomize_seed": chat_seed_settings()["randomize_seed"],
+            "send_all_previous": bool(row[3]),
         }
         return result
 
     values = {**defaults, **updates}
     if "randomize_seed" in updates:
         chat_seed_settings({"randomize_seed": bool(updates.get("randomize_seed"))})
+    if "send_all_previous" in updates:
+        chat_history_settings(
+            {"send_all_previous": bool(updates.get("send_all_previous"))}
+        )
     SETTINGS_STORE.execute(
         """
         INSERT INTO chat_attachment_settings
-            (id, save_original_media, attach_audio, video_fps)
-        VALUES (1, ?, ?, ?)
+            (id, save_original_media, attach_audio, video_fps, send_all_previous)
+        VALUES (1, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             save_original_media = excluded.save_original_media,
             attach_audio = excluded.attach_audio,
             video_fps = excluded.video_fps,
+            send_all_previous = excluded.send_all_previous,
             updated_at = CURRENT_TIMESTAMP
         """,
         (
             1 if values["save_original_media"] else 0,
             1 if values["attach_audio"] else 0,
             _stored_video_fps(values["video_fps"]),
+            1 if values["send_all_previous"] else 0,
         ),
     )
     return {
@@ -349,6 +454,7 @@ def chat_attachment_settings(updates=None):
         "attach_audio": bool(values["attach_audio"]),
         "video_fps": _stored_video_fps(values["video_fps"]),
         "randomize_seed": chat_seed_settings()["randomize_seed"],
+        "send_all_previous": chat_history_settings()["send_all_previous"],
     }
 
 

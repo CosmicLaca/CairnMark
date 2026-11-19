@@ -11,9 +11,11 @@
     const tempEl = document.querySelector("[data-chat-temperature]");
     const topPEl = document.querySelector("[data-chat-top-p]");
     const topKEl = document.querySelector("[data-chat-top-k]");
+const minPEl = document.querySelector("[data-chat-min-p]");
     const seedEl = document.querySelector("[data-chat-seed]");
     const seedSwitch = document.querySelector("[data-chat-seed-switch]");
     const historyLimitEl = document.querySelector("[data-chat-history-limit]");
+const historySwitch = document.querySelector("[data-chat-history-switch], [data-chat-send-all], [data-chat-all-previous], [data-chat-history-all], [data-history-switch]");
     const saveBtn = document.querySelector("[data-chat-save-settings]");
     const clearBtn = document.querySelector("[data-chat-clear]");
     const savedSelect = document.querySelector("[data-chat-saved]");
@@ -524,6 +526,7 @@
         temperature: optionalNumber(tempEl, Number.parseFloat),
         top_p: optionalNumber(topPEl, Number.parseFloat),
         top_k: optionalNumber(topKEl, Number.parseInt),
+        min_p: optionalNumber(minPEl, Number.parseFloat),
         seed: optionalNumber(seedEl, Number.parseInt),
         history_limit: optionalNumber(historyLimitEl, Number.parseInt),
     });
@@ -1047,7 +1050,7 @@
     const isFilteredParam = (key, value) => {
         const name = String(key).toLowerCase();
         if (name === "samplers") return true;
-        if (name === "temperature" || name === "top_p" || name === "top_k" || name === "seed") return true;
+        if (name === "temperature" || name === "top_p" || name === "top_k" || name === "seed" || name === "min_p") return true;
         if (value === null || value === undefined) return true;
         if (typeof value === "string" && value.toLowerCase() === "none") return true;
         return false;
@@ -1940,6 +1943,46 @@
                 body: { randomize_seed: next },
             }).catch((error) => {
                 console.error("Failed to save seed switch:", error);
+            });
+        }
+    });
+
+    const syncHistoryInputState = () => {
+        if (!historyLimitEl) return;
+        const allPrevious = Boolean(
+            historySwitch && historySwitch.getAttribute("aria-checked") === "true"
+        );
+        historyLimitEl.disabled = allPrevious;
+    };
+
+    if (historySwitch) {
+        const savedHistoryState =
+            (window.CairnmarkChatAttachmentSettings &&
+                window.CairnmarkChatAttachmentSettings.send_all_previous) ||
+            (window.CairnmarkHistorySettings &&
+                window.CairnmarkHistorySettings.send_all_previous);
+        if (savedHistoryState) {
+            historySwitch.setAttribute("aria-checked", "true");
+        } else {
+            historySwitch.setAttribute(
+                "aria-checked",
+                historySwitch.getAttribute("aria-checked") || "false"
+            );
+        }
+        syncHistoryInputState();
+    }
+
+    historySwitch?.addEventListener("click", () => {
+        if (!historySwitch) return;
+        const next = historySwitch.getAttribute("aria-checked") !== "true";
+        historySwitch.setAttribute("aria-checked", next ? "true" : "false");
+        syncHistoryInputState();
+        if (api) {
+            api.json("/chat/save_attachment_settings", {
+                method: "POST",
+                body: { send_all_previous: next },
+            }).catch((error) => {
+                console.error("Failed to save history switch:", error);
             });
         }
     });
