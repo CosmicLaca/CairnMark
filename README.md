@@ -158,11 +158,29 @@ API keys are never returned to the browser after saving. They are encrypted in
 
 ### Standard generation controls
 
-The standard fields are system prompt, temperature, top p, top k, seed, and
-recent-message limit. **Save setup** stores only the selected model and these
+The standard fields are system prompt, temperature, top p, top k, seed, min p, and
+recent-message limit (labeled **Prev. messages**). **Save setup** stores only the selected model and these
 standard fields as defaults for the next page load. The seed field has a
 **Randomize seed** switch; when it is on, each send generates a new seed and
-stores the switch state in `instance/cairnmark.db`.
+stores the switch state in `instance/cairnmark.db`. The **Prev. messages** field has a
+**Send all previous messages** switch; when it is on, the input is disabled and all
+previous messages are sent regardless of the input value. Its state is also stored
+in `instance/cairnmark.db`.
+
+A **Compact chat** button appears next to **Clear chat** when there is more than one message
+or the estimated context usage is below 100%. It sends the previous request/response pairs
+(selected by **Prev. messages**) to the model using prompts from `System-prompts/compress_system.md`
+and `System-prompts/compress_user.md`, and stores the result as a compacted summary message.
+That summary becomes the first message of future requests; previous messages stay visible but are
+ignored. The button is disabled while a request is running, when there is no chat, when
+**Prev. messages** is 0, or when context usage exceeds 100%.
+
+The context-usage label below **Prev. messages** shows `used / max (percent%)`. Its background is
+green up to 75%, orange up to 95%, and red above 95%, which also disables **Send**. A thin bar
+above the message input mirrors the same percentage and colors. When no context size is known yet,
+the label shows "getting context data…" and the bar is grey. For llama.cpp, the model label also
+shows the detected context mode (`n_ctx`, `fit_on`, or `fit_off`) and the saved context size for
+that mode.
 
 The additional-parameters dialog is session-only:
 

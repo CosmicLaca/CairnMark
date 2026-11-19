@@ -2324,6 +2324,7 @@ const compactBtn = document.querySelector("[data-chat-compact]");
                 chatMessageTokens.push({
                     input_tokens: finalPayload.input_tokens || 0,
                     output_tokens: finalPayload.output_tokens || 0,
+                    compacted: true,
                 });
                 appendMessage("assistant", finalPayload.response || "", {
                     provider: finalPayload.provider,
