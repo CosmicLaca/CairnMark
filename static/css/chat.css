@@ -1235,6 +1235,18 @@
     background: #b91c1c;
 }
 
+.chat-token-usage--loading {
+    background: #d1d5db;
+    color: #111827;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.chat-context-bar-fill--loading {
+    background: #9ca3af;
+}
+
 .chat-fps-control[hidden] {
     display: none;
 }

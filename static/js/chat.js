@@ -1344,16 +1344,23 @@ const chatMessageTokens = Array.isArray(window.CairnmarkChatMessageTokens)
         try {
             if (provider === "llama.cpp") {
                 if (tokenUsageEl) {
+                    tokenUsageEl.classList.remove(
+                        "chat-token-usage--ok",
+                        "chat-token-usage--warn",
+                        "chat-token-usage--over"
+                    );
+                    tokenUsageEl.classList.add("chat-token-usage--loading");
                     tokenUsageEl.innerHTML =
                         '<span class="chat-spinner" aria-hidden="true"></span> getting context data...';
                 }
                 if (contextBarFillEl) {
                     contextBarFillEl.style.width = "100%";
                     contextBarFillEl.classList.remove(
+                        "chat-context-bar-fill--ok",
                         "chat-context-bar-fill--warn",
                         "chat-context-bar-fill--over"
                     );
-                    contextBarFillEl.classList.add("chat-context-bar-fill--ok");
+                    contextBarFillEl.classList.add("chat-context-bar-fill--loading");
                 }
             }
             const mode = provider === "llama.cpp" ? await ensureCtxMode(provider) : null;
@@ -1382,6 +1389,7 @@ const chatMessageTokens = Array.isArray(window.CairnmarkChatMessageTokens)
             if (modelNctxEl) {
                 modelNctxEl.textContent = "";
             }
+            updateTokenUsage();
         }
     };
 
@@ -2078,13 +2086,15 @@ const chatMessageTokens = Array.isArray(window.CairnmarkChatMessageTokens)
             tokenUsageEl.classList.remove(
                 "chat-token-usage--ok",
                 "chat-token-usage--warn",
-                "chat-token-usage--over"
+                "chat-token-usage--over",
+                "chat-token-usage--loading"
             );
             if (contextBarFillEl) {
                 contextBarFillEl.classList.remove(
                     "chat-context-bar-fill--ok",
                     "chat-context-bar-fill--warn",
-                    "chat-context-bar-fill--over"
+                    "chat-context-bar-fill--over",
+                    "chat-context-bar-fill--loading"
                 );
             }
             let overLimit = false;
@@ -2113,13 +2123,15 @@ const chatMessageTokens = Array.isArray(window.CairnmarkChatMessageTokens)
             tokenUsageEl.classList.remove(
                 "chat-token-usage--ok",
                 "chat-token-usage--warn",
-                "chat-token-usage--over"
+                "chat-token-usage--over",
+                "chat-token-usage--loading"
             );
             if (contextBarFillEl) {
                 contextBarFillEl.style.width = "100%";
                 contextBarFillEl.classList.remove(
                     "chat-context-bar-fill--warn",
-                    "chat-context-bar-fill--over"
+                    "chat-context-bar-fill--over",
+                    "chat-context-bar-fill--loading"
                 );
                 contextBarFillEl.classList.add("chat-context-bar-fill--ok");
             }
