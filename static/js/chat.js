@@ -2038,7 +2038,7 @@ const chatMessageTokens = Array.isArray(window.CairnmarkChatMessageTokens)
         const currentTurn = history.slice(-1);
         const previous = history.slice(0, -1);
         if (limit <= 0) {
-            return currentTurn.slice();
+            return [];
         }
         const keptPrevious = limit * 2;
         let start = Math.max(0, previous.length - keptPrevious);
