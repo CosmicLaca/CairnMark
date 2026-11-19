@@ -496,13 +496,16 @@ const compactBtn = document.querySelector("[data-chat-compact]");
         syncEmptyState();
     };
 
-    const showLoading = (onAbort) => {
+    const showLoading = (onAbort, meta = {}) => {
         if (!historyEl) return null;
         const div = document.createElement("div");
         div.className = "chat-message chat-message--assistant is-loading";
+        if (meta.compacted) {
+            div.classList.add("chat-message--compacted");
+        }
         const roleSpan = document.createElement("span");
         roleSpan.className = "chat-role";
-        roleSpan.textContent = "assistant";
+        roleSpan.textContent = meta.compacted ? "compacted summary" : "assistant";
         const spinner = document.createElement("span");
         spinner.className = "chat-spinner";
         spinner.setAttribute("aria-hidden", "true");
@@ -2247,7 +2250,7 @@ const compactBtn = document.querySelector("[data-chat-compact]");
         const loadingEl = showLoading(() => {
             aborted = true;
             controller.abort();
-        });
+        }, { compacted: true });
 
         const requestBody = {
             model,
@@ -2284,10 +2287,10 @@ const compactBtn = document.querySelector("[data-chat-compact]");
                 const { done, value } = await reader.read();
                 if (done) break;
                 buffer += decoder.decode(value, { stream: true });
-                const events = buffer.split("\\n\\n");
+                const events = buffer.split("\n\n");
                 buffer = events.pop() || "";
                 for (const event of events) {
-                    const lines = event.split("\\n");
+                    const lines = event.split("\n");
                     for (const line of lines) {
                         if (!line.startsWith("data:")) continue;
                         const raw = line.slice(5).trim();

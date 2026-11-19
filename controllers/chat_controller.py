@@ -995,10 +995,10 @@ class ChatController:
                 ):
                     if event.get("type") == "chunk":
                         response_text += event.get("text", "")
-                        yield f"data: {json.dumps(event)}\\n\\n"
+                        yield f"data: {json.dumps(event)}\n\n"
                     elif event.get("type") == "done":
                         usage = event.get("usage", usage) or usage
-                        yield f"data: {json.dumps(event)}\\n\\n"
+                        yield f"data: {json.dumps(event)}\n\n"
                 elapsed = round(time.monotonic() - started, 2)
                 request_body = json.dumps({"model": model, "messages": messages})
                 add_chat_message(
@@ -1025,12 +1025,12 @@ class ChatController:
                     "compacted": True,
                     "type": "result",
                 }
-                yield f"data: {json.dumps(payload)}\\n\\n"
+                yield f"data: {json.dumps(payload)}\n\n"
             except Exception as error:  # noqa: BLE001
                 current_app.logger.exception(
                     "Compact stream failed for provider=%s model=%s", provider, model
                 )
-                yield f"data: {json.dumps({'type': 'error', 'error': str(error)})}\\n\\n"
+                yield f"data: {json.dumps({'type': 'error', 'error': str(error)})}\n\n"
 
         return Response(
             stream_with_context(generate()),
