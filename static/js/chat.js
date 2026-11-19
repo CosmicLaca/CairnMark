@@ -2059,8 +2059,20 @@ const chatMessageTokens = Array.isArray(window.CairnmarkChatMessageTokens)
         if (currentNctx) {
             const percent = Math.round((used / currentNctx) * 100);
             tokenUsageEl.textContent = `${used} / ${currentNctx} (${percent}%)`;
-            const overLimit = percent > 98;
-            tokenUsageEl.classList.toggle("chat-token-usage--over", overLimit);
+            tokenUsageEl.classList.remove(
+                "chat-token-usage--ok",
+                "chat-token-usage--warn",
+                "chat-token-usage--over"
+            );
+            let overLimit = false;
+            if (percent <= 75) {
+                tokenUsageEl.classList.add("chat-token-usage--ok");
+            } else if (percent <= 95) {
+                tokenUsageEl.classList.add("chat-token-usage--warn");
+            } else {
+                tokenUsageEl.classList.add("chat-token-usage--over");
+                overLimit = true;
+            }
             if (sendBtn) {
                 sendBtn.disabled = overLimit;
                 sendBtn.title = overLimit
