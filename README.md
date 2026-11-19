@@ -14,7 +14,8 @@
 Cairnmark brings local and hosted model providers into one browser interface.
 You can:
 
-- chat with an enabled model, attach supported files, and save useful chats;
+- chat with an enabled model, compact long conversations, attach supported
+  files, and save useful chats;
 - generate benchmark JSON from topics and custom instructions;
 - categorize, filter, inspect, and edit benchmark metadata;
 - run benchmark requests sequentially against a selected model; and
@@ -167,20 +168,43 @@ stores the switch state in `instance/cairnmark.db`. The **Prev. messages** field
 previous messages are sent regardless of the input value. Its state is also stored
 in `instance/cairnmark.db`.
 
-A **Compact chat** button appears next to **Clear chat** when there is more than one message
-or the estimated context usage is below 100%. It sends the previous request/response pairs
-(selected by **Prev. messages**) to the model using prompts from `System-prompts/compress_system.md`
-and `System-prompts/compress_user.md`, and stores the result as a compacted summary message.
-That summary becomes the first message of future requests; previous messages stay visible but are
-ignored. The button is disabled while a request is running, when there is no chat, when
-**Prev. messages** is 0, or when context usage exceeds 100%.
-
 The context-usage label below **Prev. messages** shows `used / max (percent%)`. Its background is
 green up to 75%, orange up to 95%, and red above 95%, which also disables **Send**. A thin bar
 above the message input mirrors the same percentage and colors. When no context size is known yet,
 the label shows "getting context data…" and the bar is grey. For llama.cpp, the model label also
 shows the detected context mode (`n_ctx`, `fit_on`, or `fit_off`) and the saved context size for
 that mode.
+
+### Compact long chats
+
+**Compact chat** replaces the active conversation context with a shorter model-generated
+summary. The button remains visible next to **Clear chat** and is disabled when compaction is
+not available, including while compaction is running, when there is no chat, when the latest
+message is already a compacted summary, when **Prev. messages** is `0`, or when the selected
+context already exceeds the model maximum.
+
+For manual compaction, select **Compact chat**. Cairnmark sends the request/response history
+selected by **Prev. messages** to the active model using
+`System-prompts/compress_system.md` and `System-prompts/compress_user.md`. The result appears
+as a light-red **compacted summary** message and is rendered as Markdown.
+
+The switch on the left side of **Compact chat** enables automatic compaction. Its tooltip is
+**Auto compact from 75%**:
+
+- off (the default) — compaction runs only when you select **Compact chat**;
+- on — after a successful normal model response, Cairnmark checks the same selected-history
+  token usage shown by the context label and bar. If it is strictly above 75% of the active
+  model's maximum context, Cairnmark immediately starts the normal compaction workflow.
+
+The automatic switch value is saved to `instance/cairnmark.db` when you select **Send** and
+is restored on the next page load. Toggling it without sending a message does not overwrite
+the saved value.
+
+After compaction, older messages remain visible but are excluded from later model requests.
+The compacted summary has the `assistant` role and becomes the earliest possible history
+message. **Prev. messages** is then applied only to the summary and messages created after it;
+with a smaller value, sufficiently old post-compaction context—including the summary—can still
+fall outside the selected history window.
 
 The additional-parameters dialog is session-only:
 
