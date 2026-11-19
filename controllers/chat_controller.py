@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from config import PROJECT_ROOT
 from flask import (
     Response,
     current_app,
@@ -831,6 +832,205 @@ class ChatController:
                     "Chat stream failed for provider=%s model=%s", provider, model
                 )
                 yield f"data: {json.dumps({'type': 'error', 'error': str(error)})}\n\n"
+
+        return Response(
+            stream_with_context(generate()),
+            mimetype="text/event-stream",
+        )
+
+    def compact(self):
+        data = request.get_json(silent=True) or {}
+        model_spec = (data.get("model") or "").strip()
+        try:
+            provider, model = self.service.resolve_online_model(model_spec)
+        except ProviderValidationError as error:
+            return jsonify({"error": str(error)}), 400
+        except ProviderOfflineError as error:
+            return jsonify({"error": str(error)}), 503
+
+        settings = get_chat_settings()
+        request_parameters = {
+            "temperature": settings.get("temperature"),
+            "top_p": settings.get("top_p"),
+            "top_k": settings.get("top_k"),
+            "seed": settings.get("seed"),
+            "min_p": settings.get("min_p"),
+        }
+
+        # Read the compaction prompts from disk.
+        try:
+            prompt_directory = Path(current_app.config["SYSTEM_PROMPT_DIRECTORY"])
+            system_prompt = (
+                prompt_directory / "compress_system.md"
+            ).read_text(encoding="utf-8")
+            user_prompt = (
+                prompt_directory / "compress_user.md"
+            ).read_text(encoding="utf-8")
+        except OSError as error:
+            return jsonify({"error": f"Could not read compaction prompts: {error}"}), 500
+
+        # Select the previous messages to compact.
+        history = [
+            message
+            for message in list_chat_messages()
+            if message["role"] in ("user", "assistant")
+        ]
+        history_limit = None
+        raw = data or {}
+        send_all_previous = False
+        for key in (
+            "send_all_previous",
+            "send_all_previous_messages",
+            "all_previous",
+            "all_previous_messages",
+            "history_all",
+            "all_history",
+        ):
+            if key in raw:
+                value = raw.get(key)
+                if isinstance(value, bool):
+                    send_all_previous = value
+                elif isinstance(value, (int, float)):
+                    send_all_previous = bool(value)
+                elif isinstance(value, str):
+                    send_all_previous = value.strip().lower() in {
+                        "true",
+                        "1",
+                        "yes",
+                        "on",
+                    }
+                break
+        else:
+            send_all_previous = bool(
+                chat_history_settings().get("send_all_previous", False)
+            )
+        if not send_all_previous:
+            try:
+                history_limit = _optional_parameter(
+                    data.get("history_limit"), "Prev. messages", int
+                )
+            except ValueError as error:
+                return jsonify({"error": str(error)}), 400
+        if history_limit is None and not send_all_previous:
+            # Empty input means full history.
+            history_limit = None
+        if send_all_previous:
+            selected_previous = history
+        else:
+            if history_limit is None:
+                selected_previous = history
+            elif history_limit <= 0:
+                selected_previous = []
+            else:
+                kept_previous = history_limit * 2
+                start = max(0, len(history) - kept_previous)
+                if start % 2:
+                    start += 1
+                selected_previous = history[start:]
+
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(
+            {"role": message["role"], "content": message["content"]}
+            for message in selected_previous
+        )
+        messages.append({"role": "user", "content": user_prompt})
+
+        stream_requested = request.args.get("stream") == "1" or "text/event-stream" in (
+            request.accept_mimetypes or ""
+        )
+
+        if not stream_requested:
+            started = time.monotonic()
+            try:
+                response_text, usage = self.service.chat_completion_with_params(
+                    provider,
+                    model,
+                    messages,
+                    **request_parameters,
+                )
+            except Exception as error:  # noqa: BLE001
+                current_app.logger.exception(
+                    "Compact request failed for provider=%s model=%s",
+                    provider,
+                    model,
+                )
+                return jsonify({"error": str(error)}), 502
+            elapsed = round(time.monotonic() - started, 2)
+            request_body = json.dumps({"model": model, "messages": messages})
+            add_chat_message(
+                "assistant",
+                response_text,
+                model_name=model,
+                provider=provider,
+                response_time=elapsed,
+                input_tokens=usage.get("prompt_tokens", 0),
+                output_tokens=usage.get("completion_tokens", 0),
+                system_prompt=system_prompt,
+                request_body=request_body,
+                compacted=True,
+            )
+            payload = {
+                "response": response_text,
+                "time": elapsed,
+                "input_tokens": usage.get("prompt_tokens", 0),
+                "output_tokens": usage.get("completion_tokens", 0),
+                "provider": provider,
+                "model": model,
+                "system_prompt": system_prompt,
+                "request_body": request_body,
+                "compacted": True,
+            }
+            return jsonify(payload)
+
+        def generate():
+            started = time.monotonic()
+            usage = {"prompt_tokens": 0, "completion_tokens": 0}
+            response_text = ""
+            try:
+                for event in self.service.chat_completion_with_params_stream(
+                    provider,
+                    model,
+                    messages,
+                    **request_parameters,
+                ):
+                    if event.get("type") == "chunk":
+                        response_text += event.get("text", "")
+                        yield f"data: {json.dumps(event)}\\n\\n"
+                    elif event.get("type") == "done":
+                        usage = event.get("usage", usage) or usage
+                        yield f"data: {json.dumps(event)}\\n\\n"
+                elapsed = round(time.monotonic() - started, 2)
+                request_body = json.dumps({"model": model, "messages": messages})
+                add_chat_message(
+                    "assistant",
+                    response_text,
+                    model_name=model,
+                    provider=provider,
+                    response_time=elapsed,
+                    input_tokens=usage.get("prompt_tokens", 0),
+                    output_tokens=usage.get("completion_tokens", 0),
+                    system_prompt=system_prompt,
+                    request_body=request_body,
+                    compacted=True,
+                )
+                payload = {
+                    "response": response_text,
+                    "time": elapsed,
+                    "input_tokens": usage.get("prompt_tokens", 0),
+                    "output_tokens": usage.get("completion_tokens", 0),
+                    "provider": provider,
+                    "model": model,
+                    "system_prompt": system_prompt,
+                    "request_body": request_body,
+                    "compacted": True,
+                    "type": "result",
+                }
+                yield f"data: {json.dumps(payload)}\\n\\n"
+            except Exception as error:  # noqa: BLE001
+                current_app.logger.exception(
+                    "Compact stream failed for provider=%s model=%s", provider, model
+                )
+                yield f"data: {json.dumps({'type': 'error', 'error': str(error)})}\\n\\n"
 
         return Response(
             stream_with_context(generate()),

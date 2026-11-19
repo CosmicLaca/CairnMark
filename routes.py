@@ -33,6 +33,12 @@ APPLICATION_ROUTES = (
         ("POST",),
     ),
     (
+        "/chat/compact",
+        "chat_compact",
+        chat_controller.compact,
+        ("POST",),
+    ),
+    (
         "/chat/save_settings",
         "chat_save_settings",
         chat_controller.save_settings,

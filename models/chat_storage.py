@@ -77,6 +77,7 @@ CHAT_MESSAGE_COLUMNS = {
     "preview_images": "TEXT NOT NULL DEFAULT ''",
     "has_audio": "INTEGER NOT NULL DEFAULT 0",
     "preview_media": "TEXT NOT NULL DEFAULT ''",
+    "compacted": "INTEGER NOT NULL DEFAULT 0",
 }
 
 
@@ -104,7 +105,7 @@ def list_chat_messages():
     rows = CHAT_STORE.fetch(
         "SELECT id, role, content, model_name, provider, response_time, "
         "input_tokens, output_tokens, system_prompt, saved_system_prompt_name, "
-        "request_body, preview_images, has_audio, preview_media, created_at "
+        "request_body, preview_images, has_audio, preview_media, compacted, created_at "
         "FROM chat_messages ORDER BY id"
     )
     return [
@@ -123,7 +124,8 @@ def list_chat_messages():
             "preview_images": _parse_list(row[11] or "", csv_fallback=True),
             "has_audio": bool(row[12]),
             "preview_media": _parse_list(row[13] or ""),
-            "created_at": row[14],
+            "compacted": bool(row[14]),
+            "created_at": row[15],
         }
         for row in rows
     ]
@@ -143,13 +145,14 @@ def add_chat_message(
     preview_images=None,
     has_audio=0,
     preview_media=None,
+    compacted=0,
 ):
     _rowcount, lastrowid = CHAT_STORE.execute(
         "INSERT INTO chat_messages "
         "(role, content, model_name, provider, response_time, input_tokens, "
         "output_tokens, system_prompt, saved_system_prompt_name, request_body, "
-        "preview_images, has_audio, preview_media) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "preview_images, has_audio, preview_media, compacted) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             role,
             content,
@@ -164,6 +167,7 @@ def add_chat_message(
             _stored_list(preview_images),
             1 if has_audio else 0,
             _stored_list(preview_media),
+            1 if compacted else 0,
         ),
     )
     return lastrowid

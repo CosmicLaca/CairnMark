@@ -70,9 +70,11 @@
         <p>Choose an active model in the setup panel, then write the first message below.</p>
       </div>
       {% for message in chat_messages %}
-        <div class="chat-message chat-message--{{ message.role }}{% if message.role == 'user' and message.has_audio %} chat-message--has-audio{% endif %}">
+        <div class="chat-message chat-message--{{ message.role }}{% if message.compacted %} chat-message--compacted{% endif %}{% if message.role == 'user' and message.has_audio %} chat-message--has-audio{% endif %}">
           <span class="chat-role">
-            {% if message.role == 'assistant' and message.provider %}
+            {% if message.compacted %}
+              compacted summary
+            {% elif message.role == 'assistant' and message.provider %}
               assistant::{{ message.provider }}::{{ message.model_name }}{% if message.saved_system_prompt_name %}::{{ message.saved_system_prompt_name }}{% endif %}
             {% else %}
               {{ message.role }}
@@ -247,6 +249,10 @@
         <button class="save-metadata-button chat-clear-button" type="button" data-chat-clear>
           <span aria-hidden="true">×</span>
           Clear chat
+        </button>
+        <button class="save-metadata-button chat-compact-button" type="button" data-chat-compact hidden>
+          <span aria-hidden="true">⇄</span>
+          Compact chat
         </button>
       </div>
     </form>

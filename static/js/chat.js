@@ -27,6 +27,7 @@ const chatMessageTokens = Array.isArray(window.CairnmarkChatMessageTokens)
     : [];
     const saveBtn = document.querySelector("[data-chat-save-settings]");
     const clearBtn = document.querySelector("[data-chat-clear]");
+const compactBtn = document.querySelector("[data-chat-compact]");
     const savedSelect = document.querySelector("[data-chat-saved]");
     const replaceBtn = document.querySelector("[data-chat-replace]");
     const deleteBtn = document.querySelector("[data-chat-delete]");
@@ -273,9 +274,14 @@ const chatMessageTokens = Array.isArray(window.CairnmarkChatMessageTokens)
         if (!historyEl) return;
         const div = document.createElement("div");
         div.className = `chat-message chat-message--${role}`;
+        if (meta && meta.compacted) {
+            div.classList.add("chat-message--compacted");
+        }
         const roleSpan = document.createElement("span");
         roleSpan.className = "chat-role";
-        if (role === "assistant" && meta && meta.provider) {
+        if (meta && meta.compacted) {
+            roleSpan.textContent = "compacted summary";
+        } else if (role === "assistant" && meta && meta.provider) {
             let label = `assistant::${meta.provider}::${meta.model}`;
             if (meta.saved_system_prompt_name) {
                 label += `::${meta.saved_system_prompt_name}`;
@@ -484,6 +490,7 @@ const chatMessageTokens = Array.isArray(window.CairnmarkChatMessageTokens)
                 has_audio: Boolean(m.has_audio),
                 preview_media: m.preview_media || [],
                 request_body: m.request_body,
+                compacted: Boolean(m.compacted),
             });
         });
         syncEmptyState();
@@ -2071,6 +2078,34 @@ const chatMessageTokens = Array.isArray(window.CairnmarkChatMessageTokens)
         return selectedPrevious.concat(currentTurn);
     };
 
+    const updateCompactButtonVisibility = () => {
+        if (!compactBtn) return;
+        const hasMessages = chatMessageTokens.length > 0;
+        const hasMultipleMessages = chatMessageTokens.length > 1;
+        const switchOn = Boolean(
+            historySwitch && historySwitch.getAttribute("aria-checked") === "true"
+        );
+        const rawLimit = historyLimitEl ? String(historyLimitEl.value || "").trim() : "";
+        const limit = rawLimit ? parseInt(rawLimit, 10) : 0;
+        const hasHistoryToSend = switchOn || (Number.isFinite(limit) && limit > 0);
+        let notFull = false;
+        let overLimit = false;
+        if (currentNctx) {
+            const messages = selectedUsageMessages();
+            const used = messages.reduce(
+                (total, item) =>
+                    total + (Number(item && item.input_tokens) || 0) +
+                    (Number(item && item.output_tokens) || 0),
+                0
+            );
+            notFull = used / currentNctx < 1;
+            overLimit = used / currentNctx > 1;
+        }
+        const canCompact = hasMessages && hasHistoryToSend && !overLimit && (hasMultipleMessages || notFull);
+        compactBtn.hidden = !canCompact;
+        compactBtn.disabled = !canCompact;
+    };
+
     const updateTokenUsage = () => {
         if (!tokenUsageEl) return;
         const messages = selectedUsageMessages();
@@ -2140,6 +2175,7 @@ const chatMessageTokens = Array.isArray(window.CairnmarkChatMessageTokens)
                 sendBtn.title = "";
             }
         }
+        updateCompactButtonVisibility();
     };
 
     if (historySwitch) {
@@ -2177,6 +2213,128 @@ const chatMessageTokens = Array.isArray(window.CairnmarkChatMessageTokens)
             });
         }
     });
+    updateTokenUsage();
+    const handleCompact = async () => {
+        if (!compactBtn) return;
+        const message = inputEl ? "" : "";
+        const model = modelSelect?.value || "";
+        if (!model) {
+            window.alert("Model is required.");
+            return;
+        }
+        compactBtn.disabled = true;
+        if (sendBtn) sendBtn.disabled = true;
+
+        const controller = new AbortController();
+        let aborted = false;
+        const loadingEl = showLoading(() => {
+            aborted = true;
+            controller.abort();
+        });
+
+        const requestBody = {
+            model,
+            history_limit: optionalNumber(historyLimitEl, Number.parseInt),
+            send_all_previous: Boolean(
+                historySwitch && historySwitch.getAttribute("aria-checked") === "true"
+            ),
+        };
+
+        try {
+            const response = await fetch("/chat/compact?stream=1", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Accept: "text/event-stream",
+                },
+                body: JSON.stringify(requestBody),
+                signal: controller.signal,
+            });
+            if (!response.ok) {
+                let payload = {};
+                try { payload = await response.json(); } catch (error) {}
+                throw new Error(payload.error || `HTTP ${response.status}`);
+            }
+            if (!response.body) throw new Error("Streaming is not supported by this browser.");
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
+            let accumulated = "";
+            let finalPayload = null;
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const events = buffer.split("\\n\\n");
+                buffer = events.pop() || "";
+                for (const event of events) {
+                    const lines = event.split("\\n");
+                    for (const line of lines) {
+                        if (!line.startsWith("data:")) continue;
+                        const raw = line.slice(5).trim();
+                        if (!raw) continue;
+                        let data;
+                        try { data = JSON.parse(raw); } catch (error) { continue; }
+                        if (data.type === "status") {
+                            if (loadingEl && loadingEl.loadingText) loadingEl.loadingText.textContent = data.text || "thinking…";
+                        } else if (data.type === "chunk") {
+                            accumulated += data.text || "";
+                            if (loadingEl && loadingEl.tokenCount) loadingEl.tokenCount.textContent = `${accumulated.length} chars`;
+                        } else if (data.type === "done") {
+                            if (loadingEl && loadingEl.tokenCount) loadingEl.tokenCount.textContent = `${accumulated.length} chars`;
+                        } else if (data.type === "result") {
+                            finalPayload = data;
+                        } else if (data.type === "error") {
+                            throw new Error(data.error || "Request failed");
+                        }
+                    }
+                }
+            }
+
+            if (aborted) {
+                if (loadingEl && loadingEl.element) loadingEl.element.remove();
+                syncEmptyState();
+                try { await api.request("/chat/abort", { method: "POST" }); } catch (error) {}
+                return;
+            }
+            if (loadingEl && loadingEl.element) loadingEl.element.remove();
+            if (finalPayload) {
+                chatMessageTokens.push({
+                    input_tokens: finalPayload.input_tokens || 0,
+                    output_tokens: finalPayload.output_tokens || 0,
+                });
+                appendMessage("assistant", finalPayload.response || "", {
+                    provider: finalPayload.provider,
+                    model: finalPayload.model,
+                    time: finalPayload.time,
+                    input_tokens: finalPayload.input_tokens,
+                    output_tokens: finalPayload.output_tokens,
+                    system_prompt: finalPayload.system_prompt,
+                    request_body: finalPayload.request_body,
+                    compacted: true,
+                });
+                updateTokenUsage();
+            } else if (accumulated) {
+                appendMessage("assistant", accumulated, { compacted: true });
+            }
+        } catch (error) {
+            if (loadingEl && loadingEl.element) loadingEl.element.remove();
+            if (aborted || (error && error.name === "AbortError")) {
+                if (loadingEl && loadingEl.element) loadingEl.element.remove();
+                syncEmptyState();
+                try { await api.request("/chat/abort", { method: "POST" }); } catch (error2) {}
+                return;
+            }
+            window.alert(`Compact failed: ${error}`);
+        } finally {
+            if (compactBtn) compactBtn.disabled = false;
+            updateTokenUsage();
+        }
+    };
+
+    compactBtn?.addEventListener("click", handleCompact);
     updateTokenUsage();
     sendBtn?.addEventListener("click", handleSend);
     saveBtn?.addEventListener("click", handleSave);
