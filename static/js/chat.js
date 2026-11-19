@@ -597,7 +597,7 @@ const compactBtn = document.querySelector("[data-chat-compact]");
                     : attachment.name,
                 filename: "",
             }));
-        chatMessageTokens.push({ input_tokens: 0, output_tokens: 0 });
+        chatMessageTokens.push({ input_tokens: 0, output_tokens: 0, compacted: false });
         const userMessageEl = appendMessage("user", message, {
             preview_images: userPreviewImages,
             has_audio: hasAudioAttachment && !saveOriginalMedia,
@@ -777,6 +777,7 @@ const compactBtn = document.querySelector("[data-chat-compact]");
                 chatMessageTokens.push({
                     input_tokens: finalPayload.input_tokens || 0,
                     output_tokens: finalPayload.output_tokens || 0,
+                    compacted: false,
                 });
                 updateTokenUsage();
                 appendMessage("assistant", finalPayload.response || "", {
@@ -921,6 +922,7 @@ const compactBtn = document.querySelector("[data-chat-compact]");
                 chatMessageTokens.push({
                     input_tokens: message.input_tokens || 0,
                     output_tokens: message.output_tokens || 0,
+                    compacted: Boolean(message.compacted),
                 });
             });
             updateTokenUsage();
@@ -2055,16 +2057,27 @@ const compactBtn = document.querySelector("[data-chat-compact]");
         historyLimitEl.disabled = allPrevious;
     };
 
+    const usageHistory = () => {
+        let lastCompacted = -1;
+        chatMessageTokens.forEach((item, index) => {
+            if (item && item.compacted) lastCompacted = index;
+        });
+        if (lastCompacted >= 0) {
+            return chatMessageTokens.slice(lastCompacted);
+        }
+        return chatMessageTokens.slice();
+    };
+
     const selectedUsageMessages = () => {
         const allPrevious = Boolean(
             historySwitch && historySwitch.getAttribute("aria-checked") === "true"
         );
         const rawLimit = historyLimitEl ? String(historyLimitEl.value || "").trim() : "";
         const limit = rawLimit ? parseInt(rawLimit, 10) : NaN;
+        const history = usageHistory();
         if (allPrevious || !Number.isFinite(limit) || limit < 0) {
-            return chatMessageTokens.slice();
+            return history.slice();
         }
-        const history = chatMessageTokens;
         if (history.length === 0) return [];
         const currentTurn = history.slice(-1);
         const previous = history.slice(0, -1);
@@ -2082,6 +2095,10 @@ const compactBtn = document.querySelector("[data-chat-compact]");
         if (!compactBtn) return;
         const hasMessages = chatMessageTokens.length > 0;
         const hasMultipleMessages = chatMessageTokens.length > 1;
+        const lastIsCompacted = Boolean(
+            chatMessageTokens.length &&
+                chatMessageTokens[chatMessageTokens.length - 1].compacted
+        );
         const switchOn = Boolean(
             historySwitch && historySwitch.getAttribute("aria-checked") === "true"
         );
@@ -2101,7 +2118,7 @@ const compactBtn = document.querySelector("[data-chat-compact]");
             notFull = used / currentNctx < 1;
             overLimit = used / currentNctx > 1;
         }
-        const canCompact = hasMessages && hasHistoryToSend && !overLimit && (hasMultipleMessages || notFull);
+        const canCompact = hasMessages && hasHistoryToSend && !overLimit && !lastIsCompacted && (hasMultipleMessages || notFull);
         compactBtn.hidden = !canCompact;
         compactBtn.disabled = !canCompact;
     };

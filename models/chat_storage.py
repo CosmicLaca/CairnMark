@@ -282,8 +282,8 @@ def load_saved_chat(name):
                 "INSERT INTO chat_messages "
                 "(role, content, model_name, provider, response_time, input_tokens, "
                 "output_tokens, system_prompt, saved_system_prompt_name, request_body, "
-                "preview_images, has_audio, preview_media) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "preview_images, has_audio, preview_media, compacted) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     m.get("role", "user"),
                     m.get("content", ""),
@@ -298,6 +298,7 @@ def load_saved_chat(name):
                     _stored_list(preview_images),
                     1 if m.get("has_audio") else 0,
                     _stored_list(m.get("preview_media", [])),
+                    1 if m.get("compacted") else 0,
                 ),
             )
     return True
