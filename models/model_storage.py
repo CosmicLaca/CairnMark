@@ -1,205 +1,187 @@
-"""SQLite persistence for provider-specific model configurations."""
+"""SQLite repository for provider and model configurations."""
 
 from models.sqlite_store import SQLiteStore
-from services.token_encryption import encrypt_token, decrypt_token
+from services.token_encryption import decrypt_token, encrypt_token
 
 
 SCHEMA = """
-        CREATE TABLE IF NOT EXISTS model_configurations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            provider_name TEXT NOT NULL,
-            model_name TEXT NOT NULL,
-            is_enabled BOOLEAN DEFAULT 1,
-            size_gb INTEGER,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-"""
+CREATE TABLE IF NOT EXISTS model_configurations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_name TEXT NOT NULL,
+    model_name TEXT NOT NULL,
+    is_enabled BOOLEAN DEFAULT 1,
+    size_gb INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
-INDEX = """
-        CREATE INDEX IF NOT EXISTS idx_provider_model 
-        ON model_configurations (provider_name, model_name)
-"""
+CREATE INDEX IF NOT EXISTS idx_provider_model
+ON model_configurations (provider_name, model_name);
 
-PROVIDER_SCHEMA = """
-        CREATE TABLE IF NOT EXISTS provider_configurations (
-            provider_name TEXT PRIMARY KEY,
-            server_ip TEXT NOT NULL,
-            server_port INTEGER NOT NULL,
-            api_key TEXT,
-            is_enabled BOOLEAN NOT NULL DEFAULT 0,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
+CREATE TABLE IF NOT EXISTS provider_configurations (
+    provider_name TEXT PRIMARY KEY,
+    server_ip TEXT NOT NULL,
+    server_port INTEGER NOT NULL,
+    api_key TEXT,
+    is_enabled BOOLEAN NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
 """
 
 
 def _migrate(connection):
     """Add provider columns introduced after the initial schema."""
-    provider_columns = {
-        row[1]
-        for row in connection.execute(
-            "PRAGMA table_info(provider_configurations)"
-        ).fetchall()
+    tables = {
+        "provider_configurations": {
+            "api_key": "TEXT",
+        },
+        "model_configurations": {
+            "size_gb": "INTEGER",
+        },
     }
-    if "api_key" not in provider_columns:
-        connection.execute(
-            "ALTER TABLE provider_configurations ADD COLUMN api_key TEXT"
-        )
-    model_columns = {
-        row[1]
-        for row in connection.execute(
-            "PRAGMA table_info(model_configurations)"
-        ).fetchall()
-    }
-    if "size_gb" not in model_columns:
-        connection.execute(
-            "ALTER TABLE model_configurations ADD COLUMN size_gb INTEGER"
-        )
+    for table, columns in tables.items():
+        existing = {
+            row[1] for row in connection.execute(f"PRAGMA table_info({table})")
+        }
+        for column, definition in columns.items():
+            if column not in existing:
+                connection.execute(
+                    f"ALTER TABLE {table} ADD COLUMN {column} {definition}"
+                )
 
 
-STORE = SQLiteStore(
-    "DATABASE_PATH",
-    schema=";\n".join((SCHEMA, INDEX, PROVIDER_SCHEMA)),
-    migrate=_migrate,
-)
+STORE = SQLiteStore("DATABASE_PATH", schema=SCHEMA, migrate=_migrate)
+_UNSET = object()
 
 
-def save_model_list(models, provider_name="llama.cpp"):
-    """Save model list to database with their enabled states and sizes."""
-    with STORE.transaction() as connection:
-        connection.execute(
-            "DELETE FROM model_configurations WHERE provider_name = ?",
-            (provider_name,),
-        )
-        connection.executemany(
+class ModelConfigurationRepository:
+    """Persist model lists and provider connections in one database boundary."""
+
+    def __init__(self, store=STORE):
+        self.store = store
+
+    def models(self, provider="llama.cpp", values=_UNSET):
+        """Read a provider's models, or replace them when values are supplied."""
+        if values is _UNSET:
+            rows = self.store.fetch(
+                """
+                SELECT model_name, is_enabled, size_gb
+                FROM model_configurations
+                WHERE provider_name = ?
+                ORDER BY model_name
+                """,
+                (provider,),
+            )
+            return [
+                {"name": name, "enabled": bool(enabled), "size_gb": size_gb}
+                for name, enabled, size_gb in rows
+            ]
+
+        with self.store.transaction() as connection:
+            connection.execute(
+                "DELETE FROM model_configurations WHERE provider_name = ?",
+                (provider,),
+            )
+            connection.executemany(
+                """
+                INSERT INTO model_configurations
+                    (provider_name, model_name, is_enabled, size_gb)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    (
+                        provider,
+                        model.get("id") or model.get("name") or "unknown",
+                        bool(model.get("enabled", True)),
+                        model.get("size_gb"),
+                    )
+                    for model in values
+                ),
+            )
+
+    def active(self):
+        """Return enabled models belonging to enabled providers."""
+        rows = self.store.fetch(
             """
-            INSERT INTO model_configurations
-                (provider_name, model_name, is_enabled, size_gb)
+            SELECT models.provider_name, models.model_name, models.size_gb
+            FROM model_configurations AS models
+            JOIN provider_configurations AS providers
+              ON providers.provider_name = models.provider_name
+            WHERE providers.is_enabled = 1 AND models.is_enabled = 1
+            ORDER BY models.provider_name COLLATE NOCASE,
+                     models.model_name COLLATE NOCASE
+            """
+        )
+        return [
+            {"provider": provider, "model": model, "size_gb": size_gb}
+            for provider, model, size_gb in rows
+        ]
+
+    def summary(self, provider="llama.cpp"):
+        """Return total and enabled model counts for one provider."""
+        total, enabled = self.store.fetch(
+            """
+            SELECT COUNT(*), COALESCE(SUM(is_enabled), 0)
+            FROM model_configurations
+            WHERE provider_name = ?
+            """,
+            (provider,),
+            one=True,
+        )
+        return {"total": total, "enabled": enabled}
+
+    def provider(self, name, values=_UNSET):
+        """Read a provider connection, or save it when values are supplied."""
+        if values is _UNSET:
+            row = self.store.fetch(
+                """
+                SELECT provider_name, server_ip, server_port, api_key, is_enabled
+                FROM provider_configurations
+                WHERE provider_name = ?
+                """,
+                (name,),
+                one=True,
+            )
+            if not row:
+                return None
+            return {
+                "provider": row[0],
+                "ip": row[1],
+                "port": row[2],
+                "api_key": decrypt_token(row[3]),
+                "enabled": bool(row[4]),
+            }
+
+        self.store.execute(
+            """
+            INSERT INTO provider_configurations
+                (provider_name, server_ip, server_port, api_key)
             VALUES (?, ?, ?, ?)
+            ON CONFLICT(provider_name) DO UPDATE SET
+                server_ip = excluded.server_ip,
+                server_port = excluded.server_port,
+                api_key = COALESCE(excluded.api_key, provider_configurations.api_key),
+                updated_at = CURRENT_TIMESTAMP
             """,
             (
-                (
-                    provider_name,
-                    model.get("id") or model.get("name") or "unknown",
-                    bool(model.get("enabled", True)),
-                    model.get("size_gb"),
-                )
-                for model in models
+                name,
+                values["ip"],
+                values["port"],
+                encrypt_token(values.get("api_key")),
             ),
         )
 
-
-def get_saved_model_configuration(provider_name="llama.cpp"):
-    """Retrieve saved model configuration for a specific provider."""
-    rows = STORE.fetch(
-        """
-        SELECT model_name, is_enabled, size_gb
-        FROM model_configurations
-        WHERE provider_name = ?
-        ORDER BY model_name
-        """,
-        (provider_name,),
-    )
-    return [
-        {
-            "name": model_name,
-            "enabled": bool(is_enabled),
-            "size_gb": size_gb,
-        }
-        for model_name, is_enabled, size_gb in rows
-    ]
+    def set_enabled(self, provider, enabled):
+        """Persist the overall enabled state for a configured provider."""
+        rowcount, _lastrowid = self.store.execute(
+            """
+            UPDATE provider_configurations
+            SET is_enabled = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE provider_name = ?
+            """,
+            (bool(enabled), provider),
+        )
+        return rowcount > 0
 
 
-def get_active_model_configurations():
-    """Return enabled models that belong to enabled providers."""
-    rows = STORE.fetch(
-        """
-        SELECT models.provider_name, models.model_name, models.size_gb
-        FROM model_configurations AS models
-        JOIN provider_configurations AS providers
-          ON providers.provider_name = models.provider_name
-        WHERE providers.is_enabled = 1
-          AND models.is_enabled = 1
-        ORDER BY models.provider_name COLLATE NOCASE,
-                 models.model_name COLLATE NOCASE
-        """
-    )
-    return [
-        {
-            "provider": provider_name,
-            "model": model_name,
-            "size_gb": size_gb,
-        }
-        for provider_name, model_name, size_gb in rows
-    ]
-
-
-def get_model_configuration_summary(provider_name="llama.cpp"):
-    """Return total and enabled model counts for one provider."""
-    total, enabled = STORE.fetch(
-        """
-        SELECT COUNT(*), COALESCE(SUM(is_enabled), 0)
-        FROM model_configurations
-        WHERE provider_name = ?
-        """,
-        (provider_name,),
-        one=True,
-    )
-    return {"total": total, "enabled": enabled}
-
-
-def save_provider_configuration(
-    provider_name,
-    server_ip,
-    server_port,
-    api_key=None,
-):
-    """Save a provider connection, preserving an omitted API key."""
-    STORE.execute(
-        """
-        INSERT INTO provider_configurations
-            (provider_name, server_ip, server_port, api_key)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(provider_name) DO UPDATE SET
-            server_ip = excluded.server_ip,
-            server_port = excluded.server_port,
-            api_key = COALESCE(excluded.api_key, provider_configurations.api_key),
-            updated_at = CURRENT_TIMESTAMP
-        """,
-        (provider_name, server_ip, server_port, encrypt_token(api_key)),
-    )
-
-
-def get_provider_configuration(provider_name):
-    """Return one saved provider endpoint and its enabled state."""
-    row = STORE.fetch(
-        """
-        SELECT provider_name, server_ip, server_port, api_key, is_enabled
-        FROM provider_configurations
-        WHERE provider_name = ?
-        """,
-        (provider_name,),
-        one=True,
-    )
-    if not row:
-        return None
-    return {
-        "provider": row[0],
-        "ip": row[1],
-        "port": row[2],
-        "api_key": decrypt_token(row[3]),
-        "enabled": bool(row[4]),
-    }
-
-
-def set_provider_enabled(provider_name, is_enabled):
-    """Persist the overall enabled state for a configured provider."""
-    rowcount, _lastrowid = STORE.execute(
-        """
-        UPDATE provider_configurations
-        SET is_enabled = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE provider_name = ?
-        """,
-        (bool(is_enabled), provider_name),
-    )
-    return rowcount > 0
+MODEL_CONFIGURATIONS = ModelConfigurationRepository()

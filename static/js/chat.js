@@ -11,25 +11,23 @@
     const tempEl = document.querySelector("[data-chat-temperature]");
     const topPEl = document.querySelector("[data-chat-top-p]");
     const topKEl = document.querySelector("[data-chat-top-k]");
-const minPEl = document.querySelector("[data-chat-min-p]");
+    const minPEl = document.querySelector("[data-chat-min-p]");
     const seedEl = document.querySelector("[data-chat-seed]");
     const seedSwitch = document.querySelector("[data-chat-seed-switch]");
     const historyLimitEl = document.querySelector("[data-chat-history-limit]");
-const historySwitch = document.querySelector("[data-chat-history-switch], [data-chat-send-all], [data-chat-all-previous], [data-chat-history-all], [data-history-switch]");
-const tokenUsageEl = document.querySelector("[data-chat-token-usage]");
-const contextBarEl = document.querySelector("[data-chat-context-bar]");
-const contextBarFillEl = document.querySelector("[data-chat-context-bar-fill]");
-let sessionCtxMode = null;
-let sessionCtxModeFetched = false;
-let currentNctx = null;
-let compactRequestActive = false;
-const chatMessageTokens = Array.isArray(window.CairnmarkChatMessageTokens)
-    ? window.CairnmarkChatMessageTokens.slice()
-    : [];
+    const historySwitch = document.querySelector("[data-chat-history-switch]");
+    const tokenUsageEl = document.querySelector("[data-chat-token-usage]");
+    const contextBarFillEl = document.querySelector("[data-chat-context-bar-fill]");
+    let sessionCtxMode = null;
+    let sessionCtxModeFetched = false;
+    let compactRequestActive = false;
+    const chatContext = new window.CairnmarkChatContextState(
+        window.CairnmarkChatMessageTokens
+    );
     const saveBtn = document.querySelector("[data-chat-save-settings]");
     const clearBtn = document.querySelector("[data-chat-clear]");
-const compactBtn = document.querySelector("[data-chat-compact]");
-const compactSwitch = document.querySelector("[data-chat-compact-switch]");
+    const compactBtn = document.querySelector("[data-chat-compact]");
+    const compactSwitch = document.querySelector("[data-chat-compact-switch]");
     const savedSelect = document.querySelector("[data-chat-saved]");
     const replaceBtn = document.querySelector("[data-chat-replace]");
     const deleteBtn = document.querySelector("[data-chat-delete]");
@@ -602,7 +600,7 @@ const compactSwitch = document.querySelector("[data-chat-compact-switch]");
                     : attachment.name,
                 filename: "",
             }));
-        chatMessageTokens.push({ input_tokens: 0, output_tokens: 0, compacted: false });
+        chatContext.add({ input_tokens: 0, output_tokens: 0, compacted: false });
         const userMessageEl = appendMessage("user", message, {
             preview_images: userPreviewImages,
             has_audio: hasAudioAttachment && !saveOriginalMedia,
@@ -771,6 +769,7 @@ const compactSwitch = document.querySelector("[data-chat-compact-switch]");
             }
 
             if (aborted) {
+                chatContext.removeLast();
                 if (userMessageEl) userMessageEl.remove();
                 if (loadingEl && loadingEl.element) loadingEl.element.remove();
                 syncEmptyState();
@@ -783,7 +782,7 @@ const compactSwitch = document.querySelector("[data-chat-compact-switch]");
             }
             if (loadingEl && loadingEl.element) loadingEl.element.remove();
             if (finalPayload) {
-                chatMessageTokens.push({
+                chatContext.add({
                     input_tokens: finalPayload.input_tokens || 0,
                     output_tokens: finalPayload.output_tokens || 0,
                     compacted: false,
@@ -819,6 +818,7 @@ const compactSwitch = document.querySelector("[data-chat-compact-switch]");
         } catch (error) {
             if (loadingEl && loadingEl.element) loadingEl.element.remove();
             if (aborted || (error && error.name === "AbortError")) {
+                chatContext.removeLast();
                 if (userMessageEl) userMessageEl.remove();
                 if (loadingEl && loadingEl.element) loadingEl.element.remove();
                 syncEmptyState();
@@ -859,7 +859,7 @@ const compactSwitch = document.querySelector("[data-chat-compact-switch]");
                 syncEmptyState();
             }
             if (savedSelect) savedSelect.value = "";
-            chatMessageTokens.length = 0;
+            chatContext.clear();
             updateTokenUsage();
         } catch (error) {
             window.alert(`Clear failed: ${error}`);
@@ -930,14 +930,11 @@ const compactSwitch = document.querySelector("[data-chat-compact-switch]");
             });
             const messages = payload.messages || [];
             renderHistory(messages);
-            chatMessageTokens.length = 0;
-            messages.forEach((message) => {
-                chatMessageTokens.push({
+            chatContext.replace(messages.map((message) => ({
                     input_tokens: message.input_tokens || 0,
                     output_tokens: message.output_tokens || 0,
                     compacted: Boolean(message.compacted),
-                });
-            });
+                })));
             updateTokenUsage();
         } catch (error) {
             window.alert(`Load chat failed: ${error}`);
@@ -1356,11 +1353,13 @@ const compactSwitch = document.querySelector("[data-chat-compact-switch]");
         const requestSeq = ++mediaUploadsSeq;
         // Clear icons first: without saved modalities the default is false.
         renderMediaUploads(null);
+        chatContext.setMaxTokens(null);
         if (modelNctxEl) {
             modelNctxEl.textContent = "";
         }
         const isLocal = provider === "llama.cpp" || provider === "vllm";
         if (!isLocal || !model) {
+            updateTokenUsage();
             return;
         }
         try {
@@ -1392,9 +1391,7 @@ const compactSwitch = document.querySelector("[data-chat-compact-switch]");
             if (requestSeq !== mediaUploadsSeq) return;
             renderMediaUploads(payload && payload.modalities);
             const resolvedMode = (payload && payload.ctx_mode) || mode;
-            if (payload && payload.n_ctx != null) {
-                currentNctx = payload.n_ctx;
-            }
+            chatContext.setMaxTokens(payload && payload.n_ctx);
             if (modelNctxEl) {
                 if (payload && payload.n_ctx != null && resolvedMode) {
                     modelNctxEl.textContent = `| N ctx: ${payload.n_ctx} | ${resolvedMode}`;
@@ -1408,6 +1405,7 @@ const compactSwitch = document.querySelector("[data-chat-compact-switch]");
         } catch (error) {
             if (requestSeq !== mediaUploadsSeq) return;
             renderMediaUploads(null);
+            chatContext.setMaxTokens(null);
             if (modelNctxEl) {
                 modelNctxEl.textContent = "";
             }
@@ -2070,85 +2068,36 @@ const compactSwitch = document.querySelector("[data-chat-compact-switch]");
         historyLimitEl.disabled = allPrevious;
     };
 
-    const usageHistory = () => {
-        let lastCompacted = -1;
-        chatMessageTokens.forEach((item, index) => {
-            if (item && item.compacted) lastCompacted = index;
-        });
-        if (lastCompacted >= 0) {
-            return chatMessageTokens.slice(lastCompacted);
-        }
-        return chatMessageTokens.slice();
-    };
-
-    const selectedUsageMessages = () => {
-        const allPrevious = Boolean(
+    const contextSelection = () => ({
+        allPrevious: Boolean(
             historySwitch && historySwitch.getAttribute("aria-checked") === "true"
-        );
-        const rawLimit = historyLimitEl ? String(historyLimitEl.value || "").trim() : "";
-        const limit = rawLimit ? parseInt(rawLimit, 10) : NaN;
-        const history = usageHistory();
-        if (allPrevious || !Number.isFinite(limit) || limit < 0) {
-            return history.slice();
-        }
-        if (history.length === 0) return [];
-        const currentTurn = history.slice(-1);
-        const previous = history.slice(0, -1);
-        if (limit <= 0) {
-            return [];
-        }
-        const keptPrevious = limit * 2;
-        let start = Math.max(0, previous.length - keptPrevious);
-        const selectedPrevious = previous.slice(start);
-        return selectedPrevious.concat(currentTurn);
-    };
-
-    const selectedTokenUsage = () => selectedUsageMessages().reduce(
-        (total, item) =>
-            total + (Number(item && item.input_tokens) || 0) +
-            (Number(item && item.output_tokens) || 0),
-        0
-    );
+        ),
+        historyLimit: historyLimitEl ? historyLimitEl.value : "",
+    });
 
     const shouldAutoCompact = () => {
         const enabled = Boolean(
             compactSwitch && compactSwitch.getAttribute("aria-checked") === "true"
         );
-        if (!enabled || !currentNctx || compactRequestActive) return false;
-        return selectedTokenUsage() / currentNctx > 0.75;
+        return chatContext.shouldAutoCompact(
+            contextSelection(),
+            enabled,
+            compactRequestActive
+        );
     };
 
     const updateCompactButtonVisibility = () => {
         if (!compactBtn) return;
-        const hasMessages = chatMessageTokens.length > 0;
-        const hasMultipleMessages = chatMessageTokens.length > 1;
-        const lastIsCompacted = Boolean(
-            chatMessageTokens.length &&
-                chatMessageTokens[chatMessageTokens.length - 1].compacted
-        );
-        const switchOn = Boolean(
-            historySwitch && historySwitch.getAttribute("aria-checked") === "true"
-        );
-        const rawLimit = historyLimitEl ? String(historyLimitEl.value || "").trim() : "";
-        const limit = rawLimit ? parseInt(rawLimit, 10) : 0;
-        const hasHistoryToSend = switchOn || (Number.isFinite(limit) && limit > 0);
-        let notFull = false;
-        let overLimit = false;
-        if (currentNctx) {
-            const used = selectedTokenUsage();
-            notFull = used / currentNctx < 1;
-            overLimit = used / currentNctx > 1;
-        }
-        const canCompact = hasMessages && hasHistoryToSend && !overLimit && !lastIsCompacted && (hasMultipleMessages || notFull);
-        compactBtn.disabled = !canCompact;
+        compactBtn.disabled = compactRequestActive
+            || !chatContext.canCompact(contextSelection());
     };
 
     const updateTokenUsage = () => {
         if (!tokenUsageEl) return;
-        const used = selectedTokenUsage();
-        if (currentNctx) {
-            const percent = Math.round((used / currentNctx) * 100);
-            tokenUsageEl.textContent = `${used} / ${currentNctx} (${percent}%)`;
+        const usage = chatContext.usage(contextSelection());
+        if (usage.max) {
+            const { used, max, percent } = usage;
+            tokenUsageEl.textContent = `${used} / ${max} (${percent}%)`;
             tokenUsageEl.classList.remove(
                 "chat-token-usage--ok",
                 "chat-token-usage--warn",
@@ -2247,7 +2196,6 @@ const compactSwitch = document.querySelector("[data-chat-compact-switch]");
     updateTokenUsage();
     const handleCompact = async () => {
         if (!compactBtn || compactRequestActive) return;
-        const message = inputEl ? "" : "";
         const model = modelSelect?.value || "";
         if (!model) {
             window.alert("Model is required.");
@@ -2333,7 +2281,7 @@ const compactSwitch = document.querySelector("[data-chat-compact-switch]");
             }
             if (loadingEl && loadingEl.element) loadingEl.element.remove();
             if (finalPayload) {
-                chatMessageTokens.push({
+                chatContext.add({
                     input_tokens: finalPayload.input_tokens || 0,
                     output_tokens: finalPayload.output_tokens || 0,
                     compacted: true,

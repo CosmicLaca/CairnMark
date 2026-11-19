@@ -606,7 +606,7 @@ body.is-resizing .main-content {
 
 .content p,
 .error-content p {
-    max-width: 68ch;
+    max-width: 98%;
     color: var(--ink-soft);
     line-height: 1.7;
 }

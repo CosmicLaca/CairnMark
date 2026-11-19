@@ -801,7 +801,7 @@
     font-size: 0.85rem;
 }
 
-.chat-compact-switch.chat-seed-switch {
+.chat-compact-switch.chat-toggle-switch {
     order: 1;
     flex-basis: 46px;
     min-height: 45px;
@@ -1377,7 +1377,7 @@
     box-shadow: 0 0 0 3px rgba(111, 214, 195, 0.16);
 }
 
-.chat-seed-switch {
+.chat-toggle-switch {
     position: relative;
     display: inline-flex;
     align-items: center;
@@ -1391,7 +1391,7 @@
     cursor: pointer;
 }
 
-.chat-seed-switch-track {
+.chat-toggle-switch-track {
     display: flex;
     align-items: center;
     width: 30px;
@@ -1403,7 +1403,7 @@
     transition: background var(--motion), border-color var(--motion);
 }
 
-.chat-seed-switch-knob {
+.chat-toggle-switch-knob {
     width: 12px;
     height: 12px;
     border-radius: 50%;
@@ -1412,29 +1412,29 @@
     transition: transform var(--motion);
 }
 
-.chat-seed-switch[aria-checked="true"] .chat-seed-switch-track {
+.chat-toggle-switch[aria-checked="true"] .chat-toggle-switch-track {
     border-color: #3f9b88;
     background: #6fd6c3;
 }
 
-.chat-seed-switch[aria-checked="true"] .chat-seed-switch-knob {
+.chat-toggle-switch[aria-checked="true"] .chat-toggle-switch-knob {
     transform: translateX(12px);
 }
 
-.chat-seed-switch:hover .chat-seed-switch-track {
+.chat-toggle-switch:hover .chat-toggle-switch-track {
     border-color: #4c8d81;
 }
 
-.chat-seed-switch:focus-visible {
+.chat-toggle-switch:focus-visible {
     outline: none;
 }
 
-.chat-seed-switch:focus-visible .chat-seed-switch-track {
+.chat-toggle-switch:focus-visible .chat-toggle-switch-track {
     outline: 2px solid #315d54;
     outline-offset: 2px;
 }
 
-.chat-seed-switch-tooltip {
+.chat-toggle-switch-tooltip {
     position: absolute;
     bottom: calc(100% + 6px);
     left: 50%;
@@ -1458,7 +1458,7 @@
     z-index: 5;
 }
 
-.chat-seed-switch-tooltip::after {
+.chat-toggle-switch-tooltip::after {
     position: absolute;
     top: 100%;
     left: 50%;
@@ -1468,9 +1468,9 @@
     transform: translateX(-50%);
 }
 
-.chat-seed-switch:hover .chat-seed-switch-tooltip,
-.chat-seed-switch:focus .chat-seed-switch-tooltip,
-.chat-seed-switch:focus-visible .chat-seed-switch-tooltip {
+.chat-toggle-switch:hover .chat-toggle-switch-tooltip,
+.chat-toggle-switch:focus .chat-toggle-switch-tooltip,
+.chat-toggle-switch:focus-visible .chat-toggle-switch-tooltip {
     opacity: 1;
     transform: translate(-50%, 0);
 }

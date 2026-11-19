@@ -26,20 +26,8 @@ from xai_sdk.chat import assistant as xai_assistant
 from xai_sdk.chat import system as xai_system
 from xai_sdk.chat import user as xai_user
 
-from models.model_storage import (
-    get_active_model_configurations,
-    get_model_configuration_summary,
-    get_provider_configuration,
-    get_saved_model_configuration,
-    save_model_list,
-    save_provider_configuration,
-    set_provider_enabled,
-)
-from models.parameter_storage import (
-    delete_model_parameters,
-    get_model_parameters,
-    save_model_parameters,
-)
+from models.model_storage import MODEL_CONFIGURATIONS
+from models.parameter_storage import MODEL_PARAMETERS
 
 
 class ProviderValidationError(ValueError):
@@ -1040,8 +1028,15 @@ class ProviderCatalogClient:
 class ModelProviderService:
     """Coordinate provider rules, catalog access, and SQLite persistence."""
 
-    def __init__(self, catalog_client=None):
+    def __init__(
+        self,
+        catalog_client=None,
+        model_repository=None,
+        parameter_repository=None,
+    ):
         self.catalog_client = catalog_client or ProviderCatalogClient()
+        self.models = model_repository or MODEL_CONFIGURATIONS
+        self.parameters = parameter_repository or MODEL_PARAMETERS
 
     @staticmethod
     def spec(provider):
@@ -1061,8 +1056,8 @@ class ModelProviderService:
         """Return persisted connection and model counts for setup-page views."""
         self.spec(provider)
         return {
-            "configuration": get_provider_configuration(provider),
-            "summary": get_model_configuration_summary(provider),
+            "configuration": self.models.provider(provider),
+            "summary": self.models.summary(provider),
         }
 
     def resolve_online_model(self, model_spec):
@@ -1109,7 +1104,7 @@ class ModelProviderService:
                 configuration["model"],
                 configuration.get("size_gb"),
             )
-            for configuration in get_active_model_configurations()
+            for configuration in self.models.active()
         ]
         for provider, spec in PROVIDER_SPECS.items():
             if not spec.single_live_model:
@@ -1127,7 +1122,7 @@ class ModelProviderService:
 
     def _live_single_model(self, provider):
         """Return the live model entry of an enabled single-model provider."""
-        configuration = get_provider_configuration(provider)
+        configuration = self.models.provider(provider)
         if not configuration or not configuration.get("enabled"):
             return None
         try:
@@ -1155,7 +1150,7 @@ class ModelProviderService:
         """Resolve and validate a submitted or saved provider connection."""
         spec = self.spec(provider)
         data = data or {}
-        saved = get_provider_configuration(provider)
+        saved = self.models.provider(provider)
         if spec.fixed_endpoint:
             submitted_key = str(data.get("api_key", "")).strip()
             api_key = submitted_key or (saved["api_key"] if saved else None)
@@ -1182,7 +1177,7 @@ class ModelProviderService:
     def saved_connection(self, provider):
         """Return saved credentials with the current provider endpoint metadata."""
         spec = self.spec(provider)
-        configuration = get_provider_configuration(provider)
+        configuration = self.models.provider(provider)
         if not configuration:
             return None
         if not spec.fixed_endpoint:
@@ -1228,7 +1223,7 @@ class ModelProviderService:
         discovered = self._catalog_sizes(live_models)
         if not discovered:
             return
-        saved = get_saved_model_configuration(provider)
+        saved = self.models.models(provider)
         changed = False
         merged = []
         for model in saved:
@@ -1238,7 +1233,7 @@ class ModelProviderService:
                 changed = True
             merged.append(model)
         if changed:
-            save_model_list(merged, provider)
+            self.models.models(provider, merged)
 
     def _models_with_sizes(self, provider, connection, models, timeout=5):
         """Attach authoritative sizes to submitted models for a local provider.
@@ -1248,7 +1243,7 @@ class ModelProviderService:
         """
         sizes = {
             model["name"]: model["size_gb"]
-            for model in get_saved_model_configuration(provider)
+            for model in self.models.models(provider)
             if model.get("size_gb") is not None
         }
         try:
@@ -1287,7 +1282,7 @@ class ModelProviderService:
                     "vLLM must report exactly one loaded model"
                 )
             model_name = self.model_name(live_models[0])
-            save_model_list([], provider)
+            self.models.models(provider, [])
             summary = {"total": 1, "enabled": 1}
         else:
             if not models:
@@ -1296,14 +1291,16 @@ class ModelProviderService:
                 models = self._models_with_sizes(provider, connection, models)
             else:
                 models = [{**model, "size_gb": None} for model in models]
-            save_model_list(models, provider)
-            summary = get_model_configuration_summary(provider)
+            self.models.models(provider, models)
+            summary = self.models.summary(provider)
 
-        save_provider_configuration(
+        self.models.provider(
             provider,
-            connection["ip"],
-            connection["port"],
-            api_key=connection["api_key"],
+            {
+                "ip": connection["ip"],
+                "port": connection["port"],
+                "api_key": connection["api_key"],
+            },
         )
         configuration = self.saved_connection(provider)
         return {
@@ -1318,11 +1315,11 @@ class ModelProviderService:
     def load_configuration(self, provider):
         """Return browser-safe saved state for one provider."""
         spec = PROVIDER_SPECS.get(provider)
-        configuration = get_provider_configuration(provider)
+        configuration = self.models.provider(provider)
         models = (
             []
             if spec is not None and spec.single_live_model
-            else get_saved_model_configuration(provider)
+            else self.models.models(provider)
         )
         if (
             spec is not None
@@ -1340,11 +1337,11 @@ class ModelProviderService:
                 updated.get("size_gb") != saved.get("size_gb")
                 for updated, saved in zip(merged, models)
             ):
-                save_model_list(merged, provider)
+                self.models.models(provider, merged)
             models = merged
         if provider == "llama.cpp":
             models = self._attach_saved_modalities(models)
-        summary = get_model_configuration_summary(provider)
+        summary = self.models.summary(provider)
         return {
             "models": models,
             "models_count": summary["total"],
@@ -1356,13 +1353,12 @@ class ModelProviderService:
             "provider": provider,
         }
 
-    @staticmethod
-    def detect_ctx_mode(provider):
+    def detect_ctx_mode(self, provider):
         """Detect the llama.cpp router-mode context setting (--ctx-size/--fit)."""
         if provider != "llama.cpp":
             return None
         # No process-wide cache: the browser caches the mode for one page load.
-        configuration = get_provider_configuration(provider)
+        configuration = self.models.provider(provider)
         if not configuration:
             return None
         ip = (configuration.get("ip") or "").rstrip("/")
@@ -1408,12 +1404,11 @@ class ModelProviderService:
             index += 1
         return mode
 
-    @staticmethod
-    def check_props_available(provider):
+    def check_props_available(self, provider):
         """Quickly check whether a local provider exposes the props endpoint."""
         if provider not in ("llama.cpp", "vllm"):
             return False
-        configuration = get_provider_configuration(provider)
+        configuration = self.models.provider(provider)
         if not configuration:
             return False
         ip = (configuration.get("ip") or "").rstrip("/")
@@ -1427,8 +1422,7 @@ class ModelProviderService:
         except Exception:  # noqa: BLE001
             return False
 
-    @staticmethod
-    def fetch_model_params(provider, model):
+    def fetch_model_params(self, provider, model):
         """Return cached defaults, otherwise read them from the local model."""
         if provider not in ("llama.cpp", "vllm"):
             raise ProviderValidationError(
@@ -1436,11 +1430,11 @@ class ModelProviderService:
             )
         parameter_key = f"{provider}::{model}"
         ctx_mode = (
-            ModelProviderService.detect_ctx_mode(provider)
+            self.detect_ctx_mode(provider)
             if provider == "llama.cpp"
             else None
         )
-        saved_params = get_model_parameters(parameter_key)
+        saved_params = self.parameters.value(parameter_key)
         if saved_params is not None and ctx_mode is not None:
             saved_n_ctx = ModelProviderService._display_n_ctx(saved_params, ctx_mode)
             if saved_n_ctx is not None:
@@ -1464,7 +1458,7 @@ class ModelProviderService:
                 "source": "database",
             }
 
-        configuration = get_provider_configuration(provider)
+        configuration = self.models.provider(provider)
         if not configuration:
             raise ProviderValidationError("Provider is not configured")
         ip = (configuration.get("ip") or "").rstrip("/")
@@ -1530,7 +1524,7 @@ class ModelProviderService:
             if n_ctx is not None:
                 modes[ctx_mode] = n_ctx
                 merged["n_ctx_modes"] = modes
-            save_model_parameters(parameter_key, merged)
+            self.parameters.value(parameter_key, merged)
             return {
                 "params": ModelProviderService._display_params(merged),
                 "modalities": ModelProviderService._display_field(merged, "modalities"),
@@ -1559,7 +1553,7 @@ class ModelProviderService:
         if not full:
             raise ProviderCatalogError("Unexpected parameter response")
 
-        save_model_parameters(parameter_key, full)
+        self.parameters.value(parameter_key, full)
         return {
             "params": params if isinstance(params, dict) else {},
             "modalities": modalities if isinstance(modalities, dict) else {},
@@ -1638,8 +1632,7 @@ class ModelProviderService:
                     return None
         return None
 
-    @staticmethod
-    def _attach_saved_modalities(models):
+    def _attach_saved_modalities(self, models):
         """Attach locally saved modality flags to each model, if any.
 
         Reads only the parameter database; the provider server is never
@@ -1650,7 +1643,7 @@ class ModelProviderService:
             entry = dict(model)
             model_name = entry.get("id") or entry.get("name")
             if model_name:
-                saved = get_model_parameters(f"llama.cpp::{model_name}")
+                saved = self.parameters.value(f"llama.cpp::{model_name}")
                 modalities = (
                     ModelProviderService._display_field(saved, "modalities")
                     if saved else {}
@@ -1660,17 +1653,15 @@ class ModelProviderService:
             updated.append(entry)
         return updated
 
-    @staticmethod
-    def delete_model_params(provider, model):
+    def delete_model_params(self, provider, model):
         """Remove cached defaults for one local provider model."""
         if provider not in ("llama.cpp", "vllm"):
             raise ProviderValidationError(
                 "Additional parameters are only available for local providers"
             )
-        return delete_model_parameters(f"{provider}::{model}")
+        return self.parameters.delete(f"{provider}::{model}")
 
-    @staticmethod
-    def save_model_params(provider, model, params):
+    def save_model_params(self, provider, model, params):
         """Persist custom default parameters for one local provider model."""
         if provider not in ("llama.cpp", "vllm"):
             raise ProviderValidationError(
@@ -1679,17 +1670,17 @@ class ModelProviderService:
         if not isinstance(params, dict):
             raise ProviderValidationError("Parameters must be an object")
         parameter_key = f"{provider}::{model}"
-        existing = get_model_parameters(parameter_key)
+        existing = self.parameters.value(parameter_key)
         full = existing if isinstance(existing, dict) else {}
         full["params"] = params
-        save_model_parameters(parameter_key, full)
+        self.parameters.value(parameter_key, full)
         return full
 
     def status(self, provider):
         """Return live reachability and persisted state for one provider."""
         spec = self.spec(provider)
-        configuration = get_provider_configuration(provider)
-        summary = get_model_configuration_summary(provider)
+        configuration = self.models.provider(provider)
+        summary = self.models.summary(provider)
         if not configuration:
             return {
                 "provider": provider,
@@ -1735,7 +1726,7 @@ class ModelProviderService:
 
         enabled = configuration["enabled"] and can_enable
         if configuration["enabled"] and not can_enable:
-            set_provider_enabled(provider, False)
+            self.models.set_enabled(provider, False)
 
         return {
             "provider": provider,
@@ -2314,18 +2305,18 @@ class ModelProviderService:
             try:
                 live_models = self._fetch_catalog(provider, configuration, timeout=2)
             except CATALOG_ERRORS as error:
-                set_provider_enabled(provider, False)
+                self.models.set_enabled(provider, False)
                 raise ProviderConflictError("Provider server is offline") from error
 
-            summary = get_model_configuration_summary(provider)
+            summary = self.models.summary(provider)
             valid_models = (
                 len(live_models) == 1
                 if spec.single_live_model
                 else summary["total"] > 0
             )
             if not valid_models:
-                set_provider_enabled(provider, False)
+                self.models.set_enabled(provider, False)
                 raise ProviderConflictError("Save a valid model configuration first")
 
-        set_provider_enabled(provider, enabled)
+        self.models.set_enabled(provider, enabled)
         return {"provider": provider, "enabled": enabled}

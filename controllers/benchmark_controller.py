@@ -14,11 +14,7 @@ from flask import (
     url_for,
 )
 
-from models.benchmark_metadata import (
-    get_benchmark_metadata,
-    get_metadata_for_files,
-    save_benchmark_metadata,
-)
+from models.benchmark_metadata import BENCHMARK_METADATA
 from services.benchmark_categories import (
     UNCATEGORIZED,
     category_names,
@@ -48,9 +44,10 @@ MAX_MODEL_NAME_LENGTH = 200
 class BenchmarkController:
     """Organize benchmark files and render their saved metadata."""
 
-    def __init__(self, service=None, repository=None):
+    def __init__(self, service=None, repository=None, metadata_repository=None):
         self.service = service or ModelProviderService()
         self.repository = repository or BenchmarkRepository()
+        self.metadata = metadata_repository or BENCHMARK_METADATA
 
     def list_files(self):
         """Return prompt JSON filenames in stable display order."""
@@ -65,7 +62,7 @@ class BenchmarkController:
 
     def _catalog_context(self, filenames, prompt_filename):
         """Build the shared selector context for run and evaluation pages."""
-        metadata = get_metadata_for_files(filenames)
+        metadata = self.metadata.for_files(filenames)
         return {
             "benchmark_files": filenames,
             "benchmark_groups": group_benchmarks(filenames, metadata),
@@ -124,7 +121,7 @@ class BenchmarkController:
         if not self.repository.contains(filename):
             abort(404)
 
-        metadata = get_benchmark_metadata(filename) or {
+        metadata = self.metadata.metadata(filename) or {
             "category": UNCATEGORIZED,
             "difficulty": "Normal",
             "notes": "",
@@ -177,13 +174,15 @@ class BenchmarkController:
                 "model_name": model_name,
             }
             if not errors:
-                save_benchmark_metadata(
+                self.metadata.metadata(
                     filename,
-                    category,
-                    difficulty,
-                    notes,
-                    generation_prompt,
-                    model_name,
+                    {
+                        "category": category,
+                        "difficulty": difficulty,
+                        "notes": notes,
+                        "generation_prompt": generation_prompt,
+                        "model_name": model_name,
+                    },
                 )
                 return redirect(
                     url_for(
@@ -286,13 +285,15 @@ class BenchmarkController:
                 )
                 return jsonify({"error": "Could not save benchmark log."}), 500
 
-        save_benchmark_metadata(
-            filename=filename,
-            category=category,
-            difficulty=difficulty,
-            notes="",
-            generation_prompt=generation_prompt,
-            model_name=model_name,
+        self.metadata.metadata(
+            filename,
+            {
+                "category": category,
+                "difficulty": difficulty,
+                "notes": "",
+                "generation_prompt": generation_prompt,
+                "model_name": model_name,
+            },
         )
 
         return jsonify(

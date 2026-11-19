@@ -253,17 +253,17 @@
         <div class="chat-compact-control" data-chat-compact-control>
           <button
             type="button"
-            class="chat-seed-switch chat-compact-switch"
+            class="chat-toggle-switch chat-compact-switch"
             data-chat-compact-switch
             role="switch"
             aria-checked="{{ 'true' if chat_compact_settings.auto_compact else 'false' }}"
             aria-label="Auto compact from 75%"
             title="Auto compact from 75%"
           >
-            <span class="chat-seed-switch-track" aria-hidden="true">
-              <span class="chat-seed-switch-knob"></span>
+            <span class="chat-toggle-switch-track" aria-hidden="true">
+              <span class="chat-toggle-switch-knob"></span>
             </span>
-            <span class="chat-seed-switch-tooltip" role="tooltip">Auto compact from 75%</span>
+            <span class="chat-toggle-switch-tooltip" role="tooltip">Auto compact from 75%</span>
           </button>
           <button class="chat-compact-button" type="button" data-chat-compact>
             <span aria-hidden="true">⇄</span>
@@ -361,7 +361,7 @@
           <div class="chat-seed-control">
             <button
               type="button"
-              class="chat-seed-switch"
+              class="chat-toggle-switch"
               data-chat-seed-switch
               data-chat-randomize-seed
               data-seed-switch
@@ -370,10 +370,10 @@
               aria-label="Randomize seed"
               title="Randomize seed"
             >
-              <span class="chat-seed-switch-track" aria-hidden="true">
-                <span class="chat-seed-switch-knob"></span>
+              <span class="chat-toggle-switch-track" aria-hidden="true">
+                <span class="chat-toggle-switch-knob"></span>
               </span>
-              <span class="chat-seed-switch-tooltip" role="tooltip">Randomize seed</span>
+              <span class="chat-toggle-switch-tooltip" role="tooltip">Randomize seed</span>
             </button>
             <input type="number" id="chat-seed" name="seed" step="1" min="-1"
               value="{{ chat_settings.seed if chat_settings.seed is not none else '' }}" data-chat-seed>
@@ -391,7 +391,7 @@
           <div class="chat-seed-control">
             <button
               type="button"
-              class="chat-seed-switch"
+              class="chat-toggle-switch"
               data-chat-history-switch
               data-chat-send-all
               data-chat-all-previous
@@ -402,10 +402,10 @@
               aria-label="Send all previous messages"
               title="Send all previous messages"
             >
-              <span class="chat-seed-switch-track" aria-hidden="true">
-                <span class="chat-seed-switch-knob"></span>
+              <span class="chat-toggle-switch-track" aria-hidden="true">
+                <span class="chat-toggle-switch-knob"></span>
               </span>
-              <span class="chat-seed-switch-tooltip" role="tooltip">Send all previous messages</span>
+              <span class="chat-toggle-switch-tooltip" role="tooltip">Send all previous messages</span>
             </button>
             <input type="number" id="chat-history-limit" name="history_limit" step="1" min="0"
               value="{{ chat_settings.history_limit if chat_settings.history_limit is not none else '' }}" data-chat-history-limit>
@@ -598,6 +598,7 @@
   <script src="{{ url_for('static', filename='js/chat_attachment_preferences.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/chat_markdown.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/chat_media.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/chat_context.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/model_select_filter.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/chat.js') }}" defer></script>
 {% endblock %}

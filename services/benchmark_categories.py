@@ -1,6 +1,6 @@
 """Category rules shared by benchmark organization and creation."""
 
-from models.benchmark_metadata import list_categories, save_category
+from models.benchmark_metadata import BENCHMARK_METADATA
 
 UNCATEGORIZED = "Uncategorized"
 MAX_CATEGORY_LENGTH = 80
@@ -8,7 +8,7 @@ MAX_CATEGORY_LENGTH = 80
 
 def category_names():
     """Return saved categories, including collections without files."""
-    return list_categories()
+    return BENCHMARK_METADATA.categories()
 
 
 def normalize_new_category(value, categories):
@@ -31,4 +31,4 @@ def normalize_new_category(value, categories):
 
 def create_category(name):
     """Persist one category for later benchmark metadata."""
-    return save_category(name)
+    return BENCHMARK_METADATA.category(name)

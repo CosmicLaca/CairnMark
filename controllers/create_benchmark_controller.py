@@ -15,7 +15,7 @@ from flask import (
     url_for,
 )
 
-from models.benchmark_metadata import save_benchmark_metadata
+from models.benchmark_metadata import BENCHMARK_METADATA
 from services.benchmark_categories import (
     UNCATEGORIZED,
     category_names,
@@ -46,9 +46,10 @@ class BenchmarkGenerationError(Exception):
 class CreateBenchmarkController:
     """Provide model choices and category creation for the creator."""
 
-    def __init__(self, service=None, repository=None):
+    def __init__(self, service=None, repository=None, metadata_repository=None):
         self.service = service or ModelProviderService()
         self.repository = repository or BenchmarkRepository()
+        self.metadata = metadata_repository or BENCHMARK_METADATA
 
     def context(self):
         """Return selector options and the current category selection."""
@@ -313,13 +314,15 @@ class CreateBenchmarkController:
                 "The benchmark was generated but could not be saved."
             ) from error
 
-        save_benchmark_metadata(
-            filename=filename,
-            category=category,
-            difficulty=difficulty,
-            notes="",
-            generation_prompt=user_prompt,
-            model_name=model_spec,
+        self.metadata.metadata(
+            filename,
+            {
+                "category": category,
+                "difficulty": difficulty,
+                "notes": "",
+                "generation_prompt": user_prompt,
+                "model_name": model_spec,
+            },
         )
 
         yield {
