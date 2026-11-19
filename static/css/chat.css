@@ -780,10 +780,6 @@
     transition: color var(--motion), transform var(--motion), box-shadow var(--motion);
 }
 
-.chat-compact-control[hidden] {
-    display: none;
-}
-
 .chat-compact-button {
     order: 2;
     display: inline-flex;
@@ -833,7 +829,15 @@
 
 .chat-compact-control:has(.chat-compact-button:disabled) {
     border-color: rgba(107, 114, 128, 0.48);
+    box-shadow: 5px 6px 0 rgba(107, 114, 128, 0.12);
     opacity: 0.6;
+    transform: none;
+}
+
+.chat-compact-control:has(.chat-compact-button:disabled):hover,
+.chat-compact-control:has(.chat-compact-button:disabled):focus-within {
+    box-shadow: 5px 6px 0 rgba(107, 114, 128, 0.12);
+    transform: none;
 }
 
 .chat-media-uploads {

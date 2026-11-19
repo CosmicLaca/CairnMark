@@ -22,12 +22,12 @@ const contextBarFillEl = document.querySelector("[data-chat-context-bar-fill]");
 let sessionCtxMode = null;
 let sessionCtxModeFetched = false;
 let currentNctx = null;
+let compactRequestActive = false;
 const chatMessageTokens = Array.isArray(window.CairnmarkChatMessageTokens)
     ? window.CairnmarkChatMessageTokens.slice()
     : [];
     const saveBtn = document.querySelector("[data-chat-save-settings]");
     const clearBtn = document.querySelector("[data-chat-clear]");
-const compactControl = document.querySelector("[data-chat-compact-control]");
 const compactBtn = document.querySelector("[data-chat-compact]");
 const compactSwitch = document.querySelector("[data-chat-compact-switch]");
     const savedSelect = document.querySelector("[data-chat-saved]");
@@ -728,6 +728,7 @@ const compactSwitch = document.querySelector("[data-chat-compact-switch]");
             let buffer = "";
             let accumulated = "";
             let finalPayload = null;
+            let completedResponse = false;
 
             while (true) {
                 const { done, value } = await reader.read();
@@ -798,6 +799,7 @@ const compactSwitch = document.querySelector("[data-chat-compact-switch]");
                     system_prompt: finalPayload.system_prompt,
                     request_body: finalPayload.request_body,
                 });
+                completedResponse = true;
             } else if (accumulated) {
                 appendMessage("assistant", accumulated, {});
             }
@@ -811,6 +813,9 @@ const compactSwitch = document.querySelector("[data-chat-compact-switch]");
             });
             pendingAttachments.length = 0;
             renderAttachments();
+            if (completedResponse && shouldAutoCompact()) {
+                await handleCompact();
+            }
         } catch (error) {
             if (loadingEl && loadingEl.element) loadingEl.element.remove();
             if (aborted || (error && error.name === "AbortError")) {
@@ -2098,6 +2103,21 @@ const compactSwitch = document.querySelector("[data-chat-compact-switch]");
         return selectedPrevious.concat(currentTurn);
     };
 
+    const selectedTokenUsage = () => selectedUsageMessages().reduce(
+        (total, item) =>
+            total + (Number(item && item.input_tokens) || 0) +
+            (Number(item && item.output_tokens) || 0),
+        0
+    );
+
+    const shouldAutoCompact = () => {
+        const enabled = Boolean(
+            compactSwitch && compactSwitch.getAttribute("aria-checked") === "true"
+        );
+        if (!enabled || !currentNctx || compactRequestActive) return false;
+        return selectedTokenUsage() / currentNctx > 0.75;
+    };
+
     const updateCompactButtonVisibility = () => {
         if (!compactBtn) return;
         const hasMessages = chatMessageTokens.length > 0;
@@ -2115,30 +2135,17 @@ const compactSwitch = document.querySelector("[data-chat-compact-switch]");
         let notFull = false;
         let overLimit = false;
         if (currentNctx) {
-            const messages = selectedUsageMessages();
-            const used = messages.reduce(
-                (total, item) =>
-                    total + (Number(item && item.input_tokens) || 0) +
-                    (Number(item && item.output_tokens) || 0),
-                0
-            );
+            const used = selectedTokenUsage();
             notFull = used / currentNctx < 1;
             overLimit = used / currentNctx > 1;
         }
         const canCompact = hasMessages && hasHistoryToSend && !overLimit && !lastIsCompacted && (hasMultipleMessages || notFull);
-        if (compactControl) compactControl.hidden = !canCompact;
         compactBtn.disabled = !canCompact;
     };
 
     const updateTokenUsage = () => {
         if (!tokenUsageEl) return;
-        const messages = selectedUsageMessages();
-        const used = messages.reduce(
-            (total, item) =>
-                total + (Number(item && item.input_tokens) || 0) +
-                (Number(item && item.output_tokens) || 0),
-            0
-        );
+        const used = selectedTokenUsage();
         if (currentNctx) {
             const percent = Math.round((used / currentNctx) * 100);
             tokenUsageEl.textContent = `${used} / ${currentNctx} (${percent}%)`;
@@ -2239,13 +2246,14 @@ const compactSwitch = document.querySelector("[data-chat-compact-switch]");
     });
     updateTokenUsage();
     const handleCompact = async () => {
-        if (!compactBtn) return;
+        if (!compactBtn || compactRequestActive) return;
         const message = inputEl ? "" : "";
         const model = modelSelect?.value || "";
         if (!model) {
             window.alert("Model is required.");
             return;
         }
+        compactRequestActive = true;
         compactBtn.disabled = true;
         if (sendBtn) sendBtn.disabled = true;
 
@@ -2354,6 +2362,7 @@ const compactSwitch = document.querySelector("[data-chat-compact-switch]");
             }
             window.alert(`Compact failed: ${error}`);
         } finally {
+            compactRequestActive = false;
             if (compactBtn) compactBtn.disabled = false;
             updateTokenUsage();
         }
