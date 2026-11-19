@@ -560,9 +560,15 @@
         return videoFpsValues[index] != null ? videoFpsValues[index] : 2;
     };
 
+    const hasChatMessages = () => Boolean(historyEl?.querySelector(".chat-message"));
+
     const handleSend = async () => {
         const message = inputEl?.value?.trim() || "";
-        if (!message) return;
+        if (!message) {
+            window.alert("Enter request to the message input");
+            inputEl?.focus();
+            return;
+        }
         if (seedSwitch && seedSwitch.getAttribute("aria-checked") === "true" && seedEl) {
             const randomSeed = Math.floor(Math.random() * 4294967296);
             seedEl.value = String(randomSeed);
@@ -852,6 +858,10 @@
     };
 
     const handleClear = async () => {
+        if (!hasChatMessages()) {
+            window.alert("No chat to clear...");
+            return;
+        }
         try {
             await api.request("/chat/clear", { method: "POST" });
             if (historyEl) {
@@ -867,6 +877,10 @@
     };
 
     const openSaveModal = () => {
+        if (!hasChatMessages()) {
+            window.alert("No chat to be saved...");
+            return;
+        }
         if (saveModal) {
             saveModal.hidden = false;
             if (saveNameInput) {
@@ -957,6 +971,10 @@
             if (historyEl) {
                 historyEl.replaceChildren(emptyStateEl);
                 syncEmptyState();
+            }
+            if (!hasChatMessages()) {
+                chatContext.clear();
+                updateTokenUsage();
             }
         } catch (error) {
             window.alert(`Delete chat failed: ${error}`);
