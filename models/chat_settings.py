@@ -82,6 +82,12 @@ CREATE TABLE IF NOT EXISTS chat_history_settings (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS chat_compact_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    auto_compact INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS mineru_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     endpoint TEXT NOT NULL DEFAULT 'http://127.0.0.1:8100',
@@ -344,6 +350,32 @@ def chat_history_settings(updates=None):
         (1 if send_all_previous else 0,),
     )
     return {"send_all_previous": send_all_previous}
+
+
+def chat_compact_settings(updates=None):
+    """Read or update the automatic compaction switch state."""
+    defaults = {"auto_compact": False}
+    if updates is None:
+        if not SETTINGS_STORE.path().exists():
+            return defaults
+        row = SETTINGS_STORE.fetch(
+            "SELECT auto_compact FROM chat_compact_settings WHERE id = 1",
+            one=True,
+        )
+        return defaults if not row else {"auto_compact": bool(row[0])}
+
+    auto_compact = bool(updates.get("auto_compact", defaults["auto_compact"]))
+    SETTINGS_STORE.execute(
+        """
+        INSERT INTO chat_compact_settings (id, auto_compact)
+        VALUES (1, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            auto_compact = excluded.auto_compact,
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (1 if auto_compact else 0,),
+    )
+    return {"auto_compact": auto_compact}
 
 
 def mineru_settings(updates=None):

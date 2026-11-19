@@ -250,10 +250,26 @@
           <span aria-hidden="true">×</span>
           Clear chat
         </button>
-        <button class="save-metadata-button chat-compact-button" type="button" data-chat-compact hidden>
-          <span aria-hidden="true">⇄</span>
-          Compact chat
-        </button>
+        <div class="chat-compact-control" data-chat-compact-control hidden>
+          <button
+            type="button"
+            class="chat-seed-switch chat-compact-switch"
+            data-chat-compact-switch
+            role="switch"
+            aria-checked="{{ 'true' if chat_compact_settings.auto_compact else 'false' }}"
+            aria-label="Auto compact from 75%"
+            title="Auto compact from 75%"
+          >
+            <span class="chat-seed-switch-track" aria-hidden="true">
+              <span class="chat-seed-switch-knob"></span>
+            </span>
+            <span class="chat-seed-switch-tooltip" role="tooltip">Auto compact from 75%</span>
+          </button>
+          <button class="chat-compact-button" type="button" data-chat-compact>
+            <span aria-hidden="true">⇄</span>
+            Compact chat
+          </button>
+        </div>
       </div>
     </form>
   </section>

@@ -25,6 +25,7 @@ from flask import (
 from models.chat_settings import (
     VIDEO_FPS_VALUES,
     chat_attachment_settings,
+    chat_compact_settings,
     chat_history_settings,
     chat_seed_settings,
     get_chat_settings,
@@ -553,6 +554,7 @@ class ChatController:
             ),
             "chat_seed_settings": chat_seed_settings(),
             "chat_history_settings": chat_history_settings(),
+            "chat_compact_settings": chat_compact_settings(),
             "mineru_settings": mineru_settings(),
             "chat_messages": messages,
             "active_models": self.service.active_models(),
@@ -598,6 +600,11 @@ class ChatController:
 
         if not chat_request.user_message:
             return jsonify({"error": "Message is required."}), 400
+        if "auto_compact" in chat_request.raw:
+            auto_compact = chat_request.raw["auto_compact"]
+            if not isinstance(auto_compact, bool):
+                return jsonify({"error": "auto_compact must be a boolean."}), 400
+            chat_compact_settings({"auto_compact": auto_compact})
         attachment_settings = chat_attachment_settings()
         attachment_settings["video_fps"] = chat_request.video_fps
         chat_attachment_settings(attachment_settings)

@@ -27,7 +27,9 @@ const chatMessageTokens = Array.isArray(window.CairnmarkChatMessageTokens)
     : [];
     const saveBtn = document.querySelector("[data-chat-save-settings]");
     const clearBtn = document.querySelector("[data-chat-clear]");
+const compactControl = document.querySelector("[data-chat-compact-control]");
 const compactBtn = document.querySelector("[data-chat-compact]");
+const compactSwitch = document.querySelector("[data-chat-compact-switch]");
     const savedSelect = document.querySelector("[data-chat-saved]");
     const replaceBtn = document.querySelector("[data-chat-replace]");
     const deleteBtn = document.querySelector("[data-chat-delete]");
@@ -659,6 +661,9 @@ const compactBtn = document.querySelector("[data-chat-compact]");
             message,
             ...settings,
             video_fps: selectedVideoFps(),
+            auto_compact: Boolean(
+                compactSwitch && compactSwitch.getAttribute("aria-checked") === "true"
+            ),
         };
 
         const binaryAttachments = pendingAttachments.filter(
@@ -2121,7 +2126,7 @@ const compactBtn = document.querySelector("[data-chat-compact]");
             overLimit = used / currentNctx > 1;
         }
         const canCompact = hasMessages && hasHistoryToSend && !overLimit && !lastIsCompacted && (hasMultipleMessages || notFull);
-        compactBtn.hidden = !canCompact;
+        if (compactControl) compactControl.hidden = !canCompact;
         compactBtn.disabled = !canCompact;
     };
 
@@ -2355,6 +2360,10 @@ const compactBtn = document.querySelector("[data-chat-compact]");
     };
 
     compactBtn?.addEventListener("click", handleCompact);
+    compactSwitch?.addEventListener("click", () => {
+        const next = compactSwitch.getAttribute("aria-checked") !== "true";
+        compactSwitch.setAttribute("aria-checked", next ? "true" : "false");
+    });
     updateTokenUsage();
     sendBtn?.addEventListener("click", handleSend);
     saveBtn?.addEventListener("click", handleSave);
