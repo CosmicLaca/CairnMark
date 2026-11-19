@@ -476,6 +476,17 @@ def _complete_attachment_plan(
     return response_text, usage
 
 
+def _history_since_latest_compaction(history):
+    """Return the active conversation beginning at its latest summary."""
+    latest_compaction = -1
+    for index, message in enumerate(history):
+        if message.get("compacted"):
+            latest_compaction = index
+    if latest_compaction >= 0:
+        return history[latest_compaction:]
+    return history[:]
+
+
 def _conversation_messages(system_prompt, history, history_limit):
     """Build model messages while retaining complete recent chat turns."""
     messages = []
@@ -489,8 +500,6 @@ def _conversation_messages(system_prompt, history, history_limit):
         else:
             kept_previous = history_limit * 2
             start = max(0, len(previous) - kept_previous)
-            if start % 2:
-                start += 1
             history = previous[start:] + current_turn
     messages.extend(
         {"role": message["role"], "content": message["content"]} for message in history
@@ -631,11 +640,13 @@ class ChatController:
         )
 
         # Build messages list from the most recent turns kept by the user.
-        history = [
-            message
-            for message in list_chat_messages()
-            if message["role"] in ("user", "assistant")
-        ]
+        history = _history_since_latest_compaction(
+            [
+                message
+                for message in list_chat_messages()
+                if message["role"] in ("user", "assistant")
+            ]
+        )
         history_limit = chat_request.parameters.get("history_limit")
         send_all_previous = False
         raw = chat_request.raw or {}
@@ -870,11 +881,13 @@ class ChatController:
             return jsonify({"error": f"Could not read compaction prompts: {error}"}), 500
 
         # Select the previous messages to compact.
-        history = [
-            message
-            for message in list_chat_messages()
-            if message["role"] in ("user", "assistant")
-        ]
+        history = _history_since_latest_compaction(
+            [
+                message
+                for message in list_chat_messages()
+                if message["role"] in ("user", "assistant")
+            ]
+        )
         history_limit = None
         raw = data or {}
         send_all_previous = False
@@ -924,8 +937,6 @@ class ChatController:
             else:
                 kept_previous = history_limit * 2
                 start = max(0, len(history) - kept_previous)
-                if start % 2:
-                    start += 1
                 selected_previous = history[start:]
 
         messages = [{"role": "system", "content": system_prompt}]

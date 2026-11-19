@@ -2089,7 +2089,6 @@ const compactBtn = document.querySelector("[data-chat-compact]");
         }
         const keptPrevious = limit * 2;
         let start = Math.max(0, previous.length - keptPrevious);
-        if (start % 2) start += 1;
         const selectedPrevious = previous.slice(start);
         return selectedPrevious.concat(currentTurn);
     };
