@@ -123,6 +123,18 @@ cancellation.
 system prompt, temperature, top p, top k, seed, and recent-message limit.
 Additional local-model parameters are managed separately per model.
 
+### Reuse a model from an assistant response
+
+Assistant bubbles identify the provider and model in their top-left label. The
+small **↥** button beside that label has the tooltip **Use this model**. Select
+it to change **Active model for the chat** to the exact provider and model used
+for that response.
+
+CairnMark first checks whether the model still exists in the selector. An
+available model is selected immediately without a confirmation. If it has been
+deleted, renamed, or disabled, CairnMark leaves the current selection unchanged
+and reports that the model is not available on the model selector list.
+
 ### Stream responses
 
 Use the **Stream responses** switch at the right of the attachment row to choose

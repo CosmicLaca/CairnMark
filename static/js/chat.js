@@ -335,6 +335,25 @@
         message.appendChild(time);
     };
 
+    const createUseModelButton = (provider, model) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "chat-use-model-button";
+        button.setAttribute("data-chat-use-model", "");
+        button.setAttribute("data-provider", provider);
+        button.setAttribute("data-model", model);
+        button.setAttribute("aria-label", `Use this model: ${model}`);
+        const arrow = document.createElement("span");
+        arrow.setAttribute("aria-hidden", "true");
+        arrow.textContent = "↥";
+        const tooltip = document.createElement("span");
+        tooltip.className = "chat-use-model-tooltip";
+        tooltip.setAttribute("role", "tooltip");
+        tooltip.textContent = "Use this model";
+        button.append(arrow, tooltip);
+        return button;
+    };
+
     const appendMessage = (role, content, meta) => {
         if (!historyEl) return;
         const div = document.createElement("div");
@@ -357,7 +376,13 @@
         }
         const header = document.createElement("div");
         header.className = "chat-message-header";
-        header.appendChild(roleSpan);
+        const roleGroup = document.createElement("span");
+        roleGroup.className = "chat-role-group";
+        roleGroup.appendChild(roleSpan);
+        if (role === "assistant" && meta && meta.provider && meta.model && !meta.compacted) {
+            roleGroup.appendChild(createUseModelButton(meta.provider, meta.model));
+        }
+        header.appendChild(roleGroup);
         appendMessageTimestamp(header, meta && meta.created_at);
         div.appendChild(header);
         if (role === "assistant" && meta) {
@@ -2332,7 +2357,7 @@
         const usage = chatContext.usage(contextSelection());
         if (usage.max) {
             const { used, max, percent } = usage;
-            tokenUsageEl.textContent = `${used} / ${max} tokens (${percent}%)`;
+            tokenUsageEl.textContent = `${used} / ${max} (${percent}%)`;
             tokenUsageEl.classList.remove(
                 "chat-token-usage--ok",
                 "chat-token-usage--warn",
@@ -2681,8 +2706,24 @@
     systemPromptEl?.addEventListener("input", clearSavedSystemPrompt);
     systemPromptEl?.addEventListener("change", clearSavedSystemPrompt);
 
-    // Open prompt/request-body modals on icon click (delegated).
+    // Handle message-header actions and prompt/request-body modals (delegated).
     historyEl?.addEventListener("click", (event) => {
+        const useModelButton = event.target.closest("[data-chat-use-model]");
+        if (useModelButton) {
+            const provider = useModelButton.getAttribute("data-provider")?.trim() || "";
+            const model = useModelButton.getAttribute("data-model")?.trim() || "";
+            const optionValue = `${provider}::${model}`;
+            const option = [...(modelSelect?.options || [])].find(
+                (item) => item.value.trim() === optionValue
+            );
+            if (!option) {
+                window.alert(`The selected model ${model} not available on the model selector list`);
+                return;
+            }
+            modelSelect.value = option.value;
+            modelSelect.dispatchEvent(new Event("change", { bubbles: true }));
+            return;
+        }
         const icon = event.target.closest(".chat-prompt-icon");
         if (!icon) return;
         if (icon.getAttribute("data-action") === "request-body") {

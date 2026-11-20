@@ -72,13 +72,28 @@
       {% for message in chat_messages %}
         <div class="chat-message chat-message--{{ message.role }}{% if message.compacted %} chat-message--compacted{% endif %}{% if message.role == 'user' and message.has_audio %} chat-message--has-audio{% endif %}">
           <div class="chat-message-header">
-            <span class="chat-role">
-              {% if message.compacted %}
-                compacted summary
-              {% elif message.role == 'assistant' and message.provider %}
-                assistant::{{ message.provider }}::{{ message.model_name }}{% if message.saved_system_prompt_name %}::{{ message.saved_system_prompt_name }}{% endif %}
-              {% else %}
-                {{ message.role }}
+            <span class="chat-role-group">
+              <span class="chat-role">
+                {% if message.compacted %}
+                  compacted summary
+                {% elif message.role == 'assistant' and message.provider %}
+                  assistant::{{ message.provider }}::{{ message.model_name }}{% if message.saved_system_prompt_name %}::{{ message.saved_system_prompt_name }}{% endif %}
+                {% else %}
+                  {{ message.role }}
+                {% endif %}
+              </span>
+              {% if message.role == 'assistant' and message.provider and message.model_name and not message.compacted %}
+                <button
+                  type="button"
+                  class="chat-use-model-button"
+                  data-chat-use-model
+                  data-provider="{{ message.provider }}"
+                  data-model="{{ message.model_name }}"
+                  aria-label="Use this model: {{ message.model_name }}"
+                >
+                  <span aria-hidden="true">↥</span>
+                  <span class="chat-use-model-tooltip" role="tooltip">Use this model</span>
+                </button>
               {% endif %}
             </span>
             <time class="chat-message-timestamp" datetime="{{ message.created_at|replace(' ', 'T') }}Z">{{ message.created_at }}</time>
