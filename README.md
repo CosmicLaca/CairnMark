@@ -1,19 +1,20 @@
-# Cairnmark
+# CairnMark
 
 > A private, local workspace for chatting with AI models and building reusable
 > benchmark prompt sets.
 
 **Preview release · single user · localhost only**
 
-Created by Primere Development · [GitHub repository](https://github.com/CosmicLaca/Cairnmark)
+Created by Primere Development · [GitHub repository](https://github.com/CosmicLaca/CairnMark)
 
-**Special features:** llama.cpp focus · All llama parameters · Context metering ·
-Manual compaction · Auto compact · Many API providers · MinerU support ·
-Multimodal chat · Chat import/export · Local benchmarks · Encrypted API keys
+> ### Special features:
+> llama.cpp focus · vLLM · All possible llama parameters · Context metering ·
+> Manual and automated compact · Frontier API providers · MinerU support ·
+> Multimodal chat · Chat import/export · Local benchmarks · Encrypted API keys
 
 ## What you can do
 
-Cairnmark brings local and hosted model providers into one browser interface.
+CairnMark brings local and hosted model providers into one browser interface.
 Use it to:
 
 - chat with enabled models, attach files, and save, import, or export conversations;
@@ -41,8 +42,8 @@ privacy policy.
 ### Windows 11
 
 ```powershell
-git clone https://github.com/CosmicLaca/Cairnmark.git
-cd Cairnmark
+git clone https://github.com/CosmicLaca/CairnMark.git
+cd CairnMark
 python -m venv venv
 .\venv\Scripts\activate
 python -m pip install -r requirements.txt
@@ -52,8 +53,8 @@ python -m pip install -r requirements.txt
 ### Linux
 
 ```bash
-git clone https://github.com/CosmicLaca/Cairnmark.git
-cd Cairnmark
+git clone https://github.com/CosmicLaca/CairnMark.git
+cd CairnMark
 python3 -m venv venv
 source venv/bin/activate
 python -m pip install -r requirements.txt
@@ -61,7 +62,7 @@ python -m pip install -r requirements.txt
 ```
 
 Open [http://127.0.0.1:5000](http://127.0.0.1:5000). Keep the launcher
-terminal open and press **Ctrl+C** to stop Cairnmark.
+terminal open and press **Ctrl+C** to stop CairnMark.
 
 To use a different port, set `PORT` before starting:
 
@@ -74,7 +75,7 @@ $env:PORT = "5050"
 PORT=5050 ./run.sh
 ```
 
-Cairnmark intentionally listens only on `127.0.0.1`. It is a local,
+CairnMark intentionally listens only on `127.0.0.1`. It is a local,
 single-user application, not a network service.
 
 ## Your first session
@@ -92,7 +93,7 @@ single-user application, not a network service.
 | Provider | How models are found |
 | --- | --- |
 | **llama.cpp** | Connect a local server and save one or more discovered models |
-| **vLLM** | Connect a local server; Cairnmark reads its single loaded model live |
+| **vLLM** | Connect a local server; CairnMark reads its single loaded model live |
 | **OpenRouter, OpenAI, Google Gemini, Anthropic, Mistral** | Save an API key and fetch the provider's catalog |
 | **DeepSeek, OpenCode, OpenCode-ZEN, Z.ai, Grok** | Save an API key and fetch the provider's catalog |
 
@@ -104,7 +105,7 @@ To connect:
 4. Turn on the provider and the models you want to use.
 
 A model appears elsewhere only while its provider and model are enabled.
-Cairnmark turns off an unreachable provider. vLLM has no separate model switch
+CairnMark turns off an unreachable provider. vLLM has no separate model switch
 because its loaded model is read live.
 
 Hosted-provider keys are encrypted before they are stored and are never sent
@@ -145,13 +146,13 @@ saved for the selected model and the current llama.cpp context mode:
 - orange: parameters exist, but `n_ctx` is missing for the current mode; and
 - green: parameters and the current mode's `n_ctx` value both exist.
 
-Hover over the light for the exact status. Cairnmark stores context sizes by
+Hover over the light for the exact status. CairnMark stores context sizes by
 mode in `n_ctx_modes`, so the same model can retain separate values for
 `fit_on`, `fit_off`, and `n_ctx` operation.
 
 Select **Set more parameters** to open the modal. Existing data is shown
 immediately. If parameters or the current mode's context size are missing,
-Cairnmark then reads `/props?model=[model_id]` from the local llama.cpp server
+CairnMark then reads `/props?model=[model_id]` from the local llama.cpp server
 and saves the returned data in `instance/parameters.db`. Previously saved
 parameter data is kept when only a new mode's `n_ctx` value is required.
 
@@ -176,7 +177,7 @@ Markdown-rendered **compacted summary** and becomes the boundary for later
 conversation history.
 
 The switch inside **Compact chat** enables automatic compaction. When it is on,
-Cairnmark starts the same compaction process after a successful response pushes
+CairnMark starts the same compaction process after a successful response pushes
 the selected context above 75%. The switch is off by default and its current
 value is saved when you send a message.
 
@@ -188,7 +189,7 @@ before the summary in future model requests.
 The document button is always available. Image, video, and audio buttons appear
 when the selected local model reports those capabilities.
 
-| Type | What Cairnmark does |
+| Type | What CairnMark does |
 | --- | --- |
 | **Image** | Resizes large images before sending |
 | **Video** | Converts to MP4 and uses the selected frame rate |
@@ -215,21 +216,21 @@ check succeeds.
 ### Import and export conversations
 
 Select **Export chat** to write a complete, import-ready JSON document to
-`Exported-chat/`. With no saved conversation selected, Cairnmark exports the
+`Exported-chat/`. With no saved conversation selected, CairnMark exports the
 active conversation from the chat database as
 `Exported-main-[date_time].json`. When **Saved chats** contains a selected
-conversation, Cairnmark exports that saved database record instead and uses
+conversation, CairnMark exports that saved database record instead and uses
 `Exported-[normalized_chat_name]-[date_time].json`. Spaces and characters that
 are unsafe in filenames are normalized automatically. An empty active chat
 cannot be exported.
 
-Select **Import chat** and choose a Cairnmark chat-export `.json` file. A valid
+Select **Import chat** and choose a CairnMark chat-export `.json` file. A valid
 import clears the current conversation, restores every exported message in the
 chat body, and replaces the rows in the active `chat_messages` table. Message
 roles, content, timestamps, model metadata, token usage, attachment metadata,
 and compaction state are retained by the export format. Import does not overwrite
 a named entry in **Saved chats**; the imported conversation becomes the active
-chat and can be saved under a name afterward. Cairnmark shows an alert only if
+chat and can be saved under a name afterward. CairnMark shows an alert only if
 the import fails.
 
 ## Create a benchmark
@@ -245,7 +246,7 @@ On **Create benchmark JSON**:
 5. Optionally customize the generation instructions.
 6. Select **Create benchmark** and keep the page open until it finishes.
 
-Cairnmark saves the generated JSON in `Benchmark-prompts/` and adds its
+CairnMark saves the generated JSON in `Benchmark-prompts/` and adds its
 metadata to the benchmark browser.
 
 ## Browse and edit benchmark files
@@ -270,7 +271,7 @@ must use the supported structure. Imported files without metadata appear under
 4. Optionally enable **Create log**.
 5. Start the run and keep the page open.
 
-Requests run one at a time. Cairnmark sends the `request` text to the model,
+Requests run one at a time. CairnMark sends the `request` text to the model,
 never the reference `response`. Each answer and its response time are appended
 to the source JSON without removing unknown fields. Optional Markdown logs are
 written to `Benchmark-prompts/logs/`.
@@ -306,7 +307,7 @@ A minimal benchmark looks like this:
 | `Exported-chat/` | Import-ready chat JSON exports |
 | `.secret/` | The key used to encrypt saved API credentials |
 
-For a complete backup, stop Cairnmark and copy `Benchmark-prompts/`,
+For a complete backup, stop CairnMark and copy `Benchmark-prompts/`,
 `System-prompts/`, `Exported-chat/`, `instance/`, and `.secret/` together. Keep
 `instance/cairnmark.db` paired with its original `.secret/` directory or
 saved API keys cannot be decrypted.
@@ -335,14 +336,14 @@ Correct the file, then reload the page.
 ### Media conversion fails
 
 Install the FFmpeg executable and confirm that `ffmpeg` is available on
-`PATH` in the same terminal used to start Cairnmark.
+`PATH` in the same terminal used to start CairnMark.
 
 ### Port 5000 is busy
 
 Stop the process already using the port or set a different `PORT` before
 running the launcher.
 
-For more diagnostic detail, start Cairnmark with
+For more diagnostic detail, start CairnMark with
 `CAIRNMARK_LOG_LEVEL=DEBUG`. Provider keys and request content are excluded
 from application logs.
 
