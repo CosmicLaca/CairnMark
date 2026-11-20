@@ -9,14 +9,14 @@ Created by Primere Development · [GitHub repository](https://github.com/CosmicL
 
 **Special features:** llama.cpp focus · All llama parameters · Context metering ·
 Manual compaction · Auto compact · Many API providers · MinerU support ·
-Multimodal chat · Local benchmarks · Encrypted API keys
+Multimodal chat · Chat import/export · Local benchmarks · Encrypted API keys
 
 ## What you can do
 
 Cairnmark brings local and hosted model providers into one browser interface.
 Use it to:
 
-- chat with enabled models, attach files, and save conversations;
+- chat with enabled models, attach files, and save, import, or export conversations;
 - shorten long chats with manual or automatic context compaction;
 - generate benchmark JSON from topics and custom instructions;
 - organize, filter, preview, and edit benchmark files; and
@@ -26,8 +26,8 @@ Your benchmark files, settings, and chat history remain on your computer.
 Requests sent to hosted models are still subject to that provider's terms and
 privacy policy.
 
-> Evaluation, result history, exports, accounts, and hosted multi-user use are
-> not available in this preview.
+> Evaluation, benchmark result history and export, accounts, and hosted
+> multi-user use are not available in this preview.
 
 ## Quick start
 
@@ -122,6 +122,43 @@ cancellation.
 system prompt, temperature, top p, top k, seed, and recent-message limit.
 Additional local-model parameters are managed separately per model.
 
+### Stream responses
+
+Use the **Stream responses** switch at the right of the attachment row to choose
+how an assistant response is displayed while it is being generated. When the
+switch is off, the response bubble shows an increasing character count until
+the response is complete. When it is on, arriving content is rendered in the
+bubble as formatted Markdown; complete table rows are displayed as they arrive
+instead of exposing their Markdown source.
+
+The switch is off until a value has been saved. Its current value is saved when
+you select **Send** and restored on the next page load.
+
+### Use llama.cpp parameters and context sizes
+
+For llama.cpp models, changing **Active model for the chat** checks only the
+local parameter database. It does not wait for the model server's `/props`
+response. The status light inside **Set more parameters** shows what is already
+saved for the selected model and the current llama.cpp context mode:
+
+- red: generation parameters and context data have not been saved;
+- orange: parameters exist, but `n_ctx` is missing for the current mode; and
+- green: parameters and the current mode's `n_ctx` value both exist.
+
+Hover over the light for the exact status. Cairnmark stores context sizes by
+mode in `n_ctx_modes`, so the same model can retain separate values for
+`fit_on`, `fit_off`, and `n_ctx` operation.
+
+Select **Set more parameters** to open the modal. Existing data is shown
+immediately. If parameters or the current mode's context size are missing,
+Cairnmark then reads `/props?model=[model_id]` from the local llama.cpp server
+and saves the returned data in `instance/parameters.db`. Previously saved
+parameter data is kept when only a new mode's `n_ctx` value is required.
+
+The modal lets you choose which values are **SET** or **UNSET** for subsequent
+requests. **Delete from local DB** removes the cached row and immediately reads
+and saves fresh data from the server.
+
 ### Control conversation context
 
 **Prev. messages** controls how much recent history is sent with the next
@@ -174,6 +211,26 @@ check succeeds.
 - **Replace chat** updates the currently selected saved conversation.
 - **Clear chat** starts a fresh conversation.
 - System prompts can be saved, loaded, and removed separately.
+
+### Import and export conversations
+
+Select **Export chat** to write a complete, import-ready JSON document to
+`Exported-chat/`. With no saved conversation selected, Cairnmark exports the
+active conversation from the chat database as
+`Exported-main-[date_time].json`. When **Saved chats** contains a selected
+conversation, Cairnmark exports that saved database record instead and uses
+`Exported-[normalized_chat_name]-[date_time].json`. Spaces and characters that
+are unsafe in filenames are normalized automatically. An empty active chat
+cannot be exported.
+
+Select **Import chat** and choose a Cairnmark chat-export `.json` file. A valid
+import clears the current conversation, restores every exported message in the
+chat body, and replaces the rows in the active `chat_messages` table. Message
+roles, content, timestamps, model metadata, token usage, attachment metadata,
+and compaction state are retained by the export format. Import does not overwrite
+a named entry in **Saved chats**; the imported conversation becomes the active
+chat and can be saved under a name afterward. Cairnmark shows an alert only if
+the import fails.
 
 ## Create a benchmark
 
@@ -246,10 +303,11 @@ A minimal benchmark looks like this:
 | `instance/chathistory.db` | Current and saved chats and system prompts |
 | `instance/parameters.db` | Saved local-model generation defaults |
 | `instance/preview/` | Chat attachment previews |
+| `Exported-chat/` | Import-ready chat JSON exports |
 | `.secret/` | The key used to encrypt saved API credentials |
 
 For a complete backup, stop Cairnmark and copy `Benchmark-prompts/`,
-`System-prompts/`, `instance/`, and `.secret/` together. Keep
+`System-prompts/`, `Exported-chat/`, `instance/`, and `.secret/` together. Keep
 `instance/cairnmark.db` paired with its original `.secret/` directory or
 saved API keys cannot be decrypted.
 
