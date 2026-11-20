@@ -5,10 +5,10 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}">
 {% endblock %}
 
-{% macro chat_parameter_label(for_id, label, help, end=False) -%}
+{% macro chat_parameter_label(for_id, label, help, parameter_key=None, end=False) -%}
 <div class="chat-parameter-label{% if end %} chat-parameter-label--end{% endif %}">
   <label for="{{ for_id }}">{{ label }}</label>
-  <button type="button" class="chat-info" aria-label="{{ label }} help: {{ help }}">
+  <button type="button" class="chat-info" aria-label="{{ label }} help: {{ help }}"{% if parameter_key %} data-parameter-help-key="{{ parameter_key }}"{% endif %}>
     <span aria-hidden="true">i</span>
     <span class="chat-info-tooltip" role="tooltip">{{ help }}</span>
   </button>
@@ -375,25 +375,25 @@
       <span class="field-hint">Fine-tune how much freedom the model has when replying. Leave a field empty to omit that parameter from the request.</span>
       <div class="chat-parameter-grid">
         <div class="field-group">
-          {{ chat_parameter_label("chat-temperature", "Temperature", "Controls randomness. Lower values make replies focused and predictable; higher values make them more varied and creative. Common range: 0.2–1.0.") }}
+          {{ chat_parameter_label("chat-temperature", "Temperature", "Controls randomness. Lower values make replies focused and predictable; higher values make them more varied and creative. Common range: 0.2–1.0.", "temperature") }}
           <input type="number" id="chat-temperature" name="temperature" step="0.1" min="0" max="2"
             value="{{ chat_settings.temperature if chat_settings.temperature is not none else '' }}" data-chat-temperature>
         </div>
 
         <div class="field-group">
-          {{ chat_parameter_label("chat-top-p", "Top P", "Nucleus sampling. Keeps the smallest set of likely tokens whose total probability reaches this value. Lower values are more focused; 1.0 considers all tokens.") }}
+          {{ chat_parameter_label("chat-top-p", "Top P", "Nucleus sampling. Keeps the smallest set of likely tokens whose total probability reaches this value. Lower values are more focused; 1.0 considers all tokens.", "top_p") }}
           <input type="number" id="chat-top-p" name="top_p" step="0.05" min="0" max="1"
             value="{{ chat_settings.top_p if chat_settings.top_p is not none else '' }}" data-chat-top-p>
         </div>
 
         <div class="field-group">
-          {{ chat_parameter_label("chat-top-k", "Top K", "Limits each step to the K most likely tokens. Lower values are more deterministic; higher values allow more variety. 0 disables the limit.") }}
+          {{ chat_parameter_label("chat-top-k", "Top K", "Limits each step to the K most likely tokens. Lower values are more deterministic; higher values allow more variety. 0 disables the limit.", "top_k") }}
           <input type="number" id="chat-top-k" name="top_k" step="1" min="0" max="200"
             value="{{ chat_settings.top_k if chat_settings.top_k is not none else '' }}" data-chat-top-k>
         </div>
 
         <div class="field-group">
-          {{ chat_parameter_label("chat-seed", "Seed", "Random seed for reproducible generation. Use -1 for a random seed.") }}
+          {{ chat_parameter_label("chat-seed", "Seed", "Random seed for reproducible generation. Use -1 for a random seed.", "seed") }}
           <div class="chat-seed-control">
             <button
               type="button"
@@ -417,7 +417,7 @@
         </div>
 
         <div class="field-group">
-          {{ chat_parameter_label("chat-min-p", "Min P", "Minimum probability threshold for nucleus sampling. Lower values allow more tokens; common range: 0.0–0.1.") }}
+          {{ chat_parameter_label("chat-min-p", "Min P", "Minimum probability threshold for nucleus sampling. Lower values allow more tokens; common range: 0.0–0.1.", "min_p") }}
           <input type="number" id="chat-min-p" name="min_p" step="0.01" min="0" max="1"
             value="{{ chat_settings.min_p if chat_settings.min_p is not none else '' }}" data-chat-min-p>
         </div>
@@ -612,6 +612,7 @@
 {% block scripts %}
   <script>
     window.CairnmarkMineruSettings = {{ mineru_settings|tojson }};
+    window.CairnmarkParameterHelpUrl = {{ url_for('static', filename='parameters.json')|tojson }};
   </script>
   <script>
     window.CairnmarkChatMessageTokens = [

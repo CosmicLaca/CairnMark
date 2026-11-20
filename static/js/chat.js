@@ -110,6 +110,44 @@
     const pendingAttachments = [];
     const renderMarkdown = window.CairnmarkMarkdown.render;
     const chatMedia = window.CairnmarkChatMedia;
+    const parameterHelpUrl = window.CairnmarkParameterHelpUrl || "/static/parameters.json";
+    let parameterHelp = {};
+
+    const applyParameterHelp = (root = document) => {
+        root.querySelectorAll("[data-parameter-help-key]").forEach((button) => {
+            const key = button.getAttribute("data-parameter-help-key");
+            const help = parameterHelp[key];
+            if (typeof help !== "string" || !help.trim()) return;
+            const tooltip = button.querySelector(".chat-info-tooltip");
+            if (tooltip) tooltip.textContent = help;
+            const label = button.closest(".chat-parameter-label, .more-params-label")
+                ?.querySelector("label")?.textContent?.trim() || labelForParam(key);
+            button.setAttribute("aria-label", `${label} help: ${help}`);
+        });
+    };
+
+    const loadParameterHelp = async () => {
+        try {
+            const response = await fetch(parameterHelpUrl, {
+                cache: "no-store",
+                headers: { Accept: "application/json" },
+            });
+            if (!response.ok) throw new Error("Parameter help could not be loaded.");
+            const payload = await response.json();
+            if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+                throw new Error("Parameter help is invalid.");
+            }
+            parameterHelp = Object.fromEntries(
+                Object.entries(payload).filter(
+                    ([key, value]) => key && typeof value === "string" && value.trim()
+                )
+            );
+            applyParameterHelp();
+        } catch (error) {
+            // Keep server-rendered help and modal fallbacks when the local file is unavailable.
+        }
+        return parameterHelp;
+    };
 
     // Toggle state per message
     const rawSource = new WeakMap();
@@ -1283,21 +1321,43 @@
 
     const isFilteredParam = (key, value) => {
         const name = String(key).toLowerCase();
-        if (name === "samplers") return true;
+        if (name === "samplers" || name === "stream") return true;
         if (name === "temperature" || name === "top_p" || name === "top_k" || name === "seed" || name === "min_p") return true;
         if (value === null || value === undefined) return true;
         if (typeof value === "string" && value.toLowerCase() === "none") return true;
         return false;
     };
 
+    const createParameterInfo = (key, labelText) => {
+        const help = parameterHelp[key] || "No description is available for this parameter.";
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "chat-info more-params-info";
+        button.setAttribute("data-parameter-help-key", key);
+        button.setAttribute("aria-label", `${labelText} help: ${help}`);
+        const badge = document.createElement("span");
+        badge.setAttribute("aria-hidden", "true");
+        badge.textContent = "i";
+        const tooltip = document.createElement("span");
+        tooltip.className = "chat-info-tooltip";
+        tooltip.setAttribute("role", "tooltip");
+        tooltip.textContent = help;
+        button.append(badge, tooltip);
+        return button;
+    };
+
     const createParamInput = (key, value) => {
         const wrapper = document.createElement("div");
         wrapper.className = "field-group more-params-field";
 
+        const labelText = labelForParam(key);
+        const labelRow = document.createElement("div");
+        labelRow.className = "more-params-label";
         const label = document.createElement("label");
-        label.textContent = labelForParam(key);
+        label.textContent = labelText;
         label.setAttribute("for", `more-param-${key}`);
-        wrapper.appendChild(label);
+        labelRow.append(label, createParameterInfo(key, labelText));
+        wrapper.appendChild(labelRow);
 
         let input;
         if (typeof value === "boolean") {
@@ -2046,6 +2106,7 @@
 
     const openMoreParamsModal = async () => {
         if (!moreParamsModal) return;
+        void loadParameterHelp();
         const selectedOption = modelSelect && modelSelect.selectedOptions && modelSelect.selectedOptions[0];
         const modelName = (selectedOption && (selectedOption.textContent || "").trim()) || (modelSelect && modelSelect.value) || "";
         if (moreParamsTitle) {
@@ -2658,6 +2719,7 @@
     }
 
     // Keep the always-available document icon visible from first paint.
+    void loadParameterHelp();
     renderMediaUploads(null);
     if (!modelStateInitialized) setTimeout(updateMoreParamsButtonState, 0);
 

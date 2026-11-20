@@ -1317,13 +1317,77 @@
     margin-top: 8px;
 }
 
-.more-params-field label {
+.more-params-field > label,
+.more-params-label > label {
     display: block;
     color: var(--ink);
     font-size: 0.8rem;
     font-weight: 800;
     letter-spacing: 0.035em;
     margin-bottom: 5px;
+}
+
+.more-params-label {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.more-params-label .chat-info {
+    flex: 0 0 auto;
+    margin-bottom: 5px;
+}
+
+.more-params-label .chat-info-tooltip {
+    top: auto;
+    bottom: calc(100% + 9px);
+    left: 0;
+    transform: translate(0, 4px);
+}
+
+.more-params-label .chat-info-tooltip::before {
+    top: 100%;
+    bottom: auto;
+    left: 8px;
+    border-color: var(--sidebar) transparent transparent;
+    transform: none;
+}
+
+.more-params-label .chat-info:hover .chat-info-tooltip,
+.more-params-label .chat-info:focus .chat-info-tooltip,
+.more-params-label .chat-info:focus-visible .chat-info-tooltip {
+    transform: translate(0, 0);
+}
+
+.more-params-grid > .more-params-field:nth-child(6n) .chat-info-tooltip {
+    right: 0;
+    left: auto;
+}
+
+.more-params-grid > .more-params-field:nth-child(6n) .chat-info-tooltip::before {
+    right: 8px;
+    left: auto;
+}
+
+/* The first two rows open downward so their help stays clear of the modal header. */
+.more-params-grid > .more-params-field:nth-child(-n + 12) .chat-info-tooltip {
+    top: calc(100% + 9px);
+    bottom: auto;
+    transform: translate(0, -4px);
+}
+
+.more-params-grid > .more-params-field:nth-child(-n + 12) .chat-info-tooltip::before {
+    top: auto;
+    bottom: 100%;
+    border-color: transparent transparent var(--sidebar);
+}
+
+.more-params-grid > .more-params-field:nth-child(-n + 12) .chat-info:hover .chat-info-tooltip,
+.more-params-grid > .more-params-field:nth-child(-n + 12) .chat-info:focus .chat-info-tooltip,
+.more-params-grid > .more-params-field:nth-child(-n + 12) .chat-info:focus-visible .chat-info-tooltip {
+    transform: translate(0, 0);
 }
 
 [data-more-params-content] {
