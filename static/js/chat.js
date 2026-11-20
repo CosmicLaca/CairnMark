@@ -138,6 +138,7 @@
         || "/static/tool-setup-__SERVICE__.json";
     const savedMcpStates = new Map();
     const savedMcpToolSettings = new Map();
+    const mcpSetupDefinitions = new Map();
     const savedLlamaToolStates = new Map();
     const savedLlamaServiceSettings = new Map();
     const knownLlamaTools = new Map();
@@ -157,6 +158,7 @@
         // Discovery still works when browser storage is unavailable or invalid.
     }
     let mcpSettingsSequence = 0;
+    let mcpDefaultTimeoutMs = 10000;
     let pendingDocumentPicker = false;
     const pendingAttachments = [];
     const renderMarkdown = window.CairnmarkMarkdown.render;
@@ -1729,13 +1731,17 @@
 
     const createMcpServiceRow = (name, details) => {
         const savedSettings = savedMcpToolSettings.get(name) || {};
-        savedMcpToolSettings.set(name, {
+        const settings = {
             command: details.command || "",
             args: Array.isArray(details.args) ? details.args : [],
-            timeout_ms: details.timeout_ms ?? null,
-            endpoint: mcpDefaultEndpoint(name),
+            timeout_ms: details.timeout_ms,
             ...savedSettings,
-        });
+        };
+        const timeout = Number(settings.timeout_ms);
+        settings.timeout_ms = Number.isInteger(timeout) && timeout > 0
+            ? timeout
+            : mcpDefaultTimeoutMs;
+        savedMcpToolSettings.set(name, settings);
         const row = document.createElement("div");
         row.className = "mcp-service-row mcp-service-row--checking";
         row.setAttribute("data-mcp-service-row", name);
@@ -1748,7 +1754,11 @@
         marker.textContent = "◆";
         const serviceName = document.createElement("strong");
         serviceName.textContent = name;
-        identity.append(marker, serviceName);
+        const sourceBadge = document.createElement("span");
+        sourceBadge.className = "mcp-source-badge mcp-source-badge--custom";
+        sourceBadge.textContent = "Custom MCP";
+        sourceBadge.title = "Custom or imported MCP service";
+        identity.append(marker, serviceName, sourceBadge);
 
         const controls = document.createElement("div");
         controls.className = "mcp-service-controls";
@@ -1800,11 +1810,6 @@
             toggleMcpToolSetup(name, details, row, setupIcon);
         });
         return row;
-    };
-
-    const mcpDefaultEndpoint = (name) => {
-        if (name === "searxng") return "http://127.0.0.1:8888";
-        return "";
     };
 
     const createMcpToolField = (name, key, definition, savedValues) => {
@@ -1863,6 +1868,9 @@
         if (type === "number") {
             input.min = "1";
             input.step = "1";
+            if (key === "timeout_ms") {
+                input.value = String(mcpDefaultTimeoutMs);
+            }
         }
         if (value !== undefined && value !== null) input.value = String(value);
         field.append(label, input);
@@ -1918,28 +1926,23 @@
         const separator = document.createElement("div");
         separator.className = "mcp-tool-setup-separator";
 
+        accordion.append(connectionHeading, connectionGrid);
+        const setupEntries = Object.entries(definitions).filter(
+            ([, definition]) => definition && typeof definition === "object"
+        );
+        if (!setupEntries.length) return;
+
         const heading = document.createElement("div");
         heading.className = "mcp-tool-setup-heading";
         const title = document.createElement("strong");
         title.textContent = `${name} setup`;
         const hint = document.createElement("span");
-        hint.textContent = "Tool request defaults";
+        hint.textContent = "Service-specific settings";
         heading.append(title, hint);
 
         const grid = document.createElement("div");
         grid.className = "mcp-tool-setup-grid";
-        grid.appendChild(createMcpToolField(
-            name,
-            "endpoint",
-            {name: "Endpoint address and port", type: "text"},
-            {
-                endpoint: savedValues.endpoint !== undefined
-                    ? savedValues.endpoint
-                    : mcpDefaultEndpoint(name),
-            }
-        ));
-        Object.entries(definitions).forEach(([key, definition]) => {
-            if (key === "endpoint") return;
+        setupEntries.forEach(([key, definition]) => {
             if (!definition || typeof definition !== "object") return;
             grid.appendChild(createMcpToolField(
                 name,
@@ -1949,13 +1952,28 @@
             ));
         });
 
-        accordion.append(
-            connectionHeading,
-            connectionGrid,
-            separator,
-            heading,
-            grid
-        );
+        accordion.append(separator, heading, grid);
+    };
+
+    const loadMcpSetupDefinitions = async (name) => {
+        if (mcpSetupDefinitions.has(name)) {
+            return mcpSetupDefinitions.get(name);
+        }
+        let definitions = {};
+        try {
+            const setupUrl = toolSetupUrlTemplate.replace(
+                "__SERVICE__",
+                encodeURIComponent(name)
+            );
+            const payload = await api.request(setupUrl);
+            if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+                definitions = payload;
+            }
+        } catch (error) {
+            // Most stdio MCP services do not require service-specific settings.
+        }
+        mcpSetupDefinitions.set(name, definitions);
+        return definitions;
     };
 
     const toggleMcpToolSetup = async (name, details, row, setupButton) => {
@@ -1976,21 +1994,8 @@
         accordion.appendChild(loading);
         row.appendChild(accordion);
         setupButton.setAttribute("aria-expanded", "true");
-        try {
-            const setupUrl = toolSetupUrlTemplate.replace(
-                "__SERVICE__",
-                encodeURIComponent(name)
-            );
-            const definitions = await api.request(setupUrl);
-            renderMcpToolSetup(
-                name,
-                details,
-                accordion,
-                definitions && typeof definitions === "object" ? definitions : {}
-            );
-        } catch (error) {
-            renderMcpToolSetup(name, details, accordion, {});
-        }
+        const definitions = await loadMcpSetupDefinitions(name);
+        renderMcpToolSetup(name, details, accordion, definitions);
     };
 
     const closeMcpSettings = () => {
@@ -1998,13 +2003,45 @@
         if (mcpSettingsModal) mcpSettingsModal.hidden = true;
     };
 
+    const setMcpSaveBusy = (busy) => {
+        if (!mcpSettingsSaveBtn) return;
+        const idleIcon = mcpSettingsSaveBtn.querySelector(".mcp-save-idle-icon");
+        const spinner = mcpSettingsSaveBtn.querySelector(".mcp-save-spinner");
+        const label = mcpSettingsSaveBtn.querySelector("[data-mcp-save-label]");
+        if (idleIcon) idleIcon.hidden = busy;
+        if (spinner) spinner.hidden = !busy;
+        if (label) label.textContent = busy ? "Saving…" : "Save";
+        mcpSettingsSaveBtn.classList.toggle("mcp-save-button--busy", busy);
+        mcpSettingsSaveBtn.setAttribute("aria-busy", busy ? "true" : "false");
+        if (busy) mcpSettingsSaveBtn.disabled = true;
+    };
+
     const checkMcpService = async (name, row, requestSequence) => {
         const serviceSwitch = row.querySelector("[data-mcp-service-switch]");
         const spinner = row.querySelector(".mcp-service-spinner");
         const offlineTooltip = row.querySelector(".mcp-service-offline-tooltip");
         try {
+            const definitions = await loadMcpSetupDefinitions(name);
+            const endpointDefinition = definitions.endpoint;
+            const savedSettings = savedMcpToolSettings.get(name) || {};
+            if (
+                endpointDefinition
+                && typeof endpointDefinition === "object"
+                && savedSettings.endpoint === undefined
+                && Object.prototype.hasOwnProperty.call(endpointDefinition, "default")
+            ) {
+                savedSettings.endpoint = endpointDefinition.default;
+                savedMcpToolSettings.set(name, savedSettings);
+            }
+            const query = new URLSearchParams({name});
+            if (savedSettings.endpoint) {
+                query.set("endpoint", String(savedSettings.endpoint));
+            }
+            if (savedSettings.timeout_ms) {
+                query.set("timeout_ms", String(savedSettings.timeout_ms));
+            }
             const status = await api.request(
-                `/chat/mcp_status?name=${encodeURIComponent(name)}`
+                `/chat/mcp_status?${query.toString()}`
             );
             if (requestSequence !== mcpSettingsSequence) return;
             const online = Boolean(status && status.online);
@@ -2296,12 +2333,16 @@
         const identity = document.createElement("div");
         const name = document.createElement("strong");
         name.textContent = serviceName;
+        const sourceBadge = document.createElement("span");
+        sourceBadge.className = "mcp-source-badge mcp-source-badge--llama";
+        sourceBadge.textContent = "llama.cpp managed";
+        sourceBadge.title = "Tools supplied by the active llama.cpp provider";
         const count = document.createElement("span");
         const activeCount = entries.filter((entry) => !entry.removed).length;
         const removedCount = entries.length - activeCount;
         count.textContent = `${activeCount} ${activeCount === 1 ? "tool" : "tools"}`;
         if (removedCount) count.textContent += ` · ${removedCount} removed`;
-        identity.append(name, count);
+        identity.append(name, sourceBadge, count);
 
         const controls = document.createElement("div");
         controls.className = "llama-managed-service-controls";
@@ -2505,6 +2546,7 @@
         const requestSequence = ++mcpSettingsSequence;
         mcpSettingsModal.hidden = false;
         mcpServiceList.replaceChildren();
+        setMcpSaveBusy(false);
         if (mcpSettingsSaveBtn) mcpSettingsSaveBtn.disabled = true;
         const loading = document.createElement("p");
         loading.className = "mcp-settings-loading";
@@ -2516,6 +2558,11 @@
                 api.request(mcpSettingsUrl),
             ]);
             if (requestSequence !== mcpSettingsSequence) return;
+            const configuredTimeout = Number(config?.default_timeout_ms);
+            mcpDefaultTimeoutMs = Number.isInteger(configuredTimeout)
+                && configuredTimeout > 0
+                ? configuredTimeout
+                : 10000;
             hydrateMcpSettings(persistedSettings);
             const servers = config && config.mcpServers;
             const names = servers && typeof servers === "object"
@@ -2687,7 +2734,7 @@
 
     const saveMcpSettings = async () => {
         if (!mcpSettingsSaveBtn) return;
-        mcpSettingsSaveBtn.disabled = true;
+        setMcpSaveBusy(true);
         try {
             await saveFirstCustomMcpService();
             const records = collectMcpSettingsRecords();
@@ -2698,6 +2745,7 @@
             closeMcpSettings();
         } catch (error) {
             window.alert(`MCP settings could not be saved: ${error}`);
+            setMcpSaveBusy(false);
             mcpSettingsSaveBtn.disabled = false;
         }
     };

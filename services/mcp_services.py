@@ -1,12 +1,18 @@
 """Manage private MCP server declarations and OpenCode imports."""
 
+import asyncio
 import json
+import logging
 import os
 import re
+import socket
 import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 
 from config import PROJECT_ROOT
 
@@ -14,10 +20,13 @@ from config import PROJECT_ROOT
 DEFAULT_MCP_TIMEOUT_MS = 10000
 MCP_CONFIG_PATH = PROJECT_ROOT / "services" / "mcv.json"
 OPENCODE_CONFIG_PATH = Path.home() / ".config" / "opencode" / "opencode.json"
-MCP_HEALTH_URLS = {
-    "searxng": "http://127.0.0.1:8888/search?q=AxelRudiPell&format=json",
+MCP_DEFAULT_ENDPOINTS = {
+    "searxng": "http://127.0.0.1:8888",
+    "comfyui": "http://127.0.0.1:8188",
+    "postgres": "postgresql://127.0.0.1:5432",
 }
 MCP_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
+LOGGER = logging.getLogger(__name__)
 
 
 class McpServiceRegistry:
@@ -142,6 +151,7 @@ class McpServiceRegistry:
         if self.configured():
             return {
                 "configured": True,
+                "default_timeout_ms": DEFAULT_MCP_TIMEOUT_MS,
                 "mcpServers": self.services(),
                 "opencode_import_available": False,
                 "opencode_server_names": [],
@@ -149,6 +159,7 @@ class McpServiceRegistry:
         discovered = self.opencode_services()
         return {
             "configured": False,
+            "default_timeout_ms": DEFAULT_MCP_TIMEOUT_MS,
             "mcpServers": {},
             "opencode_import_available": bool(discovered),
             "opencode_server_names": list(discovered),
@@ -204,24 +215,41 @@ class McpServiceRegistry:
         self._write_services(services)
         return declaration
 
-    def check(self, name):
-        """Check one registered service using its configured timeout."""
-        services = self.services()
-        if name not in services:
-            raise ValueError("Unknown MCP service.")
-        health_url = MCP_HEALTH_URLS.get(name)
-        if not health_url:
-            return {"name": name, "online": False, "status_code": None}
-
-        raw_timeout = services[name].get("timeout_ms", DEFAULT_MCP_TIMEOUT_MS)
+    @staticmethod
+    def _timeout_ms(details, override=None):
+        raw_timeout = (
+            override
+            if override not in (None, "")
+            else details.get("timeout_ms", DEFAULT_MCP_TIMEOUT_MS)
+        )
         if isinstance(raw_timeout, bool):
-            timeout_ms = DEFAULT_MCP_TIMEOUT_MS
+            return DEFAULT_MCP_TIMEOUT_MS
+        try:
+            return max(1, int(raw_timeout))
+        except (TypeError, ValueError):
+            return DEFAULT_MCP_TIMEOUT_MS
+
+    @staticmethod
+    def _configured_endpoint(name, details, endpoint):
+        endpoint = str(endpoint or "").strip()
+        if endpoint:
+            return endpoint
+        if name == "postgres":
+            for argument in reversed(details.get("args", [])):
+                value = str(argument).strip()
+                if value.startswith(("postgres://", "postgresql://")):
+                    return value
+        return MCP_DEFAULT_ENDPOINTS.get(name, "")
+
+    def _check_http_endpoint(self, name, endpoint, timeout_ms):
+        endpoint = str(endpoint or "").strip().rstrip("/")
+        parsed = urllib.parse.urlsplit(endpoint)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return False, None
+        if name == "searxng":
+            health_url = f"{endpoint}/search?q=AxelRudiPell&format=json"
         else:
-            try:
-                timeout_ms = int(raw_timeout)
-            except (TypeError, ValueError):
-                timeout_ms = DEFAULT_MCP_TIMEOUT_MS
-        timeout_ms = max(1, timeout_ms)
+            health_url = f"{endpoint}/system_stats"
         request = urllib.request.Request(
             health_url,
             headers={"Accept": "application/json"},
@@ -230,11 +258,84 @@ class McpServiceRegistry:
             with self.opener(request, timeout=timeout_ms / 1000) as response:
                 status_code = int(getattr(response, "status", 0) or 0)
         except (OSError, TimeoutError, urllib.error.URLError):
+            return False, None
+        return status_code == 200, status_code
+
+    @staticmethod
+    def _check_postgres_endpoint(endpoint, timeout_ms):
+        parsed = urllib.parse.urlsplit(str(endpoint or "").strip())
+        if parsed.scheme not in {"postgres", "postgresql"} or not parsed.hostname:
+            return False
+        try:
+            with socket.create_connection(
+                (parsed.hostname, parsed.port or 5432),
+                timeout=timeout_ms / 1000,
+            ):
+                return True
+        except (OSError, TimeoutError):
+            return False
+
+    @staticmethod
+    async def _check_stdio_async(details, timeout_ms):
+        command = str(details.get("command") or "").strip()
+        args = details.get("args", [])
+        if not command or not isinstance(args, list):
+            return 0
+        environment = details.get("environment")
+        if not isinstance(environment, dict):
+            environment = None
+        parameters = StdioServerParameters(
+            command=command,
+            args=[str(argument) for argument in args],
+            env=environment,
+            cwd=details.get("cwd") or None,
+        )
+        with open(os.devnull, "w", encoding="utf-8") as stderr:
+            async with asyncio.timeout(timeout_ms / 1000):
+                async with stdio_client(parameters, errlog=stderr) as streams:
+                    async with ClientSession(streams[0], streams[1]) as session:
+                        await session.initialize()
+                        tools = await session.list_tools()
+                        return len(tools.tools)
+
+    def _check_stdio(self, details, timeout_ms):
+        try:
+            return asyncio.run(self._check_stdio_async(details, timeout_ms))
+        except Exception as error:
+            LOGGER.warning("MCP stdio health check failed: %s", error)
+            return 0
+
+    def check(self, name, endpoint=None, timeout_ms=None):
+        """Check one registered service and any required local endpoint."""
+        services = self.services()
+        if name not in services:
+            raise ValueError("Unknown MCP service.")
+        details = services[name]
+        if details.get("disabled") is True:
             return {"name": name, "online": False, "status_code": None}
+        timeout_ms = self._timeout_ms(details, timeout_ms)
+        configured_endpoint = self._configured_endpoint(name, details, endpoint)
+        status_code = None
+        if name in {"searxng", "comfyui"}:
+            endpoint_online, status_code = self._check_http_endpoint(
+                name,
+                configured_endpoint,
+                timeout_ms,
+            )
+            if not endpoint_online:
+                return {"name": name, "online": False, "status_code": status_code}
+        elif name == "postgres" and not self._check_postgres_endpoint(
+            configured_endpoint,
+            timeout_ms,
+        ):
+            return {"name": name, "online": False, "status_code": None}
+
+        tools_count = self._check_stdio(details, timeout_ms)
         return {
             "name": name,
-            "online": status_code == 200,
+            "online": tools_count > 0,
             "status_code": status_code,
+            "tools_count": tools_count,
         }
 
     def check_managed_service(self, name, endpoint, timeout_ms=3000):

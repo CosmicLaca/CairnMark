@@ -729,10 +729,18 @@ class ChatController:
     def mcp_status(self):
         """Return the live status of one registered local MCP service."""
         name = request.args.get("name", "").strip()
+        endpoint = request.args.get("endpoint", "").strip()
+        timeout_ms = request.args.get("timeout_ms")
         if not name:
             return jsonify({"error": "MCP service name is required."}), 400
         try:
-            return jsonify(self._mcp_registry().check(name))
+            return jsonify(
+                self._mcp_registry().check(
+                    name,
+                    endpoint or None,
+                    timeout_ms,
+                )
+            )
         except (OSError, json.JSONDecodeError):
             current_app.logger.exception("Could not read MCP configuration")
             return jsonify({"error": "Could not read MCP configuration."}), 500
@@ -874,7 +882,13 @@ class ChatController:
             name = record["service"]
             if name not in external_status:
                 try:
-                    external_status[name] = bool(registry.check(name).get("online"))
+                    external_status[name] = bool(
+                        registry.check(
+                            name,
+                            record["settings"].get("endpoint"),
+                            record["settings"].get("timeout_ms"),
+                        ).get("online")
+                    )
                 except (OSError, ValueError, json.JSONDecodeError):
                     external_status[name] = False
             (eligible if external_status[name] else skipped).append(record)

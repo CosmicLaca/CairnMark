@@ -1182,6 +1182,31 @@
     white-space: nowrap;
 }
 
+.mcp-source-badge {
+    flex: 0 0 auto;
+    padding: 3px 7px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-size: 0.58rem;
+    font-weight: 750;
+    letter-spacing: 0.035em;
+    line-height: 1;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.mcp-source-badge--custom {
+    border-color: rgba(180, 35, 24, 0.2);
+    color: #8e2d25;
+    background: rgba(180, 35, 24, 0.08);
+}
+
+.mcp-source-badge--llama {
+    border-color: rgba(49, 93, 132, 0.2);
+    color: #315d84;
+    background: rgba(76, 141, 181, 0.1);
+}
+
 .mcp-service-marker {
     color: var(--lichen);
     font-size: 0.62rem;
@@ -1524,6 +1549,11 @@
     flex: 0 0 auto;
     color: var(--muted);
     font-size: 0.65rem;
+}
+
+.llama-managed-service-heading .mcp-source-badge--llama {
+    color: #315d84;
+    font-size: 0.58rem;
 }
 
 .llama-managed-service-status {
@@ -2932,9 +2962,24 @@
     box-shadow: 3px 4px 0 rgba(111, 214, 195, 0.2);
 }
 
-.modal-save-button > span {
+.modal-save-button > span[aria-hidden="true"] {
     color: var(--lichen);
     font-size: 0.6rem;
+}
+
+.mcp-save-spinner[hidden] {
+    display: none;
+}
+
+.mcp-save-spinner:not([hidden]) {
+    display: inline-flex;
+    font-size: 0.82rem;
+    animation: chat-spin 0.75s linear infinite;
+}
+
+.mcp-save-button--busy {
+    cursor: wait;
+    transform: none;
 }
 
 .modal-save-button:hover,

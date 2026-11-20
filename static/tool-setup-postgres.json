@@ -1,0 +1,7 @@
+{
+  "endpoint": {
+    "name": "PostgreSQL address and port",
+    "type": "text",
+    "default": "postgresql://127.0.0.1:5432"
+  }
+}

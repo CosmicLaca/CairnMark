@@ -1,0 +1,7 @@
+{
+  "endpoint": {
+    "name": "ComfyUI API endpoint",
+    "type": "text",
+    "default": "http://127.0.0.1:8188"
+  }
+}
