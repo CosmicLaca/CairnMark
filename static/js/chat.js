@@ -165,6 +165,8 @@
     const chatMedia = window.CairnmarkChatMedia;
     const parameterHelpUrl = window.CairnmarkParameterHelpUrl || "/static/parameters.json";
     let parameterHelp = {};
+    const mcpToolHelpUrl = window.CairnmarkMcpToolHelpUrl || "/static/mcp-tools.json";
+    let mcpToolHelp = {};
 
     const applyParameterHelp = (root = document) => {
         root.querySelectorAll("[data-parameter-help-key]").forEach((button) => {
@@ -200,6 +202,50 @@
             // Keep server-rendered help and modal fallbacks when the local file is unavailable.
         }
         return parameterHelp;
+    };
+
+    const loadMcpToolHelp = async () => {
+        try {
+            const response = await fetch(mcpToolHelpUrl, {
+                cache: "no-store",
+                headers: { Accept: "application/json" },
+            });
+            if (!response.ok) throw new Error("MCP tool help could not be loaded.");
+            const payload = await response.json();
+            if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+                throw new Error("MCP tool help is invalid.");
+            }
+            mcpToolHelp = Object.fromEntries(
+                Object.entries(payload).filter(
+                    ([key, value]) => key && typeof value === "string" && value.trim()
+                )
+            );
+        } catch (error) {
+            mcpToolHelp = {};
+        }
+        return mcpToolHelp;
+    };
+
+    const createMcpName = (name) => {
+        const wrapper = document.createElement("span");
+        wrapper.className = "mcp-name-with-help";
+        const label = document.createElement("strong");
+        label.textContent = name;
+        wrapper.appendChild(label);
+        const help = mcpToolHelp[name];
+        if (typeof help !== "string" || !help.trim()) return wrapper;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "mcp-name-info";
+        button.setAttribute("aria-label", `${name} help: ${help}`);
+        button.textContent = "i";
+        const tooltip = document.createElement("span");
+        tooltip.className = "mcp-name-info-tooltip";
+        tooltip.setAttribute("role", "tooltip");
+        tooltip.textContent = help;
+        button.appendChild(tooltip);
+        wrapper.appendChild(button);
+        return wrapper;
     };
 
     // Toggle state per message
@@ -1752,8 +1798,7 @@
         marker.className = "mcp-service-marker";
         marker.setAttribute("aria-hidden", "true");
         marker.textContent = "◆";
-        const serviceName = document.createElement("strong");
-        serviceName.textContent = name;
+        const serviceName = createMcpName(name);
         const sourceBadge = document.createElement("span");
         sourceBadge.className = "mcp-source-badge mcp-source-badge--custom";
         sourceBadge.textContent = "Custom MCP";
@@ -2280,8 +2325,7 @@
 
         const identity = document.createElement("div");
         identity.className = "llama-managed-tool-identity";
-        const name = document.createElement("strong");
-        name.textContent = toolName;
+        const name = createMcpName(toolName);
         const description = document.createElement("span");
         description.textContent = removed
             ? "This previously discovered tool is no longer available."
@@ -2331,8 +2375,7 @@
         const header = document.createElement("div");
         header.className = "llama-managed-service-heading";
         const identity = document.createElement("div");
-        const name = document.createElement("strong");
-        name.textContent = serviceName;
+        const name = createMcpName(serviceName);
         const sourceBadge = document.createElement("span");
         sourceBadge.className = "mcp-source-badge mcp-source-badge--llama";
         sourceBadge.textContent = "llama.cpp managed";
@@ -2556,6 +2599,7 @@
             const [config, persistedSettings] = await Promise.all([
                 api.request(mcpConfigUrl),
                 api.request(mcpSettingsUrl),
+                loadMcpToolHelp(),
             ]);
             if (requestSequence !== mcpSettingsSequence) return;
             const configuredTimeout = Number(config?.default_timeout_ms);

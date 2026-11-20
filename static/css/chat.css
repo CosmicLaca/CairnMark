@@ -1182,6 +1182,87 @@
     white-space: nowrap;
 }
 
+.mcp-name-with-help {
+    position: relative;
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+}
+
+.mcp-name-info {
+    position: relative;
+    display: inline-grid;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+    padding: 0;
+    place-items: center;
+    color: #256b60;
+    border: 1px solid rgba(37, 107, 96, 0.28);
+    border-radius: 50%;
+    background: rgba(37, 107, 96, 0.07);
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 0.62rem;
+    font-style: italic;
+    font-weight: 700;
+    line-height: 1;
+    cursor: help;
+}
+
+.mcp-name-info:hover,
+.mcp-name-info:focus-visible {
+    color: #174b42;
+    border-color: rgba(37, 107, 96, 0.5);
+    background: rgba(111, 214, 195, 0.2);
+}
+
+.mcp-name-info-tooltip {
+    position: absolute;
+    z-index: 40;
+    top: 50%;
+    left: calc(100% + 10px);
+    width: max-content;
+    max-width: 260px;
+    padding: 9px 11px;
+    color: #f5f1e7;
+    border: 1px solid rgba(201, 243, 106, 0.28);
+    border-radius: 3px 12px 3px 3px;
+    background: var(--sidebar);
+    box-shadow: 0 12px 28px rgba(17, 25, 23, 0.28);
+    font-family: inherit;
+    font-size: 0.7rem;
+    font-style: normal;
+    font-weight: 500;
+    letter-spacing: 0;
+    line-height: 1.45;
+    text-align: left;
+    white-space: normal;
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(4px, -50%);
+    transition: opacity var(--motion), transform var(--motion), visibility var(--motion);
+}
+
+.mcp-name-info-tooltip::before {
+    position: absolute;
+    top: 50%;
+    right: 100%;
+    border: 6px solid transparent;
+    border-right-color: var(--sidebar);
+    content: "";
+    transform: translateY(-50%);
+}
+
+.mcp-name-info:hover .mcp-name-info-tooltip,
+.mcp-name-info:focus .mcp-name-info-tooltip,
+.mcp-name-info:focus-visible .mcp-name-info-tooltip {
+    visibility: visible;
+    opacity: 1;
+    transform: translate(0, -50%);
+}
+
 .mcp-source-badge {
     flex: 0 0 auto;
     padding: 3px 7px;
@@ -1506,7 +1587,7 @@
 }
 
 .llama-managed-service {
-    overflow: hidden;
+    overflow: visible;
     border: 1px solid var(--line);
     border-left: 3px solid #4c8d81;
     border-radius: 2px 10px 2px 2px;
@@ -1549,6 +1630,16 @@
     flex: 0 0 auto;
     color: var(--muted);
     font-size: 0.65rem;
+}
+
+.llama-managed-service-heading .mcp-name-with-help {
+    color: inherit;
+    font-size: inherit;
+}
+
+.mcp-settings-modal .llama-managed-service-heading > div:first-child .mcp-name-info-tooltip {
+    color: #f5f1e7;
+    font-size: 0.7rem;
 }
 
 .llama-managed-service-heading .mcp-source-badge--llama {
@@ -1612,6 +1703,31 @@
     font-size: 0.76rem;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.llama-managed-tool-identity .mcp-name-with-help {
+    display: flex;
+}
+
+.llama-managed-service-tools:not([hidden])
+    .llama-managed-tool-identity .mcp-name-with-help {
+    overflow: visible;
+    -webkit-box-orient: initial;
+    -webkit-line-clamp: unset;
+}
+
+.llama-managed-service-tools:not([hidden]) .mcp-name-info-tooltip {
+    height: auto;
+    max-height: none;
+}
+
+.llama-managed-tool-identity .mcp-name-info-tooltip {
+    display: block;
+    overflow: visible;
+    color: #f5f1e7;
+    font-size: 0.7rem;
+    line-height: 1.45;
+    -webkit-line-clamp: unset;
 }
 
 .llama-managed-tool-identity span {

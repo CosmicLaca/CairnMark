@@ -1,0 +1,23 @@
+{
+  "filesystem": "Provides controlled access to files and folders through the configured MCP server.",
+  "postgres": "Connects tools to a PostgreSQL database for schema inspection and database operations.",
+  "playwright": "Controls a browser for page navigation, interaction, screenshots, and web testing.",
+  "git": "Provides repository inspection and Git operations through an MCP server.",
+  "context7": "Looks up current library documentation and code examples.",
+  "chrome-devtools": "Controls and inspects Chrome through the DevTools protocol.",
+  "comfyui": "Connects to ComfyUI workflows and image-generation services.",
+  "searxng": "Provides privacy-focused web search and related retrieval tools through SearXNG.",
+  "searxng_search": "Searches the web and returns ranked results with titles, links, and snippets.",
+  "searxng_image_search": "Searches for images and returns image links, thumbnails, and available metadata.",
+  "searxng_news_search": "Searches recent news articles with optional language and freshness filters.",
+  "searxng_video_search": "Searches for videos and returns links, thumbnails, duration, and publisher details.",
+  "searxng_music_search": "Searches for music and audio pages, including direct audio links when available.",
+  "searxng_paper_search": "Searches scientific papers and returns publication metadata, abstracts, and PDF links.",
+  "searxng_fetch_content": "Reads a public web page and returns its main content as clean Markdown.",
+  "searxng_search_and_fetch": "Searches the web and fetches the full content of the best results in one request.",
+  "searxng_autocomplete": "Returns query suggestions that can help refine a search phrase.",
+  "searxng_list_engines": "Lists the search engines and categories available on the connected SearXNG instance.",
+  "searxng_doctor": "Checks the connected SearXNG instance and reports search or configuration problems.",
+  "searxng_crawl_site": "Crawls a website from a starting address and returns a page manifest for later reading.",
+  "searxng_deep_search": "Runs an iterative multi-source search and returns a cited research dossier."
+}
