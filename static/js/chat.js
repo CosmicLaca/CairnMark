@@ -28,6 +28,7 @@
     const clearBtn = document.querySelector("[data-chat-clear]");
     const compactBtn = document.querySelector("[data-chat-compact]");
     const compactSwitch = document.querySelector("[data-chat-compact-switch]");
+    const exportBtn = document.querySelector("[data-chat-export]");
     const savedSelect = document.querySelector("[data-chat-saved]");
     const replaceBtn = document.querySelector("[data-chat-replace]");
     const deleteBtn = document.querySelector("[data-chat-delete]");
@@ -72,11 +73,18 @@
     const audioAttachmentsEl = document.querySelector("[data-chat-audio-attachments]");
     const saveOriginalSwitch = document.querySelector("[data-chat-save-original]");
     const attachAudioSwitch = document.querySelector("[data-chat-attach-audio]");
+    const streamResponsesSwitch = document.querySelector("[data-chat-stream-responses]");
     const fpsControl = document.querySelector("[data-chat-video-fps-control]");
     const fpsSlider = document.querySelector("[data-chat-video-fps]");
     const fpsValue = document.querySelector("[data-chat-video-fps-value]");
     const modelNctxEl = document.querySelector("[data-chat-model-nctx]");
     const attachmentSettings = window.CairnmarkChatAttachmentSettings || {};
+    if (streamResponsesSwitch && typeof attachmentSettings.stream_responses === "boolean") {
+        streamResponsesSwitch.setAttribute(
+            "aria-checked",
+            attachmentSettings.stream_responses ? "true" : "false"
+        );
+    }
     const videoFpsValues = [0.1, 0.25, 0.5, 1, 2, 4, 8, 16];
     const savedVideoFpsIndex = videoFpsValues.indexOf(Number(attachmentSettings.video_fps));
     if (fpsSlider && savedVideoFpsIndex >= 0) {
@@ -272,6 +280,22 @@
         message.appendChild(actions);
     };
 
+    const sqlTimestamp = (value) => {
+        const raw = String(value || "").trim();
+        const stored = raw.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})/);
+        if (stored) return `${stored[1]} ${stored[2]}`;
+        return new Date().toISOString().slice(0, 19).replace("T", " ");
+    };
+
+    const appendMessageTimestamp = (message, value) => {
+        const timestamp = sqlTimestamp(value);
+        const time = document.createElement("time");
+        time.className = "chat-message-timestamp";
+        time.dateTime = `${timestamp.replace(" ", "T")}Z`;
+        time.textContent = timestamp;
+        message.appendChild(time);
+    };
+
     const appendMessage = (role, content, meta) => {
         if (!historyEl) return;
         const div = document.createElement("div");
@@ -292,7 +316,11 @@
         } else {
             roleSpan.textContent = role;
         }
-        div.appendChild(roleSpan);
+        const header = document.createElement("div");
+        header.className = "chat-message-header";
+        header.appendChild(roleSpan);
+        appendMessageTimestamp(header, meta && meta.created_at);
+        div.appendChild(header);
         if (role === "assistant" && meta) {
             const metaRow = document.createElement("span");
             metaRow.className = "chat-meta-row";
@@ -493,6 +521,7 @@
                 preview_media: m.preview_media || [],
                 request_body: m.request_body,
                 compacted: Boolean(m.compacted),
+                created_at: m.created_at,
             });
         });
         syncEmptyState();
@@ -508,6 +537,11 @@
         const roleSpan = document.createElement("span");
         roleSpan.className = "chat-role";
         roleSpan.textContent = meta.compacted ? "compacted summary" : "assistant";
+        const header = document.createElement("div");
+        header.className = "chat-message-header";
+        header.appendChild(roleSpan);
+        appendMessageTimestamp(header, meta.created_at);
+        div.appendChild(header);
         const spinner = document.createElement("span");
         spinner.className = "chat-spinner";
         spinner.setAttribute("aria-hidden", "true");
@@ -518,6 +552,10 @@
         tokenCount.className = "chat-loading-tokens";
         tokenCount.setAttribute("data-chat-output-tokens", "");
         tokenCount.textContent = "0 chars";
+        const streamContent = document.createElement("div");
+        streamContent.className = "chat-content markdown-content chat-stream-content";
+        streamContent.setAttribute("aria-live", "polite");
+        streamContent.hidden = true;
         const abortBtn = document.createElement("button");
         abortBtn.type = "button";
         abortBtn.className = "chat-abort-button";
@@ -526,10 +564,61 @@
         if (typeof onAbort === "function") {
             abortBtn.addEventListener("click", onAbort);
         }
-        div.append(roleSpan, spinner, text, tokenCount, abortBtn);
+        div.append(spinner, text, tokenCount);
+        if (meta.streamContent) {
+            div.appendChild(streamContent);
+        }
+        div.appendChild(abortBtn);
         historyEl.appendChild(div);
         historyEl.scrollTop = historyEl.scrollHeight;
-        return { element: div, tokenCount, loadingText: text, abortBtn };
+        return {
+            element: div,
+            tokenCount,
+            loadingText: text,
+            spinner,
+            streamContent: meta.streamContent ? streamContent : null,
+            renderFrame: null,
+            pendingMarkdown: "",
+            abortBtn,
+        };
+    };
+
+    const streamingMarkdown = (value) => {
+        const markdown = String(value || "");
+        const fences = markdown.match(/```/g) || [];
+        return fences.length % 2 === 0 ? markdown : `${markdown}\n\`\`\``;
+    };
+
+    const renderStreamingBubble = (loading, markdown, { flush = false } = {}) => {
+        if (!loading || !loading.streamContent) return;
+        loading.pendingMarkdown = markdown;
+        const render = () => {
+            loading.renderFrame = null;
+            loading.streamContent.innerHTML = renderMarkdown(
+                streamingMarkdown(loading.pendingMarkdown)
+            );
+            loading.streamContent.hidden = false;
+            loading.element.classList.add("is-streaming");
+            loading.spinner.hidden = true;
+            loading.loadingText.hidden = true;
+            loading.tokenCount.hidden = true;
+            historyEl.scrollTop = historyEl.scrollHeight;
+        };
+        if (flush) {
+            if (loading.renderFrame !== null) {
+                window.cancelAnimationFrame(loading.renderFrame);
+            }
+            render();
+        } else if (loading.renderFrame === null) {
+            loading.renderFrame = window.requestAnimationFrame(render);
+        }
+    };
+
+    const cancelStreamingBubble = (loading) => {
+        if (loading && loading.renderFrame !== null) {
+            window.cancelAnimationFrame(loading.renderFrame);
+            loading.renderFrame = null;
+        }
     };
 
     const optionalNumber = (element, converter) => {
@@ -620,10 +709,14 @@
 
         const controller = new AbortController();
         let aborted = false;
+        const streamResponseContent = Boolean(
+            streamResponsesSwitch
+            && streamResponsesSwitch.getAttribute("aria-checked") === "true"
+        );
         const loadingEl = showLoading(() => {
             aborted = true;
             controller.abort();
-        });
+        }, { streamContent: streamResponseContent });
 
         const binaryDocuments = pendingAttachments.filter(
             (attachment) => attachment.type === "document" && !attachment.documentPayload
@@ -667,6 +760,10 @@
             message,
             ...settings,
             video_fps: selectedVideoFps(),
+            stream_responses: Boolean(
+                streamResponsesSwitch
+                && streamResponsesSwitch.getAttribute("aria-checked") === "true"
+            ),
             auto_compact: Boolean(
                 compactSwitch && compactSwitch.getAttribute("aria-checked") === "true"
             ),
@@ -760,11 +857,19 @@
                             }
                         } else if (data.type === "chunk") {
                             accumulated += data.text || "";
-                            if (loadingEl && loadingEl.tokenCount) {
+                            if (streamResponseContent) {
+                                renderStreamingBubble(loadingEl, accumulated);
+                            } else if (loadingEl && loadingEl.tokenCount) {
                                 loadingEl.tokenCount.textContent = `${accumulated.length} chars`;
                             }
                         } else if (data.type === "done") {
-                            if (loadingEl && loadingEl.tokenCount) {
+                            if (streamResponseContent) {
+                                renderStreamingBubble(
+                                    loadingEl,
+                                    accumulated,
+                                    { flush: true }
+                                );
+                            } else if (loadingEl && loadingEl.tokenCount) {
                                 loadingEl.tokenCount.textContent = `${accumulated.length} chars`;
                             }
                         } else if (data.type === "result") {
@@ -777,6 +882,7 @@
             }
 
             if (aborted) {
+                cancelStreamingBubble(loadingEl);
                 chatContext.removeLast();
                 if (userMessageEl) userMessageEl.remove();
                 if (loadingEl && loadingEl.element) loadingEl.element.remove();
@@ -788,6 +894,7 @@
                 }
                 return;
             }
+            cancelStreamingBubble(loadingEl);
             if (loadingEl && loadingEl.element) loadingEl.element.remove();
             if (finalPayload) {
                 chatContext.add({
@@ -824,6 +931,7 @@
                 await handleCompact();
             }
         } catch (error) {
+            cancelStreamingBubble(loadingEl);
             if (loadingEl && loadingEl.element) loadingEl.element.remove();
             if (aborted || (error && error.name === "AbortError")) {
                 chatContext.removeLast();
@@ -875,6 +983,26 @@
             updateTokenUsage();
         } catch (error) {
             window.alert(`Clear failed: ${error}`);
+        }
+    };
+
+    const handleExportChat = async () => {
+        const name = savedSelect?.value?.trim() || "";
+        if (!name && !hasChatMessages()) {
+            window.alert("No chat to export.");
+            return;
+        }
+        if (exportBtn) exportBtn.disabled = true;
+        try {
+            const payload = await api.json("/chat/export", {
+                method: "POST",
+                body: { name },
+            });
+            window.alert(`Chat exported: ${payload.filename}`);
+        } catch (error) {
+            window.alert(`Export chat failed: ${error}`);
+        } finally {
+            if (exportBtn) exportBtn.disabled = false;
         }
     };
 
@@ -2230,10 +2358,14 @@
 
         const controller = new AbortController();
         let aborted = false;
+        const streamResponseContent = Boolean(
+            streamResponsesSwitch
+            && streamResponsesSwitch.getAttribute("aria-checked") === "true"
+        );
         const loadingEl = showLoading(() => {
             aborted = true;
             controller.abort();
-        }, { compacted: true });
+        }, { compacted: true, streamContent: streamResponseContent });
 
         const requestBody = {
             model,
@@ -2284,9 +2416,21 @@
                             if (loadingEl && loadingEl.loadingText) loadingEl.loadingText.textContent = data.text || "thinking…";
                         } else if (data.type === "chunk") {
                             accumulated += data.text || "";
-                            if (loadingEl && loadingEl.tokenCount) loadingEl.tokenCount.textContent = `${accumulated.length} chars`;
+                            if (streamResponseContent) {
+                                renderStreamingBubble(loadingEl, accumulated);
+                            } else if (loadingEl && loadingEl.tokenCount) {
+                                loadingEl.tokenCount.textContent = `${accumulated.length} chars`;
+                            }
                         } else if (data.type === "done") {
-                            if (loadingEl && loadingEl.tokenCount) loadingEl.tokenCount.textContent = `${accumulated.length} chars`;
+                            if (streamResponseContent) {
+                                renderStreamingBubble(
+                                    loadingEl,
+                                    accumulated,
+                                    { flush: true }
+                                );
+                            } else if (loadingEl && loadingEl.tokenCount) {
+                                loadingEl.tokenCount.textContent = `${accumulated.length} chars`;
+                            }
                         } else if (data.type === "result") {
                             finalPayload = data;
                         } else if (data.type === "error") {
@@ -2297,11 +2441,13 @@
             }
 
             if (aborted) {
+                cancelStreamingBubble(loadingEl);
                 if (loadingEl && loadingEl.element) loadingEl.element.remove();
                 syncEmptyState();
                 try { await api.request("/chat/abort", { method: "POST" }); } catch (error) {}
                 return;
             }
+            cancelStreamingBubble(loadingEl);
             if (loadingEl && loadingEl.element) loadingEl.element.remove();
             if (finalPayload) {
                 chatContext.add({
@@ -2324,6 +2470,7 @@
                 appendMessage("assistant", accumulated, { compacted: true });
             }
         } catch (error) {
+            cancelStreamingBubble(loadingEl);
             if (loadingEl && loadingEl.element) loadingEl.element.remove();
             if (aborted || (error && error.name === "AbortError")) {
                 if (loadingEl && loadingEl.element) loadingEl.element.remove();
@@ -2344,10 +2491,15 @@
         const next = compactSwitch.getAttribute("aria-checked") !== "true";
         compactSwitch.setAttribute("aria-checked", next ? "true" : "false");
     });
+    streamResponsesSwitch?.addEventListener("click", () => {
+        const next = streamResponsesSwitch.getAttribute("aria-checked") !== "true";
+        streamResponsesSwitch.setAttribute("aria-checked", next ? "true" : "false");
+    });
     updateTokenUsage();
     sendBtn?.addEventListener("click", handleSend);
     saveBtn?.addEventListener("click", handleSave);
     clearBtn?.addEventListener("click", handleClear);
+    exportBtn?.addEventListener("click", handleExportChat);
     saveOpenBtn?.addEventListener("click", openSaveModal);
     saveConfirmBtn?.addEventListener("click", handleSaveChat);
     saveCloseBtns.forEach((b) => b.addEventListener("click", closeSaveModal));

@@ -1,6 +1,7 @@
 """SQLite persistence for messages, saved chats, and saved prompts."""
 
 import json
+from datetime import datetime, timedelta, timezone
 from functools import partial
 
 from config import PROJECT_ROOT
@@ -63,6 +64,41 @@ def _stored_list(value):
     if isinstance(value, (list, tuple)):
         return json.dumps(list(value), ensure_ascii=False)
     return "" if value in (None, "") else str(value)
+
+
+SQL_TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+
+def _sql_timestamp(value=None):
+    """Return a UTC timestamp in SQLite's standard text representation."""
+    moment = value or datetime.now(timezone.utc)
+    return moment.strftime(SQL_TIMESTAMP_FORMAT)
+
+
+def _timestamp_saved_messages(messages):
+    """Add ordered timestamps only where legacy saved messages lack them."""
+    normalized = []
+    changed = False
+    fallback = datetime.now(timezone.utc).replace(microsecond=0)
+    previous = None
+    for index, message in enumerate(messages):
+        item = dict(message)
+        created_at = str(item.get("created_at") or "").strip()
+        if created_at:
+            try:
+                previous = datetime.strptime(created_at, SQL_TIMESTAMP_FORMAT)
+            except ValueError:
+                previous = None
+        else:
+            moment = previous + timedelta(seconds=1) if previous else (
+                fallback + timedelta(seconds=index)
+            )
+            created_at = _sql_timestamp(moment)
+            item["created_at"] = created_at
+            previous = moment
+            changed = True
+        normalized.append(item)
+    return normalized, changed
 
 
 CHAT_MESSAGE_COLUMNS = {
@@ -146,13 +182,14 @@ def add_chat_message(
     has_audio=0,
     preview_media=None,
     compacted=0,
+    created_at=None,
 ):
     _rowcount, lastrowid = CHAT_STORE.execute(
         "INSERT INTO chat_messages "
         "(role, content, model_name, provider, response_time, input_tokens, "
         "output_tokens, system_prompt, saved_system_prompt_name, request_body, "
-        "preview_images, has_audio, preview_media, compacted) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "preview_images, has_audio, preview_media, compacted, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             role,
             content,
@@ -168,6 +205,7 @@ def add_chat_message(
             1 if has_audio else 0,
             _stored_list(preview_media),
             1 if compacted else 0,
+            str(created_at).strip() if created_at else _sql_timestamp(),
         ),
     )
     return lastrowid
@@ -272,7 +310,13 @@ def load_saved_chat(name):
     messages = get_saved_chat(name)
     if messages is None:
         return False
+    messages, timestamps_added = _timestamp_saved_messages(messages)
     with CHAT_STORE.transaction() as connection:
+        if timestamps_added:
+            connection.execute(
+                "UPDATE saved_chats SET messages = ? WHERE name = ?",
+                (json.dumps(messages, ensure_ascii=False), name),
+            )
         connection.execute("DELETE FROM chat_messages")
         for m in messages:
             preview_images = m.get("preview_images", [])
@@ -282,8 +326,8 @@ def load_saved_chat(name):
                 "INSERT INTO chat_messages "
                 "(role, content, model_name, provider, response_time, input_tokens, "
                 "output_tokens, system_prompt, saved_system_prompt_name, request_body, "
-                "preview_images, has_audio, preview_media, compacted) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "preview_images, has_audio, preview_media, compacted, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     m.get("role", "user"),
                     m.get("content", ""),
@@ -299,6 +343,7 @@ def load_saved_chat(name):
                     1 if m.get("has_audio") else 0,
                     _stored_list(m.get("preview_media", [])),
                     1 if m.get("compacted") else 0,
+                    m.get("created_at"),
                 ),
             )
     return True

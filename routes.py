@@ -147,6 +147,12 @@ APPLICATION_ROUTES = (
         ("POST",),
     ),
     (
+        "/chat/export",
+        "chat_export",
+        chat_controller.export_chat,
+        ("POST",),
+    ),
+    (
         "/chat/replace_chat",
         "chat_replace_chat",
         partial(chat_controller.saved_chat, "replace"),

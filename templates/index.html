@@ -71,15 +71,18 @@
       </div>
       {% for message in chat_messages %}
         <div class="chat-message chat-message--{{ message.role }}{% if message.compacted %} chat-message--compacted{% endif %}{% if message.role == 'user' and message.has_audio %} chat-message--has-audio{% endif %}">
-          <span class="chat-role">
-            {% if message.compacted %}
-              compacted summary
-            {% elif message.role == 'assistant' and message.provider %}
-              assistant::{{ message.provider }}::{{ message.model_name }}{% if message.saved_system_prompt_name %}::{{ message.saved_system_prompt_name }}{% endif %}
-            {% else %}
-              {{ message.role }}
-            {% endif %}
-          </span>
+          <div class="chat-message-header">
+            <span class="chat-role">
+              {% if message.compacted %}
+                compacted summary
+              {% elif message.role == 'assistant' and message.provider %}
+                assistant::{{ message.provider }}::{{ message.model_name }}{% if message.saved_system_prompt_name %}::{{ message.saved_system_prompt_name }}{% endif %}
+              {% else %}
+                {{ message.role }}
+              {% endif %}
+            </span>
+            <time class="chat-message-timestamp" datetime="{{ message.created_at|replace(' ', 'T') }}Z">{{ message.created_at }}</time>
+          </div>
           {% if message.role == 'user' and message.preview_media %}
             {% for media in message.preview_media %}
               {% if media.type == 'audio' %}
@@ -234,6 +237,19 @@
               >
               <span class="chat-fps-value" data-chat-video-fps-value>{{ '%g'|format(chat_attachment_settings.video_fps) }}</span>
             </div>
+            <button
+              type="button"
+              class="chat-save-original-switch chat-stream-switch"
+              data-chat-stream-responses
+              role="switch"
+              aria-checked="{{ 'true' if chat_attachment_settings.stream_responses else 'false' }}"
+              aria-label="Stream responses"
+            >
+              <span class="chat-save-original-track" aria-hidden="true">
+                <span class="chat-save-original-knob"></span>
+              </span>
+              <span class="chat-save-original-tooltip" role="tooltip">Stream responses</span>
+            </button>
           </div>
         </div>
       </div>
@@ -268,6 +284,26 @@
           <button class="chat-compact-button" type="button" data-chat-compact>
             <span aria-hidden="true">⇄</span>
             Compact chat
+          </button>
+        </div>
+        <div class="chat-transfer-actions" aria-label="Chat transfer actions">
+          <button
+            class="save-metadata-button chat-transfer-button"
+            type="button"
+            title="Backend integration pending"
+            disabled
+          >
+            <span aria-hidden="true">↓</span>
+            Import chat
+          </button>
+          <button
+            class="save-metadata-button chat-transfer-button"
+            type="button"
+            data-chat-export
+            title="Export chat to JSON"
+          >
+            <span aria-hidden="true">↑</span>
+            Export chat
           </button>
         </div>
       </div>
@@ -589,7 +625,8 @@
       attach_audio: {{ chat_attachment_settings.attach_audio|tojson }},
       video_fps: {{ chat_attachment_settings.video_fps|tojson }},
       randomize_seed: {{ chat_seed_settings.randomize_seed|tojson }},
-      send_all_previous: {{ chat_history_settings.send_all_previous|tojson }}
+      send_all_previous: {{ chat_history_settings.send_all_previous|tojson }},
+      stream_responses: {{ chat_attachment_settings.stream_responses|tojson }}
     };
     window.CairnmarkSeedSettings = {
       randomize_seed: {{ chat_seed_settings.randomize_seed|tojson }}

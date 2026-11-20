@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS chat_attachment_settings (
     attach_audio INTEGER NOT NULL DEFAULT 0,
     video_fps REAL NOT NULL DEFAULT 2,
     send_all_previous INTEGER NOT NULL DEFAULT 0,
+    stream_responses INTEGER NOT NULL DEFAULT 0,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -143,6 +144,12 @@ def _migrate_chat_settings(connection):
         connection,
         "chat_attachment_settings",
         "send_all_previous",
+        "INTEGER NOT NULL DEFAULT 0",
+    )
+    _add_column_if_missing(
+        connection,
+        "chat_attachment_settings",
+        "stream_responses",
         "INTEGER NOT NULL DEFAULT 0",
     )
     # Preserve the pre-history-table value when upgrading an older database.
@@ -261,12 +268,14 @@ class ChatSettingsRepository:
             "video_fps": DEFAULT_VIDEO_FPS,
             "randomize_seed": self.switch("randomize_seed"),
             "send_all_previous": self.switch("send_all_previous"),
+            "stream_responses": False,
         }
         row = None
         if self.store.path().exists():
             row = self.store.fetch(
                 "SELECT save_original_media, attach_audio, video_fps, "
-                "send_all_previous FROM chat_attachment_settings WHERE id = 1",
+                "send_all_previous, stream_responses "
+                "FROM chat_attachment_settings WHERE id = 1",
                 one=True,
             )
         current = defaults if not row else {
@@ -275,6 +284,7 @@ class ChatSettingsRepository:
             "video_fps": self._video_fps(row[2]),
             "randomize_seed": defaults["randomize_seed"],
             "send_all_previous": defaults["send_all_previous"],
+            "stream_responses": bool(row[4]),
         }
         if updates is None:
             return current
@@ -287,13 +297,15 @@ class ChatSettingsRepository:
         self.store.execute(
             """
             INSERT INTO chat_attachment_settings
-                (id, save_original_media, attach_audio, video_fps, send_all_previous)
-            VALUES (1, ?, ?, ?, ?)
+                (id, save_original_media, attach_audio, video_fps,
+                 send_all_previous, stream_responses)
+            VALUES (1, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 save_original_media = excluded.save_original_media,
                 attach_audio = excluded.attach_audio,
                 video_fps = excluded.video_fps,
                 send_all_previous = excluded.send_all_previous,
+                stream_responses = excluded.stream_responses,
                 updated_at = CURRENT_TIMESTAMP
             """,
             (
@@ -301,6 +313,7 @@ class ChatSettingsRepository:
                 int(bool(values["attach_audio"])),
                 values["video_fps"],
                 int(bool(values["send_all_previous"])),
+                int(bool(values["stream_responses"])),
             ),
         )
         return {
@@ -309,6 +322,7 @@ class ChatSettingsRepository:
             "video_fps": values["video_fps"],
             "randomize_seed": bool(values["randomize_seed"]),
             "send_all_previous": bool(values["send_all_previous"]),
+            "stream_responses": bool(values["stream_responses"]),
         }
 
     def mineru(self, updates=None):

@@ -336,8 +336,17 @@
     margin-left: 30px;
 }
 
+.chat-message-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    min-width: 0;
+    gap: 12px;
+}
+
 .chat-role {
     overflow: hidden;
+    min-width: 0;
     color: #6f7c77;
     font-family: Consolas, "Courier New", monospace;
     font-size: 0.58rem;
@@ -345,6 +354,17 @@
     letter-spacing: 0.1em;
     text-overflow: ellipsis;
     text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.chat-message-timestamp {
+    flex: 0 0 auto;
+    color: #6f7c77;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.58rem;
+    font-weight: 700;
+    letter-spacing: 0.025em;
+    line-height: 1.2;
     white-space: nowrap;
 }
 
@@ -601,6 +621,10 @@
     flex-wrap: wrap;
 }
 
+.chat-stream-switch {
+    margin-left: auto;
+}
+
 .chat-audio-player {
     display: flex;
     align-items: center;
@@ -743,6 +767,28 @@
 
 .chat-send-button {
     min-width: 104px;
+}
+
+.chat-transfer-actions {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.chat-transfer-button {
+    color: #24566b;
+    border-color: rgba(72, 155, 190, 0.52);
+    background: rgba(139, 211, 239, 0.2);
+    box-shadow: 5px 6px 0 rgba(72, 155, 190, 0.14);
+}
+
+.chat-transfer-button span {
+    color: #3183a5;
+}
+
+.chat-transfer-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.72;
 }
 
 .chat-secondary-button {
@@ -1742,6 +1788,14 @@
     display: none;
 }
 
+.chat-message.is-loading.is-streaming .chat-stream-content {
+    display: block;
+}
+
+.chat-message.is-loading.is-streaming .chat-abort-button {
+    justify-self: start;
+}
+
 .chat-view-toggle,
 .chat-copy-button {
     min-height: 26px;
@@ -2036,6 +2090,15 @@
 
     .chat-saved-row select {
         width: 100%;
+    }
+
+    .chat-transfer-actions {
+        width: 100%;
+        margin-left: 0;
+    }
+
+    .chat-transfer-button {
+        flex: 1;
     }
 
     .chat-parameter-grid {

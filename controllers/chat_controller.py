@@ -33,6 +33,7 @@ from models.chat_storage import (
     save_saved,
 )
 from services.chat_attachments import AttachmentProcessingError
+from services.chat_exports import ChatExportRepository
 from services.chat_previews import ChatPreviewStore
 from services.chat_requests import CHAT_PARAMETER_FIELDS, ChatRequestWorkflow
 from services.model_providers import (
@@ -46,10 +47,17 @@ from services.model_providers import (
 class ChatController:
     """Provide chat context and handle chat messages."""
 
-    def __init__(self, service=None, preview_store=None, request_workflow=None):
+    def __init__(
+        self,
+        service=None,
+        preview_store=None,
+        request_workflow=None,
+        export_repository=None,
+    ):
         self.service = service or ModelProviderService()
         self.previews = preview_store or ChatPreviewStore()
         self.requests = request_workflow or ChatRequestWorkflow(self.service)
+        self.exports = export_repository or ChatExportRepository()
 
     def context(self):
         settings = CHAT_SETTINGS.form()
@@ -94,6 +102,13 @@ class ChatController:
                 return jsonify({"error": "auto_compact must be a boolean."}), 400
             CHAT_SETTINGS.switch("auto_compact", auto_compact)
         attachment_settings = CHAT_SETTINGS.attachments()
+        if "stream_responses" in chat_request.raw:
+            stream_responses = chat_request.raw["stream_responses"]
+            if not isinstance(stream_responses, bool):
+                return jsonify(
+                    {"error": "stream_responses must be a boolean."}
+                ), 400
+            attachment_settings["stream_responses"] = stream_responses
         attachment_settings["video_fps"] = chat_request.video_fps
         CHAT_SETTINGS.attachments(attachment_settings)
         try:
@@ -514,7 +529,7 @@ class ChatController:
         """Persist last-used media attachment switch values."""
         data = request.get_json(silent=True) or {}
         settings = CHAT_SETTINGS.attachments()
-        for key in ("save_original_media", "attach_audio"):
+        for key in ("save_original_media", "attach_audio", "stream_responses"):
             if key in data:
                 if not isinstance(data[key], bool):
                     return jsonify({"error": f"{key} must be a boolean."}), 400
@@ -602,6 +617,25 @@ class ChatController:
         clear_chat_messages()
         self.previews.delete_unreferenced(filenames, *saved_messages)
         return jsonify({"message": "Chat cleared."})
+
+    def export_chat(self):
+        """Export the complete active chat or one selected saved chat."""
+        data = request.get_json(silent=True) or {}
+        name = str(data.get("name") or "").strip()
+        messages = get_saved("chat", name) if name else list_chat_messages()
+        if name and messages is None:
+            return jsonify({"error": "Saved chat not found."}), 404
+        if not messages:
+            return jsonify({"error": "No chat to export."}), 400
+        try:
+            filename = self.exports.export(
+                messages,
+                saved_chat_name=name or None,
+            )
+        except OSError:
+            current_app.logger.exception("Could not export chat")
+            return jsonify({"error": "Chat export failed."}), 500
+        return jsonify({"message": "Chat exported.", "filename": filename})
 
     def _mineru_check(self, endpoint, api_key=None):
         endpoint = str(endpoint or "").strip().rstrip("/")
