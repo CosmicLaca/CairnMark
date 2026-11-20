@@ -7,6 +7,10 @@
 
 Created by Primere Development · [GitHub repository](https://github.com/CosmicLaca/Cairnmark)
 
+**Special features:** llama.cpp focus · All llama parameters · Context metering ·
+Manual compaction · Auto compact · Many API providers · MinerU support ·
+Multimodal chat · Local benchmarks · Encrypted API keys
+
 ## What you can do
 
 Cairnmark brings local and hosted model providers into one browser interface.
