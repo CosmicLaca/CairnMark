@@ -73,6 +73,38 @@ class ChatExportRepository:
         return filename
 
     @staticmethod
+    def import_messages(document):
+        """Validate an exported document and return its complete message list."""
+        if not isinstance(document, dict):
+            raise ValueError("Invalid chat export document.")
+        if document.get("format") != EXPORT_FORMAT:
+            raise ValueError("Unsupported chat export format.")
+        if document.get("version") != EXPORT_VERSION:
+            raise ValueError("Unsupported chat export version.")
+        messages = document.get("messages")
+        if not isinstance(messages, list) or not messages:
+            raise ValueError("The exported chat contains no messages.")
+        validated = []
+        for index, message in enumerate(messages, start=1):
+            if not isinstance(message, dict):
+                raise ValueError(f"Message {index} is invalid.")
+            if message.get("role") not in {"user", "assistant", "system"}:
+                raise ValueError(f"Message {index} has an invalid role.")
+            if not isinstance(message.get("content"), str):
+                raise ValueError(f"Message {index} has invalid content.")
+            created_at = message.get("created_at")
+            if not isinstance(created_at, str):
+                raise ValueError(f"Message {index} has no creation date.")
+            try:
+                datetime.strptime(created_at, SQL_TIMESTAMP_FORMAT)
+            except ValueError as error:
+                raise ValueError(
+                    f"Message {index} has an invalid creation date."
+                ) from error
+            validated.append(dict(message))
+        return validated
+
+    @staticmethod
     def _atomic_write(target, content):
         """Write UTF-8 content beside the target before replacing it."""
         target.parent.mkdir(parents=True, exist_ok=True)

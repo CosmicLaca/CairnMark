@@ -211,6 +211,51 @@ def add_chat_message(
     return lastrowid
 
 
+def _insert_stored_message(connection, message):
+    """Insert one previously stored message through the shared column mapping."""
+    preview_images = message.get("preview_images", [])
+    if isinstance(preview_images, str):
+        preview_images = _parse_list(preview_images, csv_fallback=True)
+    return connection.execute(
+        "INSERT INTO chat_messages "
+        "(role, content, model_name, provider, response_time, input_tokens, "
+        "output_tokens, system_prompt, saved_system_prompt_name, request_body, "
+        "preview_images, has_audio, preview_media, compacted, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            message.get("role", "user"),
+            message.get("content", ""),
+            message.get("model_name", ""),
+            message.get("provider", ""),
+            message.get("response_time", 0) or 0,
+            message.get("input_tokens", 0) or 0,
+            message.get("output_tokens", 0) or 0,
+            message.get("system_prompt", "") or "",
+            message.get("saved_system_prompt_name", "") or "",
+            message.get("request_body", "") or "",
+            _stored_list(preview_images),
+            1 if message.get("has_audio") else 0,
+            _stored_list(message.get("preview_media", [])),
+            1 if message.get("compacted") else 0,
+            message.get("created_at"),
+        ),
+    )
+
+
+def _replace_chat_messages(connection, messages):
+    """Replace active messages using an existing transaction."""
+    connection.execute("DELETE FROM chat_messages")
+    for message in messages:
+        _insert_stored_message(connection, message)
+
+
+def replace_chat_messages(messages):
+    """Transactionally replace the active conversation with stored messages."""
+    normalized, _timestamps_added = _timestamp_saved_messages(messages)
+    with CHAT_STORE.transaction() as connection:
+        _replace_chat_messages(connection, normalized)
+
+
 def clear_chat_messages():
     if not CHAT_STORE.path().exists():
         return
@@ -317,33 +362,5 @@ def load_saved_chat(name):
                 "UPDATE saved_chats SET messages = ? WHERE name = ?",
                 (json.dumps(messages, ensure_ascii=False), name),
             )
-        connection.execute("DELETE FROM chat_messages")
-        for m in messages:
-            preview_images = m.get("preview_images", [])
-            if isinstance(preview_images, str):
-                preview_images = _parse_list(preview_images, csv_fallback=True)
-            connection.execute(
-                "INSERT INTO chat_messages "
-                "(role, content, model_name, provider, response_time, input_tokens, "
-                "output_tokens, system_prompt, saved_system_prompt_name, request_body, "
-                "preview_images, has_audio, preview_media, compacted, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    m.get("role", "user"),
-                    m.get("content", ""),
-                    m.get("model_name", ""),
-                    m.get("provider", ""),
-                    m.get("response_time", 0) or 0,
-                    m.get("input_tokens", 0) or 0,
-                    m.get("output_tokens", 0) or 0,
-                    m.get("system_prompt", "") or "",
-                    m.get("saved_system_prompt_name", "") or "",
-                    m.get("request_body", "") or "",
-                    _stored_list(preview_images),
-                    1 if m.get("has_audio") else 0,
-                    _stored_list(m.get("preview_media", [])),
-                    1 if m.get("compacted") else 0,
-                    m.get("created_at"),
-                ),
-            )
+        _replace_chat_messages(connection, messages)
     return True

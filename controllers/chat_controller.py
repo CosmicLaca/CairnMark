@@ -30,6 +30,7 @@ from models.chat_storage import (
     list_chat_messages,
     list_saved,
     load_saved_chat,
+    replace_chat_messages,
     save_saved,
 )
 from services.chat_attachments import AttachmentProcessingError
@@ -636,6 +637,33 @@ class ChatController:
             current_app.logger.exception("Could not export chat")
             return jsonify({"error": "Chat export failed."}), 500
         return jsonify({"message": "Chat exported.", "filename": filename})
+
+    def import_chat(self):
+        """Validate and restore one exported chat as the active conversation."""
+        data = request.get_json(silent=True) or {}
+        try:
+            messages = self.exports.import_messages(data.get("document"))
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
+
+        current_messages = list_chat_messages()
+        replaced_filenames = self.previews.filenames(current_messages)
+        try:
+            replace_chat_messages(messages)
+        except Exception:  # noqa: BLE001
+            current_app.logger.exception("Could not import chat")
+            return jsonify({"error": "Chat import failed."}), 500
+
+        restored = list_chat_messages()
+        saved_messages = [
+            get_saved("chat", name) or [] for name in list_saved("chat")
+        ]
+        self.previews.delete_unreferenced(
+            replaced_filenames,
+            restored,
+            *saved_messages,
+        )
+        return jsonify({"message": "Chat imported.", "messages": restored})
 
     def _mineru_check(self, endpoint, api_key=None):
         endpoint = str(endpoint or "").strip().rstrip("/")

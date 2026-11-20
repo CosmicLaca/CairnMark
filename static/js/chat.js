@@ -28,6 +28,7 @@
     const clearBtn = document.querySelector("[data-chat-clear]");
     const compactBtn = document.querySelector("[data-chat-compact]");
     const compactSwitch = document.querySelector("[data-chat-compact-switch]");
+    const importBtn = document.querySelector("[data-chat-import]");
     const exportBtn = document.querySelector("[data-chat-export]");
     const savedSelect = document.querySelector("[data-chat-saved]");
     const replaceBtn = document.querySelector("[data-chat-replace]");
@@ -1004,6 +1005,46 @@
         } finally {
             if (exportBtn) exportBtn.disabled = false;
         }
+    };
+
+    const applyImportedHistory = (messages) => {
+        renderHistory(messages);
+        chatContext.replace((messages || []).map((message) => ({
+            input_tokens: message.input_tokens || 0,
+            output_tokens: message.output_tokens || 0,
+            compacted: Boolean(message.compacted),
+        })));
+        if (savedSelect) savedSelect.value = "";
+        updateTokenUsage();
+    };
+
+    const handleImportChat = () => {
+        const picker = document.createElement("input");
+        picker.type = "file";
+        picker.accept = ".json,application/json";
+        picker.addEventListener("change", async () => {
+            const file = picker.files && picker.files[0];
+            if (!file) return;
+            if (importBtn) importBtn.disabled = true;
+            try {
+                let documentPayload;
+                try {
+                    documentPayload = JSON.parse(await file.text());
+                } catch (error) {
+                    throw new Error("Invalid JSON file.");
+                }
+                const payload = await api.json("/chat/import", {
+                    method: "POST",
+                    body: { document: documentPayload },
+                });
+                applyImportedHistory(payload.messages || []);
+            } catch (error) {
+                window.alert(`Import chat failed: ${error}`);
+            } finally {
+                if (importBtn) importBtn.disabled = false;
+            }
+        }, { once: true });
+        picker.click();
     };
 
     const openSaveModal = () => {
@@ -2499,6 +2540,7 @@
     sendBtn?.addEventListener("click", handleSend);
     saveBtn?.addEventListener("click", handleSave);
     clearBtn?.addEventListener("click", handleClear);
+    importBtn?.addEventListener("click", handleImportChat);
     exportBtn?.addEventListener("click", handleExportChat);
     saveOpenBtn?.addEventListener("click", openSaveModal);
     saveConfirmBtn?.addEventListener("click", handleSaveChat);
