@@ -483,6 +483,13 @@
     border-collapse: collapse;
 }
 
+/* Assistant tables fit the bubble and wrap long cell content onto new lines. */
+.chat-message--assistant .chat-content.markdown-content table {
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+}
+
 .chat-content.markdown-content .markdown-table-wrap,
 .prompt-modal-text.markdown-content .markdown-table-wrap {
     max-width: 100%;
@@ -496,6 +503,13 @@
     padding: 0.45rem;
     border: 1px solid var(--line);
     text-align: left;
+}
+
+.chat-message--assistant .chat-content.markdown-content th,
+.chat-message--assistant .chat-content.markdown-content td {
+    overflow-wrap: anywhere;
+    white-space: normal;
+    word-break: break-word;
 }
 
 .chat-content.markdown-content th,
@@ -536,6 +550,25 @@
 .chat-content code {
     overflow-wrap: anywhere;
     word-break: break-word;
+}
+
+.chat-content.markdown-content blockquote,
+.prompt-modal-text.markdown-content blockquote {
+    margin: 1rem 0;
+    padding: 0.8rem 1rem;
+    color: inherit;
+    border-left: 3px solid var(--lichen);
+    background: rgba(255, 255, 255, 0.45);
+}
+
+.chat-content.markdown-content blockquote > :first-child,
+.prompt-modal-text.markdown-content blockquote > :first-child {
+    margin-top: 0;
+}
+
+.chat-content.markdown-content blockquote > :last-child,
+.prompt-modal-text.markdown-content blockquote > :last-child {
+    margin-bottom: 0;
 }
 
 .chat-composer-heading {

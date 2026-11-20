@@ -81,6 +81,32 @@
         return `<${tag}${className}>${renderInline(value)}</${tag}>`;
     };
 
+    const renderQuoteLines = (lines) => {
+        const output = [];
+        let paragraph = [];
+        const flushParagraph = () => {
+            if (!paragraph.length) return;
+            output.push(`<p>${paragraph.join("<br>")}</p>`);
+            paragraph = [];
+        };
+        lines.forEach((line) => {
+            const heading = line.match(/^(#{1,6})\s+(.*)$/);
+            if (heading) {
+                flushParagraph();
+                const level = heading[1].length;
+                output.push(`<h${level}>${renderInline(heading[2])}</h${level}>`);
+                return;
+            }
+            if (!line.trim()) {
+                flushParagraph();
+                return;
+            }
+            paragraph.push(renderInline(line));
+        });
+        flushParagraph();
+        return output.join("\n");
+    };
+
     const render = (text) => {
         if (!text) return "";
         const codeBlocks = [];
@@ -182,11 +208,18 @@
                 closeList();
                 continue;
             }
-            const quote = line.match(/^>\s?(.*)$/);
+            const quote = line.match(/^&gt;\s?(.*)$/);
             if (quote) {
                 flushParagraph();
                 closeList();
-                output.push(`<blockquote>${renderInline(quote[1])}</blockquote>`);
+                const quoteLines = [quote[1]];
+                while (lineIndex + 1 < lines.length) {
+                    const nextQuote = lines[lineIndex + 1].match(/^&gt;\s?(.*)$/);
+                    if (!nextQuote) break;
+                    quoteLines.push(nextQuote[1]);
+                    lineIndex += 1;
+                }
+                output.push(`<blockquote>${renderQuoteLines(quoteLines)}</blockquote>`);
                 continue;
             }
             closeList();
