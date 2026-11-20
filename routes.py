@@ -249,6 +249,12 @@ APPLICATION_ROUTES = (
         ("GET",),
     ),
     (
+        "/setup_models/model_params/status",
+        "get_model_params_status",
+        provider_controller.model_params_status,
+        ("GET",),
+    ),
+    (
         "/setup_models/model_params/delete",
         "delete_model_params",
         provider_controller.delete_model_params,

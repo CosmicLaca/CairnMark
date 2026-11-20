@@ -144,6 +144,22 @@ class ProviderController:
             )
             return jsonify({"error": "Could not read model parameters"}), 502
 
+    def model_params_status(self):
+        """Return database-only parameter state for a local model."""
+        provider = request.args.get("provider", "").strip()
+        model = request.args.get("model", "").strip()
+        if not provider or not model or len(provider) > 100 or len(model) > 300:
+            return jsonify({"error": "A valid provider and model are required"}), 400
+        try:
+            return jsonify(self.service.model_params_status(provider, model))
+        except ProviderValidationError as error:
+            return jsonify({"error": str(error)}), 400
+        except sqlite3.Error:
+            current_app.logger.exception(
+                "Could not read saved parameter state for %s/%s", provider, model
+            )
+            return jsonify({"error": "Could not read saved model parameters"}), 500
+
     def delete_model_params(self):
         """Delete cached generation parameters for a local provider model."""
         data = request.get_json(silent=True)

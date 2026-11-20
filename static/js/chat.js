@@ -19,7 +19,7 @@
     const tokenUsageEl = document.querySelector("[data-chat-token-usage]");
     const contextBarFillEl = document.querySelector("[data-chat-context-bar-fill]");
     let sessionCtxMode = null;
-    let sessionCtxModeFetched = false;
+    let contextStatus = "idle";
     let compactRequestActive = false;
     const chatContext = new window.CairnmarkChatContextState(
         window.CairnmarkChatMessageTokens
@@ -60,6 +60,8 @@
     const moreParamsStateSign = document.querySelector("[data-more-params-state]");
     const moreParamsDeleteBtn = document.querySelector("[data-more-params-delete]");
     const moreParamsSaveModelBtn = document.querySelector("[data-more-params-save-model]");
+    const moreParamsCacheState = document.querySelector("[data-more-params-cache-state]");
+    const moreParamsCacheTooltip = document.querySelector("[data-more-params-cache-tooltip]");
     const mineruModal = document.querySelector("[data-mineru-settings-modal]");
     const mineruEndpointInput = document.querySelector("[data-mineru-endpoint]");
     const mineruApiKeyInput = document.querySelector("[data-mineru-api-key]");
@@ -1248,28 +1250,39 @@
         moreParamsStateSign.hidden = false;
     };
 
+    const updateParameterCacheState = (state, mode) => {
+        if (!moreParamsCacheState || !moreParamsCacheTooltip) return;
+        const colors = {
+            missing_params: "red",
+            missing_ctx: "orange",
+            complete: "green",
+        };
+        const color = colors[state];
+        moreParamsCacheState.classList.remove(
+            "more-params-cache-state--red",
+            "more-params-cache-state--orange",
+            "more-params-cache-state--green"
+        );
+        if (!color) {
+            moreParamsCacheState.hidden = true;
+            moreParamsCacheState.removeAttribute("aria-label");
+            return;
+        }
+        const tooltip = state === "missing_params"
+            ? "No saved parameter and ctx data."
+            : state === "missing_ctx"
+                ? `n_ctx value missing for: ${mode || "unknown"}`
+                : "Parameters and n_ctx value exist.";
+        moreParamsCacheState.classList.add(`more-params-cache-state--${color}`);
+        moreParamsCacheTooltip.textContent = tooltip;
+        moreParamsCacheState.setAttribute("aria-label", tooltip);
+        moreParamsCacheState.hidden = false;
+    };
+
     const loadMoreParams = async (provider, model) => {
         if (moreParamsContent) moreParamsContent.replaceChildren();
         setMoreParamsDeleteVisible(false);
         setMoreParamsLoading(true);
-        if (provider === "llama.cpp") {
-            try {
-                const modePayload = await api.request(
-                    `/setup_models/ctx_mode?provider=${encodeURIComponent(provider)}`
-                );
-                const mode = modePayload && modePayload.ctx_mode;
-                if (mode) {
-                    const label = moreParamsLoading
-                        ? moreParamsLoading.querySelector("span:not(.chat-spinner)")
-                        : null;
-                    if (label) {
-                        label.textContent = `Getting ctx for ${mode} mode…`;
-                    }
-                }
-            } catch (error) {
-                // Keep the default loading label.
-            }
-        }
         try {
             const payload = await api.request(
                 `/setup_models/model_params?provider=${encodeURIComponent(provider)}&model=${encodeURIComponent(model)}`
@@ -1278,6 +1291,7 @@
             renderMoreParams((payload && payload.params) || {});
             setMoreParamsDeleteVisible(true);
             moreParamsModelKey = `${provider}::${model}`;
+            await refreshSavedModelState(provider, model);
         } catch (error) {
             setMoreParamsLoading(false);
             setMoreParamsDeleteVisible(false);
@@ -1352,26 +1366,13 @@
 
     let mediaUploadsSeq = 0;
 
-    const ensureCtxMode = async (provider) => {
-        if (provider !== "llama.cpp") return null;
-        if (sessionCtxModeFetched) return sessionCtxMode;
-        sessionCtxModeFetched = true;
-        try {
-            const payload = await api.request(
-                `/setup_models/ctx_mode?provider=${encodeURIComponent(provider)}`
-            );
-            sessionCtxMode = (payload && payload.ctx_mode) || null;
-        } catch (error) {
-            sessionCtxMode = null;
-        }
-        return sessionCtxMode;
-    };
-
-    const refreshMediaUploads = async (provider, model) => {
+    const refreshSavedModelState = async (provider, model) => {
         const requestSeq = ++mediaUploadsSeq;
-        // Clear icons first: without saved modalities the default is false.
         renderMediaUploads(null);
         chatContext.setMaxTokens(null);
+        sessionCtxMode = null;
+        contextStatus = provider === "llama.cpp" ? "checking" : "unavailable";
+        updateParameterCacheState(null);
         if (modelNctxEl) {
             modelNctxEl.textContent = "";
         }
@@ -1381,35 +1382,18 @@
             return;
         }
         try {
-            if (provider === "llama.cpp") {
-                if (tokenUsageEl) {
-                    tokenUsageEl.classList.remove(
-                        "chat-token-usage--ok",
-                        "chat-token-usage--warn",
-                        "chat-token-usage--over"
-                    );
-                    tokenUsageEl.classList.add("chat-token-usage--loading");
-                    tokenUsageEl.innerHTML =
-                        '<span class="chat-spinner" aria-hidden="true"></span> getting context data...';
-                }
-                if (contextBarFillEl) {
-                    contextBarFillEl.style.width = "100%";
-                    contextBarFillEl.classList.remove(
-                        "chat-context-bar-fill--ok",
-                        "chat-context-bar-fill--warn",
-                        "chat-context-bar-fill--over"
-                    );
-                    contextBarFillEl.classList.add("chat-context-bar-fill--loading");
-                }
-            }
-            const mode = provider === "llama.cpp" ? await ensureCtxMode(provider) : null;
             const payload = await api.request(
-                `/setup_models/model_params?provider=${encodeURIComponent(provider)}&model=${encodeURIComponent(model)}`
+                `/setup_models/model_params/status?provider=${encodeURIComponent(provider)}&model=${encodeURIComponent(model)}`
             );
             if (requestSeq !== mediaUploadsSeq) return;
             renderMediaUploads(payload && payload.modalities);
-            const resolvedMode = (payload && payload.ctx_mode) || mode;
+            const resolvedMode = (payload && payload.ctx_mode) || null;
             chatContext.setMaxTokens(payload && payload.n_ctx);
+            sessionCtxMode = resolvedMode;
+            contextStatus = payload && payload.n_ctx != null ? "available" : "missing";
+            if (provider === "llama.cpp") {
+                updateParameterCacheState(payload && payload.state, resolvedMode);
+            }
             if (modelNctxEl) {
                 if (payload && payload.n_ctx != null && resolvedMode) {
                     modelNctxEl.textContent = `| N ctx: ${payload.n_ctx} | ${resolvedMode}`;
@@ -1424,6 +1408,8 @@
             if (requestSeq !== mediaUploadsSeq) return;
             renderMediaUploads(null);
             chatContext.setMaxTokens(null);
+            contextStatus = "unavailable";
+            updateParameterCacheState(provider === "llama.cpp" ? "missing_params" : null);
             if (modelNctxEl) {
                 modelNctxEl.textContent = "";
             }
@@ -1977,6 +1963,7 @@
                 method: "POST",
                 body: { provider, model, params },
             });
+            await refreshSavedModelState(provider, model);
             window.alert("Model parameters saved.");
         } catch (error) {
             window.alert(`Save failed: ${error}`);
@@ -2115,7 +2102,7 @@
         const usage = chatContext.usage(contextSelection());
         if (usage.max) {
             const { used, max, percent } = usage;
-            tokenUsageEl.textContent = `${used} / ${max} (${percent}%)`;
+            tokenUsageEl.textContent = `${used} / ${max} tokens (${percent}%)`;
             tokenUsageEl.classList.remove(
                 "chat-token-usage--ok",
                 "chat-token-usage--warn",
@@ -2152,21 +2139,39 @@
                     : "";
             }
         } else {
-            tokenUsageEl.textContent = "getting context data...";
+            if (contextStatus === "checking") {
+                tokenUsageEl.textContent = "Checking saved n_ctx data…";
+            } else if (contextStatus === "missing") {
+                tokenUsageEl.textContent = sessionCtxMode
+                    ? `n_ctx value missing for: ${sessionCtxMode}`
+                    : "n_ctx value missing for the current llama.cpp mode";
+            } else {
+                tokenUsageEl.textContent = "Context size unavailable for this model.";
+            }
             tokenUsageEl.classList.remove(
                 "chat-token-usage--ok",
                 "chat-token-usage--warn",
                 "chat-token-usage--over",
                 "chat-token-usage--loading"
             );
+            if (contextStatus === "checking") {
+                tokenUsageEl.classList.add("chat-token-usage--loading");
+            } else if (contextStatus === "missing") {
+                tokenUsageEl.classList.add("chat-token-usage--warn");
+            }
             if (contextBarFillEl) {
-                contextBarFillEl.style.width = "100%";
+                contextBarFillEl.style.width = contextStatus === "checking" ? "100%" : "0%";
                 contextBarFillEl.classList.remove(
+                    "chat-context-bar-fill--ok",
                     "chat-context-bar-fill--warn",
                     "chat-context-bar-fill--over",
                     "chat-context-bar-fill--loading"
                 );
-                contextBarFillEl.classList.add("chat-context-bar-fill--ok");
+                if (contextStatus === "checking") {
+                    contextBarFillEl.classList.add("chat-context-bar-fill--loading");
+                } else if (contextStatus === "missing") {
+                    contextBarFillEl.classList.add("chat-context-bar-fill--warn");
+                }
             }
             if (sendBtn) {
                 sendBtn.disabled = false;
@@ -2362,7 +2367,7 @@
         const provider = (parts[0] || "").trim();
         const model = parts.slice(1).join("::").trim();
 
-        refreshMediaUploads(provider, model);
+        await refreshSavedModelState(provider, model);
 
         const isLocal = provider === "llama.cpp" || provider === "vllm";
         if (!isLocal || !model) {
@@ -2371,23 +2376,9 @@
             updateMoreParamsSign();
             return;
         }
-        if (moreParamsBtn) moreParamsBtn.disabled = true;
-        if (moreParamsDisabledSign) moreParamsDisabledSign.hidden = false;
+        if (moreParamsBtn) moreParamsBtn.disabled = false;
+        if (moreParamsDisabledSign) moreParamsDisabledSign.hidden = true;
         updateMoreParamsSign();
-        try {
-            const response = await fetch(
-                `/setup_models/props_available?provider=${encodeURIComponent(provider)}`
-            );
-            const payload = await response.json().catch(() => ({}));
-            const accessible = response.ok && payload.available === true;
-            if (moreParamsBtn) moreParamsBtn.disabled = !accessible;
-            if (moreParamsDisabledSign) moreParamsDisabledSign.hidden = accessible;
-            updateMoreParamsSign();
-        } catch (error) {
-            if (moreParamsBtn) moreParamsBtn.disabled = true;
-            if (moreParamsDisabledSign) moreParamsDisabledSign.hidden = false;
-            updateMoreParamsSign();
-        }
     };
 
     moreParamsBtn?.addEventListener("click", openMoreParamsModal);
@@ -2462,17 +2453,19 @@
     });
 
     const savedModel = modelSelect?.dataset?.savedModel?.trim();
+    let modelStateInitialized = false;
     if (savedModel && modelSelect) {
         const option = [...modelSelect.options].find((o) => o.value.trim() === savedModel);
         if (option) {
             modelSelect.value = savedModel;
             modelSelect.dispatchEvent(new Event("change", { bubbles: true }));
+            modelStateInitialized = true;
         }
     }
 
     // Keep the always-available document icon visible from first paint.
     renderMediaUploads(null);
-    setTimeout(updateMoreParamsButtonState, 2000);
+    if (!modelStateInitialized) setTimeout(updateMoreParamsButtonState, 0);
 
     if (historyEl) {
         historyEl.scrollTop = historyEl.scrollHeight;

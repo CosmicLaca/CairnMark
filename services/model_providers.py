@@ -1562,6 +1562,34 @@ class ModelProviderService:
             "source": "provider",
         }
 
+    def model_params_status(self, provider, model):
+        """Return saved parameter/context state without reading ``/props``."""
+        if provider not in ("llama.cpp", "vllm"):
+            raise ProviderValidationError(
+                "Additional parameters are only available for local providers"
+            )
+        saved = self.parameters.value(f"{provider}::{model}")
+        ctx_mode = (
+            self.detect_ctx_mode(provider)
+            if provider == "llama.cpp"
+            else None
+        )
+        params_saved = self._has_saved_params(saved)
+        n_ctx = self._display_n_ctx(saved, ctx_mode)
+        if not params_saved:
+            state = "missing_params"
+        elif provider == "llama.cpp" and n_ctx is None:
+            state = "missing_ctx"
+        else:
+            state = "complete"
+        return {
+            "state": state,
+            "params_saved": params_saved,
+            "modalities": self._display_field(saved, "modalities"),
+            "ctx_mode": ctx_mode,
+            "n_ctx": n_ctx,
+        }
+
     @staticmethod
     def _round_model_param_value(value):
         """Round a model parameter to the nearest 0.005 (3 decimals)."""
@@ -1605,6 +1633,16 @@ class ModelProviderService:
             if isinstance(params, dict):
                 return params
         return saved_params if isinstance(saved_params, dict) else {}
+
+    @staticmethod
+    def _has_saved_params(saved_params):
+        """Return whether a cache row contains generation parameters."""
+        if not isinstance(saved_params, dict):
+            return False
+        if "params" in saved_params:
+            return isinstance(saved_params["params"], dict)
+        metadata_keys = {"modalities", "chat_template_caps", "n_ctx_modes"}
+        return any(key not in metadata_keys for key in saved_params)
 
     @staticmethod
     def _display_field(saved_params, field):
