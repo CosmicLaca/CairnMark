@@ -1099,6 +1099,12 @@
     margin-top: 10px;
 }
 
+.chat-setup-bottom-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+}
+
 .more-params-cache-state {
     position: absolute;
     left: 12px;
@@ -1797,6 +1803,82 @@
     .chat-parameter-grid > .field-group:nth-child(even) .chat-info:hover .chat-info-tooltip,
     .chat-parameter-grid > .field-group:nth-child(even) .chat-info:focus .chat-info-tooltip,
     .chat-parameter-grid > .field-group:nth-child(even) .chat-info:focus-visible .chat-info-tooltip {
+        transform: translate(0, 0);
+    }
+}
+
+@media (min-width: 1921px) {
+    .chat-sp-actions,
+    .chat-setup-bottom-actions {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .chat-setup-bottom-actions {
+        gap: 8px;
+        margin-top: 10px;
+    }
+
+    .chat-setup-bottom-actions .chat-more-params-row {
+        margin-top: 0;
+    }
+
+    .chat-setup-actions {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    .chat-setup-actions .save-metadata-button {
+        justify-content: center;
+        width: 100%;
+    }
+}
+
+/*
+ * Keep the 2880 physical-pixel breakpoint consistent when browser/Windows
+ * scaling reduces the viewport's CSS-pixel width.
+ */
+@media (min-width: 2881px),
+       (min-width: 2305px) and (min-resolution: 1.25dppx),
+       (min-width: 1921px) and (min-resolution: 1.5dppx),
+       (min-width: 1647px) and (min-resolution: 1.75dppx),
+       (min-width: 1441px) and (min-resolution: 2dppx) {
+    .chat-parameter-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .chat-parameter-grid > .field-group .chat-info-tooltip {
+        right: auto;
+        left: 50%;
+        transform: translate(-50%, -4px);
+    }
+
+    .chat-parameter-grid > .field-group .chat-info-tooltip::before {
+        right: auto;
+        left: 50%;
+        transform: translateX(-50%);
+    }
+
+    .chat-parameter-grid > .field-group .chat-info:hover .chat-info-tooltip,
+    .chat-parameter-grid > .field-group .chat-info:focus .chat-info-tooltip,
+    .chat-parameter-grid > .field-group .chat-info:focus-visible .chat-info-tooltip {
+        transform: translate(-50%, 0);
+    }
+
+    .chat-parameter-grid > .field-group:nth-child(3n) .chat-info-tooltip {
+        right: -8px;
+        left: auto;
+        transform: translate(0, -4px);
+    }
+
+    .chat-parameter-grid > .field-group:nth-child(3n) .chat-info-tooltip::before {
+        right: 10px;
+        left: auto;
+        transform: none;
+    }
+
+    .chat-parameter-grid > .field-group:nth-child(3n) .chat-info:hover .chat-info-tooltip,
+    .chat-parameter-grid > .field-group:nth-child(3n) .chat-info:focus .chat-info-tooltip,
+    .chat-parameter-grid > .field-group:nth-child(3n) .chat-info:focus-visible .chat-info-tooltip {
         transform: translate(0, 0);
     }
 }
