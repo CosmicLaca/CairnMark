@@ -1525,7 +1525,7 @@
         const tooltip = state === "missing_params"
             ? "No saved parameter and ctx data."
             : state === "missing_ctx"
-                ? `n_ctx value missing for: ${mode || "unknown"}`
+                ? `n_ctx missing for: ${mode || "unknown"}`
                 : "Parameters and n_ctx value exist.";
         moreParamsCacheState.classList.add(`more-params-cache-state--${color}`);
         moreParamsCacheTooltip.textContent = tooltip;
@@ -2398,7 +2398,7 @@
                 tokenUsageEl.textContent = "Checking saved n_ctx data…";
             } else if (contextStatus === "missing") {
                 tokenUsageEl.textContent = sessionCtxMode
-                    ? `n_ctx value missing for: ${sessionCtxMode}`
+                    ? `n_ctx missing for: ${sessionCtxMode}`
                     : "n_ctx value missing for the current llama.cpp mode";
             } else {
                 tokenUsageEl.textContent = "Context size unavailable for this model.";
