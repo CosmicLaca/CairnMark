@@ -1344,6 +1344,13 @@
     overflow-y: auto;
 }
 
+.mineru-settings-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(120px, 0.45fr);
+    gap: 12px;
+    align-items: start;
+}
+
 .more-params-footer {
     align-items: center;
     gap: 12px;
@@ -2356,6 +2363,10 @@
     }
 
     .chat-parameter-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .mineru-settings-row {
         grid-template-columns: 1fr;
     }
 

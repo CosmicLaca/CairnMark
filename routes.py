@@ -51,6 +51,12 @@ APPLICATION_ROUTES = (
         ("POST",),
     ),
     (
+        "/chat/save_compact_settings",
+        "chat_save_compact_settings",
+        chat_controller.save_compact_settings,
+        ("POST",),
+    ),
+    (
         "/chat/save_seed_settings",
         "chat_save_seed_settings",
         chat_controller.save_seed_settings,

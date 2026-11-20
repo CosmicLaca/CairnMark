@@ -18,7 +18,13 @@ from flask import (
 )
 
 from models.chat_settings import (
+    AUTO_COMPACT_THRESHOLD_MAX,
+    AUTO_COMPACT_THRESHOLD_MIN,
     CHAT_SETTINGS,
+    DEFAULT_AUTO_COMPACT_THRESHOLD,
+    DEFAULT_MINERU_TIMEOUT,
+    MINERU_TIMEOUT_MAX,
+    MINERU_TIMEOUT_MIN,
     VIDEO_FPS_VALUES,
 )
 from models.chat_storage import (
@@ -76,9 +82,7 @@ class ChatController:
             "chat_history_settings": {
                 "send_all_previous": CHAT_SETTINGS.switch("send_all_previous")
             },
-            "chat_compact_settings": {
-                "auto_compact": CHAT_SETTINGS.switch("auto_compact")
-            },
+            "chat_compact_settings": CHAT_SETTINGS.compact(),
             "mineru_settings": CHAT_SETTINGS.mineru(),
             "chat_messages": messages,
             "active_models": self.service.active_models(),
@@ -562,6 +566,22 @@ class ChatController:
         CHAT_SETTINGS.attachments(settings)
         return jsonify({"message": "Attachment settings saved."})
 
+    def save_compact_settings(self):
+        """Validate and persist the automatic compaction threshold."""
+        data = request.get_json(silent=True) or {}
+        threshold = data.get("threshold", DEFAULT_AUTO_COMPACT_THRESHOLD)
+        if (
+            isinstance(threshold, bool)
+            or not isinstance(threshold, int)
+            or not AUTO_COMPACT_THRESHOLD_MIN
+            <= threshold
+            <= AUTO_COMPACT_THRESHOLD_MAX
+        ):
+            return jsonify({
+                "error": "Auto compact threshold must be an integer from 5 to 100."
+            }), 400
+        return jsonify(CHAT_SETTINGS.compact({"threshold": threshold}))
+
     @staticmethod
     def _switch_value(data, *names):
         """Read a boolean from compatible switch payload names."""
@@ -665,7 +685,12 @@ class ChatController:
         )
         return jsonify({"message": "Chat imported.", "messages": restored})
 
-    def _mineru_check(self, endpoint, api_key=None):
+    def _mineru_check(
+        self,
+        endpoint,
+        api_key=None,
+        timeout=DEFAULT_MINERU_TIMEOUT,
+    ):
         endpoint = str(endpoint or "").strip().rstrip("/")
         if not endpoint:
             return False
@@ -679,7 +704,7 @@ class ChatController:
         for url in urls:
             try:
                 request_obj = urllib.request.Request(url, headers=headers)
-                with urllib.request.urlopen(request_obj, timeout=3) as response:
+                with urllib.request.urlopen(request_obj, timeout=timeout) as response:
                     if getattr(response, "status", None) == 200:
                         return True
             except Exception:  # noqa: BLE001
@@ -691,7 +716,10 @@ class ChatController:
         settings = CHAT_SETTINGS.mineru()
         endpoint = settings.get("endpoint", "http://127.0.0.1:8100")
         api_key = settings.get("api_key", "")
-        return jsonify({"available": bool(self._mineru_check(endpoint, api_key))})
+        timeout = settings.get("timeout", DEFAULT_MINERU_TIMEOUT)
+        return jsonify(
+            {"available": bool(self._mineru_check(endpoint, api_key, timeout))}
+        )
 
     def mineru_settings_get(self):
         """Return the saved MinerU endpoint settings."""
@@ -702,11 +730,22 @@ class ChatController:
         data = request.get_json(silent=True) or {}
         endpoint = str(data.get("endpoint") or "").strip()
         api_key = str(data.get("api_key") or "").strip()
+        timeout = data.get("timeout", DEFAULT_MINERU_TIMEOUT)
         if not endpoint:
             return jsonify({"error": "MinerU endpoint is required."}), 400
-        if not self._mineru_check(endpoint, api_key):
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, int)
+            or not MINERU_TIMEOUT_MIN <= timeout <= MINERU_TIMEOUT_MAX
+        ):
+            return jsonify(
+                {"error": "MinerU timeout must be an integer from 1 to 30."}
+            ), 400
+        if not self._mineru_check(endpoint, api_key, timeout):
             return jsonify({"error": "MinerU endpoint is not reachable."}), 400
-        saved = CHAT_SETTINGS.mineru({"endpoint": endpoint, "api_key": api_key})
+        saved = CHAT_SETTINGS.mineru(
+            {"endpoint": endpoint, "api_key": api_key, "timeout": timeout}
+        )
         return jsonify({"message": "MinerU settings saved.", **saved})
 
     def process_document(self):

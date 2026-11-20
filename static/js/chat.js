@@ -28,6 +28,11 @@
     const clearBtn = document.querySelector("[data-chat-clear]");
     const compactBtn = document.querySelector("[data-chat-compact]");
     const compactSwitch = document.querySelector("[data-chat-compact-switch]");
+    const compactTooltip = document.querySelector("[data-chat-compact-tooltip]");
+    const compactSettingsModal = document.querySelector("[data-auto-compact-settings-modal]");
+    const compactThresholdInput = document.querySelector("[data-auto-compact-threshold]");
+    const compactSettingsSaveBtn = document.querySelector("[data-auto-compact-settings-save]");
+    const compactSettingsCloseBtns = document.querySelectorAll("[data-auto-compact-settings-close]");
     const importBtn = document.querySelector("[data-chat-import]");
     const exportBtn = document.querySelector("[data-chat-export]");
     const savedSelect = document.querySelector("[data-chat-saved]");
@@ -67,6 +72,7 @@
     const mineruModal = document.querySelector("[data-mineru-settings-modal]");
     const mineruEndpointInput = document.querySelector("[data-mineru-endpoint]");
     const mineruApiKeyInput = document.querySelector("[data-mineru-api-key]");
+    const mineruTimeoutInput = document.querySelector("[data-mineru-timeout]");
     const mineruSaveBtn = document.querySelector("[data-mineru-settings-save]");
     const mineruCloseBtns = document.querySelectorAll("[data-mineru-settings-close]");
     const mediaUploadsEl = document.querySelector("[data-chat-media-uploads]");
@@ -106,6 +112,10 @@
     let mineruConfigured = Boolean(window.CairnmarkMineruSettings && window.CairnmarkMineruSettings.configured);
     let mineruEndpoint = (window.CairnmarkMineruSettings && window.CairnmarkMineruSettings.endpoint) || "http://127.0.0.1:8100";
     let mineruApiKey = (window.CairnmarkMineruSettings && window.CairnmarkMineruSettings.api_key) || "";
+    let mineruTimeout = Number(window.CairnmarkMineruSettings?.timeout) || 3;
+    let autoCompactThreshold = Number(
+        window.CairnmarkChatCompactSettings?.threshold
+    ) || 75;
     let pendingDocumentPicker = false;
     const pendingAttachments = [];
     const renderMarkdown = window.CairnmarkMarkdown.render;
@@ -2232,6 +2242,7 @@
             mineruModal.hidden = false;
             if (mineruEndpointInput) mineruEndpointInput.value = mineruEndpoint;
             if (mineruApiKeyInput) mineruApiKeyInput.value = mineruApiKey;
+            if (mineruTimeoutInput) mineruTimeoutInput.value = String(mineruTimeout);
         }
     };
     const closeMineruSettings = () => {
@@ -2240,22 +2251,29 @@
     const saveMineruSettings = async () => {
         const endpoint = mineruEndpointInput?.value?.trim() || "";
         const api_key = mineruApiKeyInput?.value?.trim() || "";
+        const timeout = Number(mineruTimeoutInput?.value);
         if (!endpoint) {
             window.alert("MinerU endpoint is required.");
+            return;
+        }
+        if (!Number.isInteger(timeout) || timeout < 1 || timeout > 30) {
+            window.alert("MinerU timeout must be an integer from 1 to 30.");
             return;
         }
         if (mineruSaveBtn) mineruSaveBtn.disabled = true;
         try {
             const payload = await api.json("/chat/save_mineru_settings", {
                 method: "POST",
-                body: { endpoint, api_key },
+                body: { endpoint, api_key, timeout },
             });
             mineruEndpoint = payload.endpoint || endpoint;
             mineruApiKey = payload.api_key || api_key;
+            mineruTimeout = Number(payload.timeout) || timeout;
             mineruConfigured = true;
             window.CairnmarkMineruSettings = {
                 endpoint: mineruEndpoint,
                 api_key: mineruApiKey,
+                timeout: mineruTimeout,
                 configured: true,
             };
             closeMineruSettings();
@@ -2342,8 +2360,55 @@
         return chatContext.shouldAutoCompact(
             contextSelection(),
             enabled,
-            compactRequestActive
+            compactRequestActive,
+            autoCompactThreshold
         );
+    };
+
+    const updateAutoCompactTooltip = () => {
+        const label = `Auto compact from ${autoCompactThreshold}%`;
+        compactSwitch?.setAttribute("aria-label", label);
+        compactSwitch?.setAttribute("title", label);
+        if (compactTooltip) compactTooltip.textContent = label;
+    };
+
+    const openAutoCompactSettings = () => {
+        if (!compactSettingsModal) return;
+        if (compactThresholdInput) {
+            compactThresholdInput.value = String(autoCompactThreshold);
+        }
+        compactSettingsModal.hidden = false;
+        compactThresholdInput?.focus();
+    };
+
+    const closeAutoCompactSettings = () => {
+        if (compactSettingsModal) compactSettingsModal.hidden = true;
+    };
+
+    const saveAutoCompactSettings = async () => {
+        const threshold = Number(compactThresholdInput?.value);
+        if (!Number.isInteger(threshold) || threshold < 5 || threshold > 100) {
+            window.alert("Auto compact threshold must be an integer from 5 to 100.");
+            return;
+        }
+        if (compactSettingsSaveBtn) compactSettingsSaveBtn.disabled = true;
+        try {
+            const payload = await api.json("/chat/save_compact_settings", {
+                method: "POST",
+                body: { threshold },
+            });
+            autoCompactThreshold = Number(payload.threshold) || threshold;
+            window.CairnmarkChatCompactSettings = {
+                ...(window.CairnmarkChatCompactSettings || {}),
+                threshold: autoCompactThreshold,
+            };
+            updateAutoCompactTooltip();
+            closeAutoCompactSettings();
+        } catch (error) {
+            window.alert(`Auto compact settings could not be saved: ${error}`);
+        } finally {
+            if (compactSettingsSaveBtn) compactSettingsSaveBtn.disabled = false;
+        }
     };
 
     const updateCompactButtonVisibility = () => {
@@ -2618,6 +2683,18 @@
         const next = compactSwitch.getAttribute("aria-checked") !== "true";
         compactSwitch.setAttribute("aria-checked", next ? "true" : "false");
     });
+    compactSwitch?.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        openAutoCompactSettings();
+    });
+    compactSettingsCloseBtns.forEach((btn) => {
+        btn.addEventListener("click", closeAutoCompactSettings);
+    });
+    compactSettingsSaveBtn?.addEventListener("click", saveAutoCompactSettings);
+    compactSettingsModal?.addEventListener("click", (event) => {
+        if (event.target === compactSettingsModal) closeAutoCompactSettings();
+    });
+    updateAutoCompactTooltip();
     streamResponsesSwitch?.addEventListener("click", () => {
         const next = streamResponsesSwitch.getAttribute("aria-checked") !== "true";
         streamResponsesSwitch.setAttribute("aria-checked", next ? "true" : "false");

@@ -75,9 +75,14 @@
                 && (this.messages.length > 1 || (ratio !== null && ratio < 1));
         }
 
-        shouldAutoCompact(selection, enabled, requestActive) {
+        shouldAutoCompact(selection, enabled, requestActive, threshold = 75) {
             const { ratio } = this.usage(selection);
-            return Boolean(enabled) && !requestActive && ratio !== null && ratio > 0.75;
+            const triggerRatio = Number(threshold) / 100;
+            return Boolean(enabled)
+                && !requestActive
+                && ratio !== null
+                && Number.isFinite(triggerRatio)
+                && ratio > triggerRatio;
         }
     }
 

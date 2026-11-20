@@ -190,8 +190,13 @@ conversation history.
 
 The switch inside **Compact chat** enables automatic compaction. When it is on,
 CairnMark starts the same compaction process after a successful response pushes
-the selected context above 75%. The switch is off by default and its current
-value is saved when you send a message.
+the selected context above the configured trigger percentage. The switch is off
+by default and its current value is saved when you send a message.
+
+Right-click the **Auto compact from [n]%** switch to open **Auto compact
+settings**. Set an integer trigger from 5% to 100%, then select **Save** to store
+it locally. **Cancel** closes the dialog without changing the saved value. The
+first-run default is 75%, and the switch tooltip always shows the active trigger.
 
 Older messages remain visible after compaction, but they are no longer included
 before the summary in future model requests.
@@ -214,8 +219,10 @@ choice. Lower FPS values send fewer frames.
 
 For PDF, Office, EPUB, and other binary documents, configure MinerU by
 right-clicking the document button—or selecting it when no endpoint is saved.
-Enter the MinerU endpoint and optional key, then save after the connection
-check succeeds.
+Enter the MinerU endpoint, optional key, and a reachability-check timeout from 1
+to 30 seconds, then save after the connection check succeeds. The timeout
+defaults to 3 seconds before the first save and is stored locally with the other
+MinerU settings.
 
 ### Save useful conversations
 

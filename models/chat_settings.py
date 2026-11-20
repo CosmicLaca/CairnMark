@@ -22,6 +22,12 @@ CHAT_PARAMETER_CONVERTERS = {
 }
 VIDEO_FPS_VALUES = (0.1, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0)
 DEFAULT_VIDEO_FPS = 2.0
+DEFAULT_MINERU_TIMEOUT = 3
+MINERU_TIMEOUT_MIN = 1
+MINERU_TIMEOUT_MAX = 30
+DEFAULT_AUTO_COMPACT_THRESHOLD = 75
+AUTO_COMPACT_THRESHOLD_MIN = 5
+AUTO_COMPACT_THRESHOLD_MAX = 100
 CHAT_SETTINGS_COLUMNS = (
     "id",
     "model_name",
@@ -79,6 +85,7 @@ CREATE TABLE IF NOT EXISTS chat_history_settings (
 CREATE TABLE IF NOT EXISTS chat_compact_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     auto_compact INTEGER NOT NULL DEFAULT 0,
+    threshold INTEGER NOT NULL DEFAULT 75,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -86,6 +93,7 @@ CREATE TABLE IF NOT EXISTS mineru_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     endpoint TEXT NOT NULL DEFAULT 'http://127.0.0.1:8100',
     api_key TEXT,
+    timeout INTEGER NOT NULL DEFAULT 3,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 """
@@ -136,6 +144,12 @@ def _migrate_chat_settings(connection):
     _add_column_if_missing(connection, "mineru_settings", "api_key", "TEXT")
     _add_column_if_missing(
         connection,
+        "mineru_settings",
+        "timeout",
+        "INTEGER NOT NULL DEFAULT 3",
+    )
+    _add_column_if_missing(
+        connection,
         "chat_attachment_settings",
         "video_fps",
         "REAL NOT NULL DEFAULT 2",
@@ -151,6 +165,12 @@ def _migrate_chat_settings(connection):
         "chat_attachment_settings",
         "stream_responses",
         "INTEGER NOT NULL DEFAULT 0",
+    )
+    _add_column_if_missing(
+        connection,
+        "chat_compact_settings",
+        "threshold",
+        "INTEGER NOT NULL DEFAULT 75",
     )
     # Preserve the pre-history-table value when upgrading an older database.
     connection.execute(
@@ -260,6 +280,44 @@ class ChatSettingsRepository:
         )
         return saved
 
+    def compact(self, updates=None):
+        """Read or partially update automatic compaction settings."""
+        defaults = {
+            "auto_compact": False,
+            "threshold": DEFAULT_AUTO_COMPACT_THRESHOLD,
+        }
+        row = None
+        if self.store.path().exists():
+            row = self.store.fetch(
+                "SELECT auto_compact, threshold "
+                "FROM chat_compact_settings WHERE id = 1",
+                one=True,
+            )
+        current = defaults if not row else {
+            "auto_compact": bool(row[0]),
+            "threshold": self._auto_compact_threshold(row[1]),
+        }
+        if updates is None:
+            return current
+
+        values = {**current, **updates}
+        threshold = self._auto_compact_threshold(values.get("threshold"))
+        self.store.execute(
+            """
+            INSERT INTO chat_compact_settings (id, auto_compact, threshold)
+            VALUES (1, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                auto_compact = excluded.auto_compact,
+                threshold = excluded.threshold,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (int(bool(values["auto_compact"])), threshold),
+        )
+        return {
+            "auto_compact": bool(values["auto_compact"]),
+            "threshold": threshold,
+        }
+
     def attachments(self, updates=None):
         """Read or partially update attachment preferences."""
         defaults = {
@@ -330,13 +388,14 @@ class ChatSettingsRepository:
         defaults = {
             "endpoint": "http://127.0.0.1:8100",
             "api_key": "",
+            "timeout": DEFAULT_MINERU_TIMEOUT,
             "configured": False,
         }
         if updates is None:
             if not self.store.path().exists():
                 return defaults
             row = self.store.fetch(
-                "SELECT endpoint, api_key FROM mineru_settings WHERE id = 1",
+                "SELECT endpoint, api_key, timeout FROM mineru_settings WHERE id = 1",
                 one=True,
             )
             if not row:
@@ -345,6 +404,7 @@ class ChatSettingsRepository:
                 "endpoint": str(row[0] or defaults["endpoint"]).strip()
                 or defaults["endpoint"],
                 "api_key": str(row[1] or "").strip(),
+                "timeout": self._mineru_timeout(row[2]),
                 "configured": True,
             }
 
@@ -352,18 +412,51 @@ class ChatSettingsRepository:
         endpoint = str(values.get("endpoint") or "").strip().rstrip("/")
         endpoint = endpoint or defaults["endpoint"]
         api_key = str(values.get("api_key") or "").strip()
+        timeout = self._mineru_timeout(values.get("timeout"))
         self.store.execute(
             """
-            INSERT INTO mineru_settings (id, endpoint, api_key)
-            VALUES (1, ?, ?)
+            INSERT INTO mineru_settings (id, endpoint, api_key, timeout)
+            VALUES (1, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 endpoint = excluded.endpoint,
                 api_key = excluded.api_key,
+                timeout = excluded.timeout,
                 updated_at = CURRENT_TIMESTAMP
             """,
-            (endpoint, api_key or None),
+            (endpoint, api_key or None, timeout),
         )
-        return {"endpoint": endpoint, "api_key": api_key, "configured": True}
+        return {
+            "endpoint": endpoint,
+            "api_key": api_key,
+            "timeout": timeout,
+            "configured": True,
+        }
+
+    @staticmethod
+    def _mineru_timeout(value):
+        """Return a valid saved reachability timeout or the default."""
+        if isinstance(value, bool):
+            return DEFAULT_MINERU_TIMEOUT
+        try:
+            timeout = int(value)
+        except (TypeError, ValueError):
+            return DEFAULT_MINERU_TIMEOUT
+        if MINERU_TIMEOUT_MIN <= timeout <= MINERU_TIMEOUT_MAX:
+            return timeout
+        return DEFAULT_MINERU_TIMEOUT
+
+    @staticmethod
+    def _auto_compact_threshold(value):
+        """Return a valid compaction percentage or the default."""
+        if isinstance(value, bool):
+            return DEFAULT_AUTO_COMPACT_THRESHOLD
+        try:
+            threshold = int(value)
+        except (TypeError, ValueError):
+            return DEFAULT_AUTO_COMPACT_THRESHOLD
+        if AUTO_COMPACT_THRESHOLD_MIN <= threshold <= AUTO_COMPACT_THRESHOLD_MAX:
+            return threshold
+        return DEFAULT_AUTO_COMPACT_THRESHOLD
 
     @staticmethod
     def _video_fps(value):
