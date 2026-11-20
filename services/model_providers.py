@@ -2,6 +2,7 @@
 
 import base64
 import json
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -1586,6 +1587,7 @@ class ModelProviderService:
             "state": state,
             "params_saved": params_saved,
             "modalities": self._display_field(saved, "modalities"),
+            "chat_template_caps": self._display_field(saved, "chat_template_caps"),
             "ctx_mode": ctx_mode,
             "n_ctx": n_ctx,
         }
@@ -1788,6 +1790,60 @@ class ModelProviderService:
             return True
         except CATALOG_ERRORS:
             return False
+
+    def llama_managed_tools(self, timeout=3):
+        """Read live MCP tools from the configured llama.cpp server."""
+        configuration = self.saved_connection("llama.cpp")
+        if not configuration:
+            return {
+                "configured": False,
+                "online": False,
+                "tools_available": False,
+                "status_code": None,
+                "tools": [],
+            }
+
+        models_url = self.catalog_client.models_url(
+            configuration["ip"],
+            configuration["port"],
+        )
+        parsed = urllib.parse.urlsplit(models_url)
+        tools_url = urllib.parse.urlunsplit(
+            (parsed.scheme, parsed.netloc, "/tools", "", "")
+        )
+        tools_request = urllib.request.Request(
+            tools_url,
+            headers={"Accept": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(tools_request, timeout=timeout) as response:
+                status_code = int(getattr(response, "status", 0) or 0)
+                payload = json.load(response)
+        except urllib.error.HTTPError as error:
+            return {
+                "configured": True,
+                "online": True,
+                "tools_available": False,
+                "status_code": error.code,
+                "tools": [],
+            }
+        except (OSError, TimeoutError, json.JSONDecodeError, ValueError):
+            return {
+                "configured": True,
+                "online": False,
+                "tools_available": False,
+                "status_code": None,
+                "tools": [],
+            }
+
+        tools = payload if isinstance(payload, list) else []
+        return {
+            "configured": True,
+            "online": status_code == 200,
+            "tools_available": status_code == 200 and bool(tools),
+            "status_code": status_code,
+            "tools": tools,
+        }
 
     def _completion_context(self, provider):
         """Return SDK inputs shared by all completion entry points."""

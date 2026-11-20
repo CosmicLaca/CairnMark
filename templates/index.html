@@ -207,51 +207,57 @@
             data-chat-input
           ></textarea>
           <div class="chat-media-row">
-            <div class="chat-media-uploads" data-chat-media-uploads hidden aria-label="Media uploads"></div>
-            <div class="chat-audio-attachments" data-chat-audio-attachments hidden aria-label="Attached audio"></div>
-            <button
-              type="button"
-              class="chat-save-original-switch"
-              data-chat-save-original
-              role="switch"
-              aria-checked="{{ 'true' if chat_attachment_settings.save_original_media else 'false' }}"
-              aria-label="Save the original attachment for future preview."
-              hidden
-            >
-              <span class="chat-save-original-track" aria-hidden="true">
-                <span class="chat-save-original-knob"></span>
-              </span>
-              <span class="chat-save-original-tooltip" role="tooltip">Save the original attachment for future preview.</span>
-            </button>
-            <button
-              type="button"
-              class="chat-save-original-switch"
-              data-chat-attach-audio
-              role="switch"
-              aria-checked="{{ 'true' if chat_attachment_settings.attach_audio else 'false' }}"
-              aria-label="Attach audio"
-              hidden
-            >
-              <span class="chat-save-original-track" aria-hidden="true">
-                <span class="chat-save-original-knob"></span>
-              </span>
-              <span class="chat-save-original-tooltip" role="tooltip">Attach audio</span>
-            </button>
-            <div class="chat-fps-control" data-chat-video-fps-control hidden>
-              <span class="chat-fps-label">FPS:</span>
-              <input
-                type="range"
-                class="chat-fps-slider"
-                data-chat-video-fps
-                min="0"
-                max="7"
-                step="1"
-                value="{{ chat_video_fps_index }}"
-                title="Set FPS"
-                aria-label="Set FPS"
+            <div class="chat-media-controls">
+              <div class="chat-media-uploads" data-chat-media-uploads hidden aria-label="Media uploads"></div>
+              <div class="chat-audio-attachments" data-chat-audio-attachments hidden aria-label="Attached audio"></div>
+              <button
+                type="button"
+                class="chat-save-original-switch"
+                data-chat-save-original
+                role="switch"
+                aria-checked="{{ 'true' if chat_attachment_settings.save_original_media else 'false' }}"
+                aria-label="Save the original attachment for future preview."
+                hidden
               >
-              <span class="chat-fps-value" data-chat-video-fps-value>{{ '%g'|format(chat_attachment_settings.video_fps) }}</span>
+                <span class="chat-save-original-track" aria-hidden="true">
+                  <span class="chat-save-original-knob"></span>
+                </span>
+                <span class="chat-save-original-tooltip" role="tooltip">Save the original attachment for future preview.</span>
+              </button>
+              <button
+                type="button"
+                class="chat-save-original-switch"
+                data-chat-attach-audio
+                role="switch"
+                aria-checked="{{ 'true' if chat_attachment_settings.attach_audio else 'false' }}"
+                aria-label="Attach audio"
+                hidden
+              >
+                <span class="chat-save-original-track" aria-hidden="true">
+                  <span class="chat-save-original-knob"></span>
+                </span>
+                <span class="chat-save-original-tooltip" role="tooltip">Attach audio</span>
+              </button>
+              <div class="chat-fps-control" data-chat-video-fps-control hidden>
+                <span class="chat-fps-label">FPS:</span>
+                <input
+                  type="range"
+                  class="chat-fps-slider"
+                  data-chat-video-fps
+                  min="0"
+                  max="7"
+                  step="1"
+                  value="{{ chat_video_fps_index }}"
+                  title="Set FPS"
+                  aria-label="Set FPS"
+                >
+                <span class="chat-fps-value" data-chat-video-fps-value>{{ '%g'|format(chat_attachment_settings.video_fps) }}</span>
+              </div>
             </div>
+            <button type="button" class="chat-tool-capability" data-chat-tool-capability hidden>
+              <span aria-hidden="true">🛠</span>
+              <span class="chat-media-tooltip" data-chat-tool-tooltip role="tooltip"></span>
+            </button>
             <button
               type="button"
               class="chat-save-original-switch chat-stream-switch"
@@ -654,6 +660,30 @@
   </div>
 </div>
 
+<div class="modal more-params-modal mcp-settings-modal" id="mcp-settings-modal" data-mcp-settings-modal hidden aria-modal="true" role="dialog" aria-labelledby="mcp-settings-title">
+  <div class="modal-content">
+    <header class="modal-header">
+      <div>
+        <span class="panel-kicker">Tool connections</span>
+        <h2 id="mcp-settings-title">MCP settings</h2>
+      </div>
+      <button type="button" class="close-modal-button" data-mcp-settings-close>&times;</button>
+    </header>
+    <div class="modal-body">
+      <p class="field-hint mcp-settings-hint">Enable the available MCP services for this chat.</p>
+      <div class="mcp-service-list" data-mcp-service-list aria-live="polite"></div>
+    </div>
+    <footer class="modal-footer more-params-footer">
+      <div class="more-params-footer-actions">
+        <button type="button" class="modal-cancel-button" data-mcp-settings-close>Cancel</button>
+        <button type="button" class="modal-save-button" data-mcp-settings-save disabled>
+          <span aria-hidden="true">✓</span> Save
+        </button>
+      </div>
+    </footer>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -661,6 +691,14 @@
     window.CairnmarkMineruSettings = {{ mineru_settings|tojson }};
     window.CairnmarkChatCompactSettings = {{ chat_compact_settings|tojson }};
     window.CairnmarkParameterHelpUrl = {{ url_for('static', filename='parameters.json')|tojson }};
+    window.CairnmarkMcpConfigUrl = {{ url_for('chat_mcp_configuration')|tojson }};
+    window.CairnmarkMcpImportUrl = {{ url_for('chat_import_opencode_mcp')|tojson }};
+    window.CairnmarkMcpServerSaveUrl = {{ url_for('chat_save_mcp_server')|tojson }};
+    window.CairnmarkMcpSettingsUrl = {{ url_for('chat_mcp_settings_get')|tojson }};
+    window.CairnmarkMcpSettingsSaveUrl = {{ url_for('chat_mcp_settings_save')|tojson }};
+    window.CairnmarkLlamaManagedToolsUrl = {{ url_for('chat_llama_managed_tools')|tojson }};
+    window.CairnmarkLlamaManagedMcpStatusUrl = {{ url_for('chat_llama_managed_mcp_status')|tojson }};
+    window.CairnmarkToolSetupUrlTemplate = {{ url_for('static', filename='tool-setup-__SERVICE__.json')|tojson }};
   </script>
   <script>
     window.CairnmarkChatMessageTokens = [

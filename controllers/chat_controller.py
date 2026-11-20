@@ -39,17 +39,17 @@ from models.chat_storage import (
     replace_chat_messages,
     save_saved,
 )
+from models.mcp_settings import MCP_SETTINGS
 from services.chat_attachments import AttachmentProcessingError
 from services.chat_exports import ChatExportRepository
 from services.chat_previews import ChatPreviewStore
 from services.chat_requests import CHAT_PARAMETER_FIELDS, ChatRequestWorkflow
+from services.mcp_services import McpServiceRegistry
 from services.model_providers import (
     ModelProviderService,
     ProviderOfflineError,
     ProviderValidationError,
 )
-
-
 
 class ChatController:
     """Provide chat context and handle chat messages."""
@@ -65,6 +65,7 @@ class ChatController:
         self.previews = preview_store or ChatPreviewStore()
         self.requests = request_workflow or ChatRequestWorkflow(self.service)
         self.exports = export_repository or ChatExportRepository()
+        self.mcp_settings = MCP_SETTINGS
 
     def context(self):
         settings = CHAT_SETTINGS.form()
@@ -724,6 +725,228 @@ class ChatController:
     def mineru_settings_get(self):
         """Return the saved MinerU endpoint settings."""
         return jsonify(CHAT_SETTINGS.mineru())
+
+    def mcp_status(self):
+        """Return the live status of one registered local MCP service."""
+        name = request.args.get("name", "").strip()
+        if not name:
+            return jsonify({"error": "MCP service name is required."}), 400
+        try:
+            return jsonify(self._mcp_registry().check(name))
+        except (OSError, json.JSONDecodeError):
+            current_app.logger.exception("Could not read MCP configuration")
+            return jsonify({"error": "Could not read MCP configuration."}), 500
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
+
+    def llama_managed_tools(self):
+        """Return live MCP discovery state from the configured llama.cpp server."""
+        return jsonify(self.service.llama_managed_tools())
+
+    def llama_managed_mcp_status(self):
+        """Return the API status required by one llama.cpp-managed service."""
+        name = request.args.get("name", "").strip()
+        endpoint = request.args.get("endpoint", "").strip()
+        timeout_ms = request.args.get("timeout_ms", 3000)
+        if not name:
+            return jsonify({"error": "MCP service name is required."}), 400
+        try:
+            result = self._mcp_registry().check_managed_service(
+                name,
+                endpoint,
+                timeout_ms,
+            )
+            return jsonify(result)
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
+
+    @staticmethod
+    def _mcp_registry():
+        return McpServiceRegistry(
+            config_path=current_app.config["MCP_CONFIG_PATH"],
+            opencode_path=current_app.config["OPENCODE_CONFIG_PATH"],
+        )
+
+    def mcp_configuration(self):
+        """Return private MCP configuration and first-run discovery state."""
+        try:
+            return jsonify(self._mcp_registry().client_configuration())
+        except (OSError, json.JSONDecodeError, ValueError):
+            current_app.logger.exception("Could not read MCP configuration")
+            return jsonify({"error": "Could not read MCP configuration."}), 500
+
+    def import_opencode_mcp(self):
+        """Import usable OpenCode MCP declarations after explicit approval."""
+        try:
+            servers = self._mcp_registry().import_opencode()
+            return jsonify({"saved": True, "mcpServers": servers})
+        except (OSError, json.JSONDecodeError):
+            current_app.logger.exception("Could not import OpenCode MCP configuration")
+            return jsonify({"error": "Could not import OpenCode MCP configuration."}), 500
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
+
+    def save_mcp_server(self):
+        """Create or update one private local MCP server declaration."""
+        data = request.get_json(silent=True) or {}
+        try:
+            declaration = self._mcp_registry().save_local_server(
+                data.get("name"),
+                data.get("command"),
+                data.get("args"),
+                data.get("timeout_ms"),
+            )
+            return jsonify({"saved": True, "server": declaration})
+        except OSError:
+            current_app.logger.exception("Could not save MCP configuration")
+            return jsonify({"error": "Could not save MCP configuration."}), 500
+        except (json.JSONDecodeError, ValueError) as error:
+            return jsonify({"error": str(error)}), 400
+
+    def mcp_settings_get(self):
+        """Return saved MCP preferences keyed per service and tool."""
+        return jsonify({"records": self.mcp_settings.all()})
+
+    @staticmethod
+    def _managed_tool_identity(tool):
+        definition = tool.get("definition") if isinstance(tool, dict) else None
+        function = definition.get("function") if isinstance(definition, dict) else None
+        tool_name = str(
+            (tool.get("tool") if isinstance(tool, dict) else None)
+            or (function.get("name") if isinstance(function, dict) else None)
+            or ""
+        ).strip()
+        explicit_service = next(
+            (
+                value.strip()
+                for value in (
+                    tool.get("mcp_server") if isinstance(tool, dict) else None,
+                    tool.get("mcp_service") if isinstance(tool, dict) else None,
+                    tool.get("server") if isinstance(tool, dict) else None,
+                    tool.get("service") if isinstance(tool, dict) else None,
+                )
+                if isinstance(value, str) and value.strip()
+            ),
+            "",
+        )
+        service_name = explicit_service or tool_name.split("_", 1)[0]
+        return service_name, tool_name
+
+    def mcp_settings_save(self):
+        """Persist preferences only for currently accessible MCP entries."""
+        payload = request.get_json(silent=True) or {}
+        records = payload.get("records")
+        if not isinstance(records, list):
+            return jsonify({"error": "MCP records must be a list."}), 400
+
+        normalized = []
+        for record in records:
+            if not isinstance(record, dict):
+                return jsonify({"error": "Each MCP record must be an object."}), 400
+            source = str(record.get("source") or "").strip()
+            service_name = str(record.get("service") or "").strip()
+            tool_name = str(record.get("tool") or "").strip()
+            enabled = record.get("enabled")
+            settings = record.get("settings", {})
+            if source not in {"external", "llama_service", "llama_tool"}:
+                return jsonify({"error": "A valid MCP record source is required."}), 400
+            if not service_name or not isinstance(enabled, bool):
+                return jsonify({"error": "MCP service and boolean state are required."}), 400
+            if source == "llama_tool" and not tool_name:
+                return jsonify({"error": "A managed MCP tool name is required."}), 400
+            if not isinstance(settings, dict):
+                return jsonify({"error": "MCP settings must be an object."}), 400
+            normalized.append(
+                {
+                    "source": source,
+                    "service": service_name,
+                    "tool": tool_name,
+                    "enabled": enabled,
+                    "settings": settings,
+                }
+            )
+
+        registry = self._mcp_registry()
+        eligible = []
+        skipped = []
+        external_status = {}
+        for record in (item for item in normalized if item["source"] == "external"):
+            name = record["service"]
+            if name not in external_status:
+                try:
+                    external_status[name] = bool(registry.check(name).get("online"))
+                except (OSError, ValueError, json.JSONDecodeError):
+                    external_status[name] = False
+            (eligible if external_status[name] else skipped).append(record)
+
+        managed_records = [
+            item for item in normalized if item["source"].startswith("llama_")
+        ]
+        if managed_records:
+            discovery = self.service.llama_managed_tools()
+            live_tools = {}
+            live_services = set()
+            if discovery.get("online"):
+                for tool in discovery.get("tools", []):
+                    service_name, tool_name = self._managed_tool_identity(tool)
+                    if service_name and tool_name:
+                        live_services.add(service_name)
+                        live_tools[tool_name] = service_name
+
+            saved_records = self.mcp_settings.all()
+            service_settings = {
+                item["service"]: item["settings"]
+                for item in saved_records
+                if item["source"] == "llama_service"
+            }
+            service_settings.update(
+                {
+                    item["service"]: item["settings"]
+                    for item in managed_records
+                    if item["source"] == "llama_service"
+                }
+            )
+            managed_status = {}
+            for service_name in live_services:
+                settings = service_settings.get(service_name, {})
+                endpoint = settings.get("endpoint", "")
+                if service_name == "searxng" and not endpoint:
+                    endpoint = "http://127.0.0.1:8888"
+                try:
+                    managed_status[service_name] = bool(
+                        registry.check_managed_service(
+                            service_name,
+                            endpoint,
+                            settings.get("timeout_ms", 3000),
+                        ).get("online")
+                    )
+                except (OSError, ValueError):
+                    managed_status[service_name] = False
+
+            for record in managed_records:
+                service_name = record["service"]
+                accessible = managed_status.get(service_name, False)
+                if record["source"] == "llama_tool":
+                    accessible = (
+                        accessible
+                        and live_tools.get(record["tool"]) == service_name
+                    )
+                (eligible if accessible else skipped).append(record)
+
+        self.mcp_settings.upsert(eligible)
+        return jsonify(
+            {
+                "saved": len(eligible),
+                "skipped": [
+                    {
+                        "source": item["source"],
+                        "service": item["service"],
+                        "tool": item["tool"],
+                    }
+                    for item in skipped
+                ],
+            }
+        )
 
     def save_mineru_settings(self):
         """Validate and persist the MinerU endpoint settings."""

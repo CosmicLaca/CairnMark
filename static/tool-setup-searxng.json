@@ -1,0 +1,53 @@
+{
+  "endpoint": {
+    "name": "SearXNG API endpoint",
+    "type": "text",
+    "default": "http://127.0.0.1:8888"
+  },
+  "pageno": {
+    "name": "Page Number",
+    "type": "integer",
+    "default": 3
+  },
+  "time_range": {
+    "name": "Time Range",
+    "type": "list",
+    "values": [
+      "day",
+      "week",
+      "month",
+      "year"
+    ],
+    "default": "week"
+  },
+  "format": {
+    "name": "Response Format",
+    "type": "list",
+    "values": [
+      "json",
+      "csv",
+      "rss"
+    ],
+    "default": "json"
+  },
+  "safesearch": {
+    "name": "Safe Search Level",
+    "type": "list",
+    "values": [
+      0,
+      1,
+      2
+    ],
+    "default": 0
+  },
+  "engines": {
+    "name": "Search engine names",
+    "type": "list",
+    "values": [
+      "google",
+      "bing",
+      "duckduckgo"
+    ],
+    "default": "google"
+  }
+}

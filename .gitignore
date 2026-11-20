@@ -3,6 +3,10 @@ AGENTS.md
 .playwright-mcp
 embedding
 *.bak
+services/mcv.json
+tests
+Exported-chat
+debug_model.py
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

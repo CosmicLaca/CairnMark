@@ -723,14 +723,24 @@
 }
 
 .chat-media-row {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     align-items: center;
     gap: 8px;
-    flex-wrap: wrap;
 }
 
 .chat-stream-switch {
-    margin-left: auto;
+    grid-column: 3;
+    justify-self: end;
+}
+
+.chat-media-controls {
+    grid-column: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex-wrap: wrap;
 }
 
 .chat-audio-player {
@@ -1060,9 +1070,629 @@
 
 .chat-media-icon:hover .chat-media-tooltip,
 .chat-media-icon:focus .chat-media-tooltip,
-.chat-media-icon:focus-visible .chat-media-tooltip {
+.chat-media-icon:focus-visible .chat-media-tooltip,
+.chat-tool-capability:hover .chat-media-tooltip,
+.chat-tool-capability:focus .chat-media-tooltip,
+.chat-tool-capability:focus-visible .chat-media-tooltip {
     opacity: 1;
     transform: translate(-50%, 0);
+}
+
+.chat-tool-capability {
+    grid-column: 2;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    font-size: 1.05rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.chat-tool-capability[hidden] {
+    display: none;
+}
+
+.chat-tool-capability--full {
+    color: #07833f;
+    background: rgba(7, 131, 63, 0.12);
+}
+
+.chat-tool-capability--partial {
+    color: #246fa8;
+    background: rgba(36, 111, 168, 0.12);
+}
+
+.more-params-modal.mcp-settings-modal .modal-content {
+    display: flex;
+    box-sizing: border-box;
+    max-height: min(86vh, 760px);
+    width: min(620px, calc(100% - 32px));
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.more-params-modal.mcp-settings-modal .modal-header,
+.more-params-modal.mcp-settings-modal .modal-footer {
+    flex: 0 0 auto;
+}
+
+.more-params-modal.mcp-settings-modal .modal-body {
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
+}
+
+.mcp-settings-modal .modal-header .panel-kicker {
+    margin-bottom: 5px;
+}
+
+.mcp-settings-hint {
+    margin: 0 0 14px;
+}
+
+.mcp-service-list {
+    display: grid;
+    gap: 10px;
+}
+
+.mcp-service-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    min-height: 64px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-left: 3px solid #07833f;
+    border-radius: 2px 11px 2px 2px;
+    background: rgba(255, 255, 255, 0.58);
+}
+
+.mcp-service-row--checking {
+    border-left-color: #e78b27;
+}
+
+.mcp-service-row--offline {
+    border-left-color: #b42318;
+    background: rgba(180, 35, 24, 0.05);
+}
+
+.mcp-service-identity,
+.mcp-service-controls {
+    display: flex;
+    align-items: center;
+}
+
+.mcp-service-identity {
+    min-width: 0;
+    gap: 9px;
+}
+
+.mcp-service-identity strong {
+    overflow: hidden;
+    font-size: 0.82rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mcp-service-marker {
+    color: var(--lichen);
+    font-size: 0.62rem;
+}
+
+.mcp-service-controls {
+    gap: 10px;
+}
+
+.mcp-service-switch-wrap {
+    position: relative;
+    display: inline-flex;
+}
+
+.mcp-service-switch {
+    min-height: 34px;
+    flex-basis: 42px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: rgba(120, 130, 126, 0.08);
+}
+
+.mcp-service-switch:disabled {
+    cursor: not-allowed;
+    opacity: 0.52;
+}
+
+.mcp-service-setup-icon,
+.mcp-service-spinner {
+    display: inline-flex;
+    width: 30px;
+    height: 30px;
+    align-items: center;
+    justify-content: center;
+    color: #315d54;
+    font-size: 1.15rem;
+}
+
+.mcp-service-setup-icon {
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+    transition: background var(--motion), border-color var(--motion), transform var(--motion);
+}
+
+.mcp-service-setup-icon:hover,
+.mcp-service-setup-icon:focus-visible,
+.mcp-service-setup-icon[aria-expanded="true"] {
+    border-color: rgba(49, 93, 84, 0.32);
+    background: rgba(111, 214, 195, 0.12);
+    transform: rotate(20deg);
+}
+
+.mcp-service-spinner {
+    color: #e78b27;
+    animation: mcp-status-spin 0.8s linear infinite;
+}
+
+.mcp-service-spinner[hidden] {
+    display: none;
+}
+
+.mcp-service-offline-tooltip {
+    position: absolute;
+    bottom: calc(100% + 7px);
+    left: 50%;
+    width: max-content;
+    padding: 5px 8px;
+    border-radius: 3px 9px 3px 3px;
+    background: var(--sidebar);
+    color: #f5f1e7;
+    font-size: 0.68rem;
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, -3px);
+    transition: opacity var(--motion), transform var(--motion);
+    z-index: 4;
+}
+
+.mcp-service-offline-tooltip[hidden] {
+    display: none;
+}
+
+.mcp-service-row--offline .mcp-service-switch-wrap:hover .mcp-service-offline-tooltip {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
+.mcp-settings-loading {
+    margin: 0;
+    padding: 18px;
+    border: 1px dashed var(--line);
+    color: var(--muted);
+    text-align: center;
+}
+
+.mcp-import-panel,
+.mcp-custom-server {
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 2px 11px 2px 2px;
+    background: rgba(255, 255, 255, 0.58);
+}
+
+.mcp-import-panel {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    border-left: 3px solid #4c8d81;
+}
+
+.mcp-import-panel > div,
+.mcp-custom-server-heading {
+    display: grid;
+    gap: 3px;
+}
+
+.mcp-import-panel strong,
+.mcp-custom-server-heading strong {
+    color: var(--ink);
+    font-size: 0.8rem;
+}
+
+.mcp-import-panel span,
+.mcp-custom-server-heading span {
+    color: var(--muted);
+    font-size: 0.68rem;
+}
+
+.mcp-import-panel--error {
+    border-left-color: #b42318;
+}
+
+.mcp-custom-server {
+    display: grid;
+    gap: 14px;
+}
+
+.mcp-custom-server-grid,
+.mcp-connection-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.mcp-empty-field--command,
+.mcp-empty-field--args,
+.mcp-connection-field--command,
+.mcp-connection-field--args {
+    grid-column: 1 / -1;
+}
+
+.mcp-empty-field label,
+.mcp-connection-field label {
+    font-size: 0.7rem;
+}
+
+.mcp-empty-field input,
+.mcp-connection-field input {
+    width: 100%;
+    min-height: 40px;
+}
+
+.mcp-tool-setup {
+    grid-column: 1 / -1;
+    margin: 2px -12px -10px;
+    padding: 16px 14px 14px;
+    border-top: 1px solid var(--line);
+    background: rgba(111, 214, 195, 0.055);
+    animation: mcp-accordion-open 160ms ease-out;
+}
+
+.mcp-tool-setup[hidden] {
+    display: none;
+}
+
+.mcp-tool-setup-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.mcp-tool-setup-heading strong {
+    color: var(--ink);
+    font-size: 0.78rem;
+}
+
+.mcp-tool-setup-heading span {
+    color: var(--muted);
+    font-size: 0.66rem;
+}
+
+.mcp-tool-setup-separator {
+    height: 1px;
+    margin: 16px 0;
+    background: rgba(120, 130, 126, 0.24);
+}
+
+.mcp-tool-setup-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.mcp-tool-field:first-child {
+    grid-column: 1 / -1;
+}
+
+.mcp-tool-field label {
+    font-size: 0.7rem;
+}
+
+.mcp-tool-field input,
+.mcp-tool-field select {
+    width: 100%;
+    min-height: 40px;
+}
+
+.mcp-tool-select-shell {
+    width: 100%;
+}
+
+.mcp-tool-select-shell select {
+    min-height: 40px;
+    padding-right: 38px;
+    background-color: rgba(255, 255, 255, 0.72);
+}
+
+.mcp-tool-select-shell::after {
+    right: 14px;
+}
+
+.llama-managed-service-tools[hidden] {
+    display: none;
+}
+
+.llama-managed-status-row {
+    display: flex;
+    min-height: 54px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-left: 3px solid #b42318;
+    border-radius: 2px 10px 2px 2px;
+    background: rgba(180, 35, 24, 0.05);
+}
+
+.llama-managed-status-row strong {
+    color: var(--ink);
+    font-size: 0.8rem;
+}
+
+.llama-managed-status-row span {
+    padding: 3px 7px;
+    border-radius: 999px;
+    color: #a32920;
+    background: rgba(180, 35, 24, 0.08);
+    font-size: 0.62rem;
+    font-weight: 700;
+}
+
+.llama-managed-expand {
+    display: inline-flex;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: 50%;
+    color: #315d54;
+    background: transparent;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: transform var(--motion), background var(--motion);
+}
+
+.llama-managed-expand:hover,
+.llama-managed-expand:focus-visible {
+    background: rgba(111, 214, 195, 0.14);
+}
+
+.llama-managed-expand[aria-expanded="true"] {
+    transform: rotate(180deg);
+}
+
+.llama-managed-expand:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+}
+
+.llama-managed-service {
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-left: 3px solid #4c8d81;
+    border-radius: 2px 10px 2px 2px;
+    background: rgba(255, 255, 255, 0.58);
+}
+
+.llama-managed-service-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 11px 12px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(111, 214, 195, 0.07);
+}
+
+.llama-managed-service-heading > div {
+    display: flex;
+    min-width: 0;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.llama-managed-service-controls {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+}
+
+.llama-managed-service-heading strong {
+    overflow: hidden;
+    color: var(--ink);
+    font-size: 0.8rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.llama-managed-service-heading > div:first-child span {
+    flex: 0 0 auto;
+    color: var(--muted);
+    font-size: 0.65rem;
+}
+
+.llama-managed-service-status {
+    padding: 3px 7px;
+    border-radius: 999px;
+    color: #315d54;
+    background: rgba(111, 214, 195, 0.14);
+    font-size: 0.61rem;
+    font-weight: 700;
+}
+
+.llama-managed-service--offline {
+    border-left-color: #b42318;
+}
+
+.llama-managed-service--offline .llama-managed-service-status {
+    color: #a32920;
+    background: rgba(180, 35, 24, 0.08);
+}
+
+.llama-managed-service-tools {
+    display: grid;
+}
+
+.llama-managed-tool-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 14px;
+    padding: 11px 12px;
+    border-top: 1px solid rgba(120, 130, 126, 0.14);
+}
+
+.llama-managed-tool-row:first-child {
+    border-top: 0;
+}
+
+.llama-managed-tool-row--removed {
+    background: rgba(180, 35, 24, 0.045);
+}
+
+.llama-managed-tool-row--removed .llama-managed-tool-identity strong,
+.llama-managed-tool-row--removed .llama-managed-tool-identity span {
+    color: #8f4a43;
+}
+
+.llama-managed-tool-identity {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+}
+
+.llama-managed-tool-identity strong {
+    overflow: hidden;
+    color: var(--ink);
+    font-size: 0.76rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.llama-managed-tool-identity span {
+    display: -webkit-box;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 0.66rem;
+    line-height: 1.35;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+.llama-managed-tool-switch {
+    min-height: 34px;
+    flex-basis: 42px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: rgba(120, 130, 126, 0.08);
+}
+
+.llama-managed-tool-switch:disabled {
+    cursor: not-allowed;
+    opacity: 0.48;
+}
+
+.llama-managed-defaults {
+    padding: 14px;
+    border-top: 1px solid var(--line);
+    background: rgba(111, 214, 195, 0.055);
+    animation: mcp-accordion-open 160ms ease-out;
+}
+
+.llama-managed-defaults[hidden] {
+    display: none;
+}
+
+.llama-managed-defaults-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.llama-managed-defaults-heading strong {
+    color: var(--ink);
+    font-size: 0.76rem;
+}
+
+.llama-managed-defaults-heading span {
+    padding: 3px 7px;
+    border-radius: 999px;
+    color: #315d54;
+    background: rgba(111, 214, 195, 0.14);
+    font-size: 0.62rem;
+}
+
+.llama-managed-defaults-hint {
+    margin-bottom: 10px;
+}
+
+.llama-managed-defaults-grid:empty {
+    margin-top: 0;
+}
+
+.mcp-tool-setup-loading {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.72rem;
+}
+
+@keyframes mcp-status-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes mcp-accordion-open {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+}
+
+@media (max-width: 720px) {
+    .mcp-tool-setup-grid,
+    .mcp-custom-server-grid,
+    .mcp-connection-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .mcp-tool-field:first-child {
+        grid-column: auto;
+    }
+
+    .mcp-empty-field--command,
+    .mcp-empty-field--args,
+    .mcp-connection-field--command,
+    .mcp-connection-field--args {
+        grid-column: auto;
+    }
+
+    .mcp-import-panel {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .llama-managed-tool-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
 }
 
 .chat-save-original-switch {
