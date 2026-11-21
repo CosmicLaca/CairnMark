@@ -10,7 +10,8 @@ Created by Primere Development · [GitHub repository](https://github.com/CosmicL
 > ### Special features:
 > llama.cpp focus · vLLM · All possible llama parameters · Context metering ·
 > Manual and automated compact · Frontier API providers · MinerU support ·
-> Multimodal chat · Chat import/export · Local benchmarks · Encrypted API keys
+> Multimodal chat · MCP tool connection setup · Chat import/export ·
+> Local benchmarks · Encrypted API keys
 
 ## What you can do
 
@@ -18,6 +19,7 @@ CairnMark brings local and hosted model providers into one browser interface.
 Use it to:
 
 - chat with enabled models, attach files, and save, import, or export conversations;
+- discover and configure llama.cpp-managed and Custom MCP tool connections;
 - shorten long chats with manual or automatic context compaction;
 - generate benchmark JSON from topics and custom instructions;
 - organize, filter, preview, and edit benchmark files; and
@@ -146,6 +148,82 @@ instead of exposing their Markdown source.
 
 The switch is off until a value has been saved. Its current value is saved when
 you select **Send** and restored on the next page load.
+
+### Configure MCP tool connections
+
+The tool button appears in the attachment row when the selected model reports
+tool-call capability in its saved `chat_template_caps` data. A green button
+means the model reports full tool and tool-call support. A blue button means it
+reports tool-call support without full tool support. Models that do not report
+tool-call support do not show the button.
+
+The button tooltip is derived from `instance/tools.db`; opening the Home page
+does not contact MCP services just to build it. When tools are globally enabled,
+the tooltip lists each enabled main service as `[source]::[service]`, for example
+`llama::searxng` and `custom::searxng`. This keeps same-named connections from
+different sources distinguishable. A transparent button with **All tools
+disabled** means no main service is enabled or the global state has never been
+saved. A transparent button with **Disabled** means the global switch was
+explicitly turned off. Transparency is only a status indicator: the button
+remains available.
+
+Right-click the tool button to open **Tool status**. Its **Enable/Disable tools**
+switch records the global enabled or paused state for the saved tool
+connections. The first-run value is off. **Save** stores the choice in
+`instance/tools.db`; **Cancel** leaves the saved state unchanged. This dialog
+reads only local data and does not run endpoint checks.
+
+Select the tool button normally to open **MCP settings**. Connections are shown
+in two groups:
+
+- **llama.cpp** services and tools are reported by the active llama.cpp
+  provider. The llama.cpp server must have been started with its MCP
+  configuration, such as `--mcp-servers-config`.
+- **Custom** services are manually configured or imported from OpenCode and are
+  declared in the editable `services/mcv.json` file.
+
+When `services/mcv.json` does not exist, CairnMark checks whether the OpenCode
+configuration contains an MCP section. If usable declarations are available,
+the first-run screen offers **Import from OpenCode**; import is never automatic.
+The same screen can create the first Custom connection from a name, command,
+argument array, and timeout. Private local connection declarations remain in
+`services/mcv.json`, not in the main application database.
+
+Each main service is an accordion. Its source badge, online/offline state, and
+number of discovered tools appear in the header. Expand it to see individual
+tool switches. A main llama.cpp service switch pauses or restores the service;
+it does not overwrite the saved choices of its individual tools. Previously
+enabled subtools return to their prior states when the main service is enabled
+again.
+
+Service-specific controls are loaded automatically from
+`static/tool-setup-[service_name].json` when that file exists. These editable
+schemas can define text, password, integer, list, and endpoint fields. A schema
+with a **Test access** definition adds a button that tests the configured
+endpoint, including unsaved values currently shown in the form. SearXNG,
+PostgreSQL, and ComfyUI currently provide endpoint schemas; PostgreSQL also
+supports optional username and password fields. Password values are not sent
+back to the browser after saving.
+
+Custom-service timeout fields default to 10,000 milliseconds and can be
+overridden per service. Services whose required process, provider, or endpoint
+is unavailable are marked **Offline**, and their switches are disabled. Offline
+or removed entries are not inserted or updated when settings are saved.
+
+Use the modal footer controls as follows:
+
+- **Save** stores all accessible service settings and switch states in
+  `instance/tools.db` with one action.
+- **Status check** repeats the same reachability checks used when the modal
+  opens, without rediscovering tool metadata or changing saved switch choices.
+- **Refresh** asks accessible Custom services for their current tool lists and
+  updates the cached definitions in `instance/tools.db`. Later modal opens use
+  that cache instead of rediscovering every Custom tool.
+- **Cancel** closes the modal without saving the edited settings.
+
+MCP connection discovery, configuration, status checks, and persistence are
+available in this preview. Sending these configured tools with chat requests
+and executing model-initiated tool calls are still under development.
 
 ### Use llama.cpp parameters and context sizes
 
@@ -322,7 +400,10 @@ A minimal benchmark looks like this:
 | `instance/cairnmark.db` | Provider settings, benchmark metadata, and interface preferences |
 | `instance/chathistory.db` | Current and saved chats and system prompts |
 | `instance/parameters.db` | Saved local-model generation defaults |
+| `instance/tools.db` | MCP service settings, switch states, global tool state, and cached Custom tool definitions |
 | `instance/preview/` | Chat attachment previews |
+| `services/mcv.json` | Editable private declarations for Custom MCP services |
+| `static/tool-setup-[service].json` | Optional editable service-specific MCP form and endpoint-test definitions |
 | `Exported-chat/` | Import-ready chat JSON exports |
 | `.secret/` | The key used to encrypt saved API credentials |
 
@@ -356,6 +437,19 @@ Correct the file, then reload the page.
 
 Install the FFmpeg executable and confirm that `ffmpeg` is available on
 `PATH` in the same terminal used to start CairnMark.
+
+### An MCP service is offline
+
+Open **MCP settings** and select **Status check** to repeat the connection
+checks. For a service with an endpoint schema, open its gear panel, verify the
+address and credentials, and use **Test access**. For a process-based Custom
+service, verify its `command`, JSON `args`, and timeout in `services/mcv.json`.
+For llama.cpp-managed tools, confirm that the llama.cpp server is online and was
+started with the intended MCP server configuration.
+
+Use **Refresh** only when a Custom service's available tool list may have
+changed. Refresh updates cached tool definitions; it is not a replacement for
+an endpoint **Status check**.
 
 ### Port 5000 is busy
 
