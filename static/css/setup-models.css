@@ -246,6 +246,20 @@ body.modal-open {
     cursor: default;
 }
 
+.provider-tab--utility {
+    min-width: auto;
+    grid-template-columns: auto;
+}
+
+.provider-tab[data-provider-filter] {
+    cursor: pointer;
+}
+
+.provider-tab[data-provider-filter]:focus-visible {
+    outline: 2px solid var(--lichen);
+    outline-offset: 2px;
+}
+
 .provider-tab:hover {
     transform: none;
 }
@@ -262,6 +276,10 @@ body.modal-open {
 .provider-card-list {
     display: grid;
     gap: 18px;
+}
+
+.provider-card[hidden] {
+    display: none;
 }
 
 .provider-card {

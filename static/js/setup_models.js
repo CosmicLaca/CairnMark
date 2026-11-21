@@ -1,6 +1,29 @@
 document.addEventListener('DOMContentLoaded', () => {
     const api = window.CairnmarkApi;
     const setupButtons = [...document.querySelectorAll('[data-provider-setup]')];
+    const providerFilterButtons = [
+        ...document.querySelectorAll('[data-provider-filter]'),
+    ];
+    const providerCards = [...document.querySelectorAll('[data-provider-card]')];
+
+    function setProviderFilter(selectedProvider) {
+        providerFilterButtons.forEach((button) => {
+            const isSelected = selectedProvider === 'all'
+                || button.dataset.providerFilter === selectedProvider;
+            button.classList.toggle('is-active', isSelected);
+            button.setAttribute('aria-pressed', String(isSelected));
+        });
+        providerCards.forEach((card) => {
+            card.hidden = selectedProvider !== 'all'
+                && card.dataset.providerCard !== selectedProvider;
+        });
+    }
+
+    providerFilterButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+            setProviderFilter(button.dataset.providerFilter);
+        });
+    });
 
     function modelId(model) {
         if (typeof model === 'string') {

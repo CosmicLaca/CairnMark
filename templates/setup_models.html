@@ -21,7 +21,7 @@
 {% endmacro %}
 
 {% macro provider_card(provider) %}
-<article class="provider-card{% if provider.single_model %} provider-card--single-model{% elif provider.name == 'openrouter' %} provider-card--online-lead{% endif %}">
+<article class="provider-card{% if provider.single_model %} provider-card--single-model{% elif provider.name == 'openrouter' %} provider-card--online-lead{% endif %}" data-provider-card="{{ provider.name }}">
   <div class="provider-identity">
     <span class="provider-card-index">{{ provider.index }} / {{ provider.kind }}</span>
     <div class="provider-glyph" aria-hidden="true"><span>{{ provider.glyph }}</span></div>
@@ -190,11 +190,17 @@
 <nav class="category-browser provider-browser" aria-label="Model providers">
   <span class="category-browser-label">Model providers</span>
   <div class="category-tabs">
+    <button class="category-tab provider-tab provider-tab--utility is-active" type="button" data-provider-filter="all" aria-pressed="true">
+      <strong>All</strong>
+    </button>
     {% for provider in providers %}
-      <div class="category-tab provider-tab is-active" data-provider-tab="{{ provider.name }}">
+      <button class="category-tab provider-tab is-active" type="button" data-provider-tab="{{ provider.name }}" data-provider-filter="{{ provider.name }}" aria-pressed="true">
         <span aria-hidden="true">{{ provider.index }}</span><strong>{{ provider.title }}</strong><small data-provider-tab-status>offline</small>
-      </div>
+      </button>
     {% endfor %}
+    <div class="category-tab provider-tab">
+      <span aria-hidden="true">+</span><strong>Add custom provider</strong><small>custom</small>
+    </div>
   </div>
 </nav>
 
