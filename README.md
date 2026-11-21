@@ -96,8 +96,15 @@ single-user application, not a network service.
 | --- | --- |
 | **llama.cpp** | Connect a local server and save one or more discovered models |
 | **vLLM** | Connect a local server; CairnMark reads its single loaded model live |
+| **Custom provider** | Connect an OpenAI-compatible server with a name, address, port, and optional API key |
 | **OpenRouter, OpenAI, Google Gemini, Anthropic, Mistral** | Save an API key and fetch the provider's catalog |
 | **DeepSeek, OpenCode, OpenCode-ZEN, Z.ai, Grok** | Save an API key and fetch the provider's catalog |
+
+The **Model providers** selector controls which setup cards appear below it.
+Choose one provider to show only its card, or choose **Show all providers** to
+restore the complete list. The selected view is saved immediately in the local
+database and restored the next time you open **Setup models**. **Add custom
+provider** opens its setup dialog and does not change the saved selector.
 
 To connect:
 
@@ -112,6 +119,25 @@ because its loaded model is read live.
 
 Hosted-provider keys are encrypted before they are stored and are never sent
 back to the browser after saving.
+
+### Add a custom model provider
+
+Use **Add custom provider** for a local application or server that exposes an
+OpenAI-compatible `/v1/models` catalog and chat-completions endpoint, such as a
+desktop model manager. Enter a unique provider name, server address, port, and
+an API key if the server requires one. Read the model catalog, select the model
+switches to retain, and save the configuration. The new provider then appears
+in the **Model providers** selector and in **Connect a model server** like the
+built-in providers. Provider settings, model switches, and provider state are
+stored in `instance/cairnmark.db`; optional API keys are encrypted at rest.
+
+Some custom servers report a model ID with a UUID prefix, for example
+`063b4868-8c66-4015-bd01-7a824323cfa1:BigBang-v1.Q4_K_S`. CairnMark shortens
+that model's visible label using the custom provider name, for example
+`CherryStudio:BigBang-v1.Q4_K_S`. The complete server-supplied ID remains in
+the database and is used for chat and benchmark requests, so changing the
+display does not change model routing. Custom model IDs without a UUID prefix
+are displayed unchanged.
 
 ## Chat on Home
 

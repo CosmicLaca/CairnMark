@@ -20,8 +20,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     providerFilterButtons.forEach((button) => {
-        button.addEventListener('click', () => {
-            setProviderFilter(button.dataset.providerFilter);
+        button.addEventListener('click', async () => {
+            const selectedProvider = button.dataset.providerFilter;
+            setProviderFilter(selectedProvider);
+            try {
+                await api.json('/setup_models/provider_selection', {
+                    method: 'POST',
+                    body: {provider: selectedProvider},
+                });
+            } catch (error) {
+                console.error('Could not save the provider selection:', error);
+                alert('The provider selection could not be saved.');
+            }
         });
     });
 
@@ -409,7 +419,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const models = [...modelListItems.querySelectorAll('li[data-model-name]')]
                 .map((item) => ({
                     id: item.dataset.modelId || item.dataset.modelName,
-                    name: item.dataset.modelId || item.dataset.modelName,
+                    name: item.dataset.modelName,
                     size_gb: item.dataset.modelSize
                         ? Number(item.dataset.modelSize)
                         : null,

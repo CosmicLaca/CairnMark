@@ -54,6 +54,10 @@ CATALOG_ERRORS = (
 )
 
 GIB_BYTES = 1024 ** 3
+UUID_MODEL_PREFIX = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-"
+    r"[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}:(.+)$"
+)
 
 
 def rounded_size_gb(size_bytes):
@@ -61,6 +65,15 @@ def rounded_size_gb(size_bytes):
     if not isinstance(size_bytes, (int, float)) or size_bytes <= 0:
         return None
     return int(size_bytes / GIB_BYTES + 0.5)
+
+
+def model_display_name(spec, model_id, reported_name=None):
+    """Return a friendly custom-model label without changing its request ID."""
+    match = UUID_MODEL_PREFIX.fullmatch(str(model_id))
+    if spec.name.startswith("custom:") and match:
+        provider_name = re.sub(r"\s+", "", spec.display_name)
+        return f"{provider_name}:{match.group(1)}"
+    return str(reported_name or model_id)
 
 
 SDK_ERRORS = (
@@ -354,11 +367,12 @@ class ProviderSdkClient:
     @classmethod
     def _model_entry(cls, spec, model):
         model_id = str(getattr(model, "id", None) or getattr(model, "name", ""))
-        display_name = str(
+        reported_name = str(
             getattr(model, "display_name", None)
             or getattr(model, "name", None)
             or model_id
         )
+        display_name = model_display_name(spec, model_id, reported_name)
         entry = {"id": model_id, "name": display_name}
         size_gb = rounded_size_gb(cls._model_size_bytes(spec, model))
         if size_gb is not None:
@@ -1107,6 +1121,24 @@ class ModelProviderService:
         """Return saved custom-provider identities for setup-page rendering."""
         return self.models.custom_providers()
 
+    def setup_selection(self):
+        """Return the saved setup-page provider filter when it remains valid."""
+        provider = self.models.setup_selection()
+        if provider == "all":
+            return provider
+        try:
+            self.spec(provider)
+        except ProviderValidationError:
+            return "all"
+        return provider
+
+    def save_setup_selection(self, provider):
+        """Validate and persist the setup-page provider filter."""
+        if provider != "all":
+            self.spec(provider)
+        self.models.setup_selection(provider)
+        return provider
+
     def saved_provider_overview(self, provider):
         """Return persisted connection and model counts for setup-page views."""
         self.spec(provider)
@@ -1135,7 +1167,10 @@ class ModelProviderService:
         except ProviderValidationError:
             spec = None
         display_name = spec.display_name if spec else provider
-        label = f"{display_name}::{model_name}"
+        displayed_model = (
+            model_display_name(spec, model_name) if spec else model_name
+        )
+        label = f"{display_name}::{displayed_model}"
         if spec is not None and not spec.local:
             label = f"{label} (API)"
         elif size_gb is not None:
@@ -1425,6 +1460,7 @@ class ModelProviderService:
             spec is not None
             and spec.local
             and configuration
+            and not configuration.get("custom")
             and any(model.get("size_gb") is None for model in models)
         ):
             merged = self._models_with_sizes(
@@ -1441,6 +1477,15 @@ class ModelProviderService:
             models = merged
         if provider == "llama.cpp":
             models = self._attach_saved_modalities(models)
+        elif configuration and configuration.get("custom"):
+            models = [
+                {
+                    **model,
+                    "id": model["name"],
+                    "name": model_display_name(spec, model["name"]),
+                }
+                for model in models
+            ]
         summary = self.models.summary(provider)
         return {
             "models": models,

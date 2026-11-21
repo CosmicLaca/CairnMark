@@ -20,8 +20,8 @@
   </ol>
 {% endmacro %}
 
-{% macro provider_card(provider) %}
-<article class="provider-card{% if provider.single_model %} provider-card--single-model{% elif provider.name == 'openrouter' %} provider-card--online-lead{% endif %}" data-provider-card="{{ provider.name }}">
+{% macro provider_card(provider, hidden=false) %}
+<article class="provider-card{% if provider.single_model %} provider-card--single-model{% elif provider.name == 'openrouter' %} provider-card--online-lead{% endif %}" data-provider-card="{{ provider.name }}"{% if hidden %} hidden{% endif %}>
   <div class="provider-identity">
     <span class="provider-card-index">{{ provider.index }} / {{ provider.kind }}</span>
     <div class="provider-glyph" aria-hidden="true"><span>{{ provider.glyph }}</span></div>
@@ -212,15 +212,15 @@
 <nav class="category-browser provider-browser" aria-label="Model providers">
   <span class="category-browser-label">Model providers</span>
   <div class="category-tabs">
-    <button class="category-tab provider-tab provider-tab--utility is-active" type="button" data-provider-filter="all" aria-pressed="true">
-      <strong>All</strong>
+    <button class="category-tab provider-tab provider-tab--utility{% if selected_provider == 'all' %} is-active{% endif %}" type="button" data-provider-filter="all" aria-pressed="{{ 'true' if selected_provider == 'all' else 'false' }}">
+      <strong>Show all providers</strong>
     </button>
     {% for provider in providers %}
-      <button class="category-tab provider-tab is-active" type="button" data-provider-tab="{{ provider.name }}" data-provider-filter="{{ provider.name }}" aria-pressed="true">
+      <button class="category-tab provider-tab{% if selected_provider == 'all' or selected_provider == provider.name %} is-active{% endif %}" type="button" data-provider-tab="{{ provider.name }}" data-provider-filter="{{ provider.name }}" aria-pressed="{{ 'true' if selected_provider == 'all' or selected_provider == provider.name else 'false' }}">
         <span aria-hidden="true">{{ provider.index }}</span><strong>{{ provider.title }}</strong><small data-provider-tab-status>offline</small>
       </button>
     {% endfor %}
-    <button class="category-tab provider-tab" type="button" data-provider-setup data-provider="{{ custom_provider.name }}" data-modal-target="{{ custom_provider.slug }}-setup-modal">
+    <button class="category-tab provider-tab provider-tab--add-custom is-active" type="button" data-provider-setup data-provider="{{ custom_provider.name }}" data-modal-target="{{ custom_provider.slug }}-setup-modal">
       <span aria-hidden="true">+</span><strong>Add custom provider</strong>
     </button>
   </div>
@@ -237,7 +237,7 @@
   </div>
   <div class="provider-card-list">
     {% for provider in providers %}
-      {{ provider_card(provider) }}
+      {{ provider_card(provider, selected_provider != 'all' and selected_provider != provider.name) }}
     {% endfor %}
   </div>
 </div>

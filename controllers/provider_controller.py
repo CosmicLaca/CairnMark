@@ -28,7 +28,20 @@ class ProviderController:
         return {
             "providers": provider_setup_cards(self.service),
             "custom_provider": custom_provider_modal(),
+            "selected_provider": self.service.setup_selection(),
         }
+
+    def save_selection(self):
+        """Persist the provider filter used by the setup workspace."""
+        data = request.get_json(silent=True) or {}
+        provider = str(data.get("provider", "")).strip()
+        if not provider or len(provider) > 100:
+            return jsonify({"error": "A valid provider is required"}), 400
+        try:
+            selected = self.service.save_setup_selection(provider)
+        except ProviderValidationError as error:
+            return jsonify({"error": str(error)}), 400
+        return jsonify({"provider": selected})
 
     def fetch_models(self):
         """Read a live catalog without changing saved configuration."""

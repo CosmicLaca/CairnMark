@@ -380,6 +380,12 @@ APPLICATION_ROUTES = (
         provider_controller.update_state,
         ("POST",),
     ),
+    (
+        "/setup_models/provider_selection",
+        "save_provider_selection",
+        provider_controller.save_selection,
+        ("POST",),
+    ),
 )
 
 

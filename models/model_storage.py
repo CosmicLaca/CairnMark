@@ -27,6 +27,12 @@ CREATE TABLE IF NOT EXISTS provider_configurations (
     api_key TEXT,
     is_enabled BOOLEAN NOT NULL DEFAULT 0,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS provider_setup_preferences (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    selected_provider TEXT NOT NULL DEFAULT 'all',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
 """
 
@@ -215,6 +221,30 @@ class ModelConfigurationRepository:
             (bool(enabled), provider),
         )
         return rowcount > 0
+
+    def setup_selection(self, provider=_UNSET):
+        """Read or persist the provider selected in the setup workspace."""
+        if provider is _UNSET:
+            row = self.store.fetch(
+                """
+                SELECT selected_provider
+                FROM provider_setup_preferences
+                WHERE id = 1
+                """,
+                one=True,
+            )
+            return row[0] if row else "all"
+
+        self.store.execute(
+            """
+            INSERT INTO provider_setup_preferences (id, selected_provider)
+            VALUES (1, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                selected_provider = excluded.selected_provider,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (provider,),
+        )
 
 
 MODEL_CONFIGURATIONS = ModelConfigurationRepository()
