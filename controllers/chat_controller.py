@@ -44,7 +44,7 @@ from services.chat_attachments import AttachmentProcessingError
 from services.chat_exports import ChatExportRepository
 from services.chat_previews import ChatPreviewStore
 from services.chat_requests import CHAT_PARAMETER_FIELDS, ChatRequestWorkflow
-from services.mcp_services import McpServiceRegistry
+from services.mcp_services import MCP_NAME_PATTERN, McpServiceRegistry
 from services.model_providers import (
     ModelProviderService,
     ProviderOfflineError,
@@ -733,12 +733,22 @@ class ChatController:
         timeout_ms = request.args.get("timeout_ms")
         if not name:
             return jsonify({"error": "MCP service name is required."}), 400
+        saved_settings = next(
+            (
+                record["settings"]
+                for record in self.mcp_settings.all()
+                if record["source"] == "external" and record["service"] == name
+            ),
+            {},
+        )
         try:
             return jsonify(
                 self._mcp_registry().check(
                     name,
-                    endpoint or None,
-                    timeout_ms,
+                    endpoint or saved_settings.get("endpoint"),
+                    timeout_ms or saved_settings.get("timeout_ms"),
+                    saved_settings.get("user", ""),
+                    saved_settings.get("password", ""),
                 )
             )
         except (OSError, json.JSONDecodeError):
@@ -746,6 +756,82 @@ class ChatController:
             return jsonify({"error": "Could not read MCP configuration."}), 500
         except ValueError as error:
             return jsonify({"error": str(error)}), 400
+
+    def mcp_endpoint_test(self):
+        """Test an endpoint declared by a service-specific setup schema."""
+        payload = request.get_json(silent=True) or {}
+        source = str(payload.get("source") or "").strip()
+        name = str(payload.get("service") or "").strip()
+        access_key = str(payload.get("access_key") or "").strip()
+        submitted = payload.get("settings", {})
+        if source not in {"external", "llama_service"}:
+            return jsonify({"error": "A valid MCP source is required."}), 400
+        if not MCP_NAME_PATTERN.fullmatch(name):
+            return jsonify({"error": "A valid MCP service name is required."}), 400
+        if not isinstance(submitted, dict):
+            return jsonify({"error": "MCP settings must be an object."}), 400
+
+        definitions, test_definition = self._mcp_endpoint_test_setup(name)
+        if definitions is None:
+            return jsonify({"error": "Endpoint test setup is unavailable."}), 400
+        if (
+            test_definition is None
+            or test_definition.get("access_key") != access_key
+            or not isinstance(definitions.get(access_key), dict)
+        ):
+            return jsonify({"error": "Endpoint test setup is invalid."}), 400
+
+        saved = next(
+            (
+                record["settings"]
+                for record in self.mcp_settings.all()
+                if record["source"] == source and record["service"] == name
+            ),
+            {},
+        )
+        settings = dict(saved)
+        settings.update(
+            {
+                key: value
+                for key, value in submitted.items()
+                if key != "password" or value not in (None, "")
+            }
+        )
+        endpoint_definition = definitions[access_key]
+        endpoint = settings.get(access_key)
+        if endpoint in (None, ""):
+            endpoint = endpoint_definition.get("default", "")
+        try:
+            result = self._mcp_registry().test_endpoint(
+                name,
+                endpoint,
+                settings.get("timeout_ms"),
+                settings.get("user", ""),
+                settings.get("password", ""),
+                managed=source == "llama_service",
+            )
+            return jsonify(result)
+        except (OSError, json.JSONDecodeError):
+            current_app.logger.exception("Could not test MCP endpoint")
+            return jsonify({"error": "Could not test MCP endpoint."}), 500
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
+
+    @staticmethod
+    def _mcp_endpoint_test_setup(name):
+        setup_path = Path(current_app.static_folder) / f"tool-setup-{name}.json"
+        try:
+            with setup_path.open("r", encoding="utf-8-sig") as setup_file:
+                definitions = json.load(setup_file)
+        except (OSError, json.JSONDecodeError):
+            return None, None
+        test_definition = definitions.get("test")
+        if (
+            not isinstance(test_definition, dict)
+            or str(test_definition.get("type") or "").lower() != "button"
+        ):
+            test_definition = None
+        return definitions, test_definition
 
     def llama_managed_tools(self):
         """Return live MCP discovery state from the configured llama.cpp server."""
@@ -813,9 +899,16 @@ class ChatController:
 
     def mcp_settings_get(self):
         """Return saved MCP preferences keyed per service and tool."""
+        records = self.mcp_settings.all()
+        for record in records:
+            settings = dict(record["settings"])
+            password = settings.pop("password", "")
+            record["settings"] = settings
+            if password:
+                record["password_saved"] = True
         return jsonify(
             {
-                "records": self.mcp_settings.all(),
+                "records": records,
                 "custom_tools": self.mcp_settings.cached_tools(),
             }
         )
@@ -843,6 +936,8 @@ class ChatController:
                     name,
                     settings.get("endpoint"),
                     settings.get("timeout_ms"),
+                    settings.get("user", ""),
+                    settings.get("password", ""),
                 )
             except (OSError, ValueError, json.JSONDecodeError):
                 current_app.logger.exception(
@@ -899,6 +994,11 @@ class ChatController:
         if not isinstance(records, list):
             return jsonify({"error": "MCP records must be a list."}), 400
 
+        saved_passwords = {
+            (record["source"], record["service"]): record["settings"]["password"]
+            for record in self.mcp_settings.all()
+            if record["settings"].get("password")
+        }
         normalized = []
         for record in records:
             if not isinstance(record, dict):
@@ -921,6 +1021,10 @@ class ChatController:
                 return jsonify({"error": "A managed MCP tool name is required."}), 400
             if not isinstance(settings, dict):
                 return jsonify({"error": "MCP settings must be an object."}), 400
+            settings = dict(settings)
+            saved_password = saved_passwords.get((source, service_name))
+            if settings.get("password") in (None, "") and saved_password:
+                settings["password"] = saved_password
             normalized.append(
                 {
                     "source": source,
@@ -956,6 +1060,8 @@ class ChatController:
                             name,
                             service_settings.get("endpoint"),
                             service_settings.get("timeout_ms"),
+                            service_settings.get("user", ""),
+                            service_settings.get("password", ""),
                         ).get("online")
                     )
                 except (OSError, ValueError, json.JSONDecodeError):
@@ -998,15 +1104,26 @@ class ChatController:
             managed_status = {}
             for service_name in live_services:
                 settings = service_settings.get(service_name, {})
-                endpoint = settings.get("endpoint", "")
-                if service_name == "searxng" and not endpoint:
-                    endpoint = "http://127.0.0.1:8888"
+                definitions, test_definition = self._mcp_endpoint_test_setup(
+                    service_name
+                )
+                if test_definition is None:
+                    managed_status[service_name] = True
+                    continue
+                access_key = str(test_definition.get("access_key") or "")
+                access_definition = definitions.get(access_key, {})
+                endpoint = settings.get(access_key)
+                if endpoint in (None, ""):
+                    endpoint = access_definition.get("default", "")
                 try:
                     managed_status[service_name] = bool(
-                        registry.check_managed_service(
+                        registry.test_endpoint(
                             service_name,
                             endpoint,
                             settings.get("timeout_ms", 3000),
+                            settings.get("user", ""),
+                            settings.get("password", ""),
+                            managed=True,
                         ).get("online")
                     )
                 except (OSError, ValueError):

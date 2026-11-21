@@ -1,6 +1,7 @@
 """Manage private MCP server declarations and OpenCode imports."""
 
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -276,6 +277,127 @@ class McpServiceRegistry:
             return False
 
     @staticmethod
+    def _postgres_test_endpoint(endpoint, details, user, password):
+        """Build a test URI without changing the saved MCP declaration."""
+        existing_endpoint = ""
+        for argument in reversed(details.get("args", [])):
+            candidate = str(argument).strip()
+            if candidate.startswith(("postgres://", "postgresql://")):
+                existing_endpoint = candidate
+                break
+        parsed = urllib.parse.urlsplit(endpoint)
+        existing = urllib.parse.urlsplit(existing_endpoint)
+        username = str(user or parsed.username or existing.username or "")
+        secret = str(password or parsed.password or existing.password or "")
+        host = parsed.hostname or existing.hostname or ""
+        port = parsed.port or existing.port
+        userinfo = ""
+        if username:
+            userinfo = urllib.parse.quote(username, safe="")
+            if secret:
+                userinfo += f":{urllib.parse.quote(secret, safe='')}"
+            userinfo += "@"
+        netloc = f"{userinfo}{host}"
+        if port:
+            netloc += f":{port}"
+        path = parsed.path if parsed.path not in {"", "/"} else existing.path
+        query = parsed.query or existing.query
+        return urllib.parse.urlunsplit(
+            (parsed.scheme, netloc, path, query, "")
+        )
+
+    @classmethod
+    def _details_with_postgres_endpoint(
+        cls,
+        details,
+        endpoint,
+        user="",
+        password="",
+    ):
+        test_details = dict(details)
+        connection_endpoint = cls._postgres_test_endpoint(
+            endpoint,
+            details,
+            user,
+            password,
+        )
+        args = []
+        endpoint_replaced = False
+        for argument in details.get("args", []):
+            value = str(argument)
+            if value.startswith(("postgres://", "postgresql://")):
+                args.append(connection_endpoint)
+                endpoint_replaced = True
+            else:
+                args.append(value)
+        if not endpoint_replaced:
+            args.append(connection_endpoint)
+        test_details["args"] = args
+        return test_details
+
+    def test_endpoint(
+        self,
+        name,
+        endpoint,
+        timeout_ms=None,
+        user="",
+        password="",
+        managed=False,
+    ):
+        """Test a schema-declared MCP endpoint without service-name rules."""
+        name = str(name or "").strip()
+        endpoint = str(endpoint or "").strip().rstrip("/")
+        details = {}
+        if not managed:
+            services = self.services()
+            if name not in services:
+                raise ValueError("Unknown MCP service.")
+            details = services[name]
+        parsed_timeout = self._timeout_ms(details, timeout_ms)
+        parsed = urllib.parse.urlsplit(endpoint)
+
+        if parsed.scheme in {"http", "https"} and parsed.netloc:
+            headers = {"Accept": "application/json, text/html;q=0.9, */*;q=0.8"}
+            if user:
+                credentials = base64.b64encode(
+                    f"{user}:{password}".encode("utf-8")
+                ).decode("ascii")
+                headers["Authorization"] = f"Basic {credentials}"
+            endpoint_request = urllib.request.Request(endpoint, headers=headers)
+            try:
+                with self.opener(
+                    endpoint_request,
+                    timeout=parsed_timeout / 1000,
+                ) as response:
+                    status_code = int(getattr(response, "status", 0) or 0)
+            except (OSError, TimeoutError, urllib.error.URLError):
+                return {"name": name, "online": False, "status_code": None}
+            return {
+                "name": name,
+                "online": 200 <= status_code < 400,
+                "status_code": status_code,
+            }
+
+        if parsed.scheme in {"postgres", "postgresql"} and parsed.hostname:
+            if managed:
+                online = self._check_postgres_endpoint(endpoint, parsed_timeout)
+                return {"name": name, "online": online, "status_code": None}
+            test_details = self._details_with_postgres_endpoint(
+                details,
+                endpoint,
+                user,
+                password,
+            )
+            tools_count = self._check_stdio(test_details, parsed_timeout)
+            return {
+                "name": name,
+                "online": tools_count > 0,
+                "status_code": None,
+            }
+
+        raise ValueError("A valid HTTP or PostgreSQL endpoint is required.")
+
+    @staticmethod
     async def _discover_stdio_async(details, timeout_ms):
         command = str(details.get("command") or "").strip()
         args = details.get("args", [])
@@ -323,7 +445,14 @@ class McpServiceRegistry:
             LOGGER.warning("MCP stdio tool discovery failed: %s", error)
             return []
 
-    def check(self, name, endpoint=None, timeout_ms=None):
+    def check(
+        self,
+        name,
+        endpoint=None,
+        timeout_ms=None,
+        user="",
+        password="",
+    ):
         """Check one registered service and any required local endpoint."""
         services = self.services()
         if name not in services:
@@ -342,11 +471,15 @@ class McpServiceRegistry:
             )
             if not endpoint_online:
                 return {"name": name, "online": False, "status_code": status_code}
-        elif name == "postgres" and not self._check_postgres_endpoint(
-            configured_endpoint,
-            timeout_ms,
-        ):
-            return {"name": name, "online": False, "status_code": None}
+        elif name == "postgres":
+            if not self._check_postgres_endpoint(configured_endpoint, timeout_ms):
+                return {"name": name, "online": False, "status_code": None}
+            details = self._details_with_postgres_endpoint(
+                details,
+                configured_endpoint,
+                user,
+                password,
+            )
 
         tools_count = self._check_stdio(details, timeout_ms)
         return {
@@ -356,7 +489,14 @@ class McpServiceRegistry:
             "tools_count": tools_count,
         }
 
-    def discover_tools(self, name, endpoint=None, timeout_ms=None):
+    def discover_tools(
+        self,
+        name,
+        endpoint=None,
+        timeout_ms=None,
+        user="",
+        password="",
+    ):
         """Read full tool definitions from one accessible Custom MCP service."""
         services = self.services()
         if name not in services:
@@ -380,16 +520,20 @@ class McpServiceRegistry:
                     "status_code": status_code,
                     "tools": [],
                 }
-        elif name == "postgres" and not self._check_postgres_endpoint(
-            configured_endpoint,
-            timeout_ms,
-        ):
-            return {
-                "name": name,
-                "online": False,
-                "status_code": None,
-                "tools": [],
-            }
+        elif name == "postgres":
+            if not self._check_postgres_endpoint(configured_endpoint, timeout_ms):
+                return {
+                    "name": name,
+                    "online": False,
+                    "status_code": None,
+                    "tools": [],
+                }
+            details = self._details_with_postgres_endpoint(
+                details,
+                configured_endpoint,
+                user,
+                password,
+            )
 
         tools = self._discover_stdio(details, timeout_ms)
         return {

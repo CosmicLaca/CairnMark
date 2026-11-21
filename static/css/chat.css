@@ -1540,6 +1540,36 @@
     min-height: 40px;
 }
 
+.mcp-tool-field--button {
+    display: flex;
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+}
+
+.mcp-endpoint-test-button {
+    min-width: 118px;
+}
+
+.mcp-endpoint-test-button[aria-busy="true"] {
+    cursor: wait;
+}
+
+.mcp-endpoint-test-result {
+    color: var(--muted);
+    font-size: 0.68rem;
+    font-weight: 700;
+}
+
+.mcp-endpoint-test-result--online {
+    color: #07833f;
+}
+
+.mcp-endpoint-test-result--offline {
+    color: #b42318;
+}
+
 .mcp-tool-select-shell {
     width: 100%;
 }
@@ -2200,16 +2230,20 @@
     align-items: center;
 }
 
-.mcp-refresh-button[aria-busy="true"] {
+.mcp-refresh-button[aria-busy="true"],
+.mcp-status-check-button[aria-busy="true"] {
     cursor: wait;
 }
 
 .mcp-refresh-spinner[hidden],
-.mcp-refresh-idle-icon[hidden] {
+.mcp-refresh-idle-icon[hidden],
+.mcp-status-check-spinner[hidden],
+.mcp-status-check-idle-icon[hidden] {
     display: none;
 }
 
-.mcp-refresh-spinner:not([hidden]) {
+.mcp-refresh-spinner:not([hidden]),
+.mcp-status-check-spinner:not([hidden]) {
     display: inline-flex;
     animation: chat-spin 0.75s linear infinite;
 }

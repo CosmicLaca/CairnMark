@@ -82,6 +82,7 @@
     const mcpServiceList = document.querySelector("[data-mcp-service-list]");
     const mcpSettingsSaveBtn = document.querySelector("[data-mcp-settings-save]");
     const mcpToolsRefreshBtn = document.querySelector("[data-mcp-tools-refresh]");
+    const mcpStatusCheckBtn = document.querySelector("[data-mcp-status-check]");
     const mcpSettingsCloseBtns = document.querySelectorAll("[data-mcp-settings-close]");
     const attachmentsEl = document.querySelector("[data-chat-attachments]");
     const audioAttachmentsEl = document.querySelector("[data-chat-audio-attachments]");
@@ -133,6 +134,8 @@
         || "/chat/mcp_settings/save";
     const mcpToolsRefreshUrl = window.CairnmarkMcpToolsRefreshUrl
         || "/chat/mcp_tools/refresh";
+    const mcpEndpointTestUrl = window.CairnmarkMcpEndpointTestUrl
+        || "/chat/mcp_endpoint_test";
     const llamaManagedToolsUrl = window.CairnmarkLlamaManagedToolsUrl
         || "/chat/llama_managed_tools";
     const llamaManagedMcpStatusUrl = window.CairnmarkLlamaManagedMcpStatusUrl
@@ -141,6 +144,7 @@
         || "/static/tool-setup-__SERVICE__.json";
     const savedMcpStates = new Map();
     const savedMcpToolSettings = new Map();
+    const savedMcpPasswords = new Set();
     const savedCustomToolStates = new Map();
     const cachedCustomTools = new Map();
     const mcpSetupDefinitions = new Map();
@@ -1765,6 +1769,7 @@
     const hydrateMcpSettings = (payload) => {
         savedMcpStates.clear();
         savedMcpToolSettings.clear();
+        savedMcpPasswords.clear();
         savedCustomToolStates.clear();
         cachedCustomTools.clear();
         savedLlamaToolStates.clear();
@@ -1778,6 +1783,9 @@
             const settings = record.settings && typeof record.settings === "object"
                 ? record.settings
                 : {};
+            if (record.password_saved === true) {
+                savedMcpPasswords.add(`${record.source}::${record.service}`);
+            }
             if (record.source === "external") {
                 savedMcpStates.set(record.service, record.enabled === true);
                 savedMcpToolSettings.set(record.service, settings);
@@ -1982,10 +1990,97 @@
         return row;
     };
 
-    const createMcpToolField = (name, key, definition, savedValues) => {
+    const testMcpSetupAccess = async (
+        name,
+        source,
+        accessKey,
+        button,
+        result
+    ) => {
+        const accordion = button.closest(
+            "[data-mcp-tool-setup], [data-llama-managed-defaults]"
+        );
+        if (!accordion || !accessKey) return;
+        const initialSettings = source === "llama_service"
+            ? (savedLlamaServiceSettings.get(name) || {})
+            : (savedMcpToolSettings.get(name) || {});
+        let settings;
+        try {
+            settings = readMcpAccordionSettings(accordion, initialSettings);
+        } catch (error) {
+            result.textContent = String(error.message || error);
+            result.className = "mcp-endpoint-test-result mcp-endpoint-test-result--offline";
+            return;
+        }
+        button.disabled = true;
+        button.setAttribute("aria-busy", "true");
+        result.textContent = "Testing…";
+        result.className = "mcp-endpoint-test-result";
+        try {
+            const response = await api.json(mcpEndpointTestUrl, {
+                method: "POST",
+                body: {
+                    source,
+                    service: name,
+                    access_key: accessKey,
+                    settings,
+                },
+            });
+            const online = Boolean(response && response.online);
+            result.textContent = online ? "Online" : "Offline";
+            result.className = `mcp-endpoint-test-result mcp-endpoint-test-result--${
+                online ? "online" : "offline"
+            }`;
+            if (source === "llama_service") {
+                const service = accordion.closest("[data-llama-managed-service]");
+                const status = service?.querySelector(
+                    "[data-llama-managed-service-status]"
+                );
+                if (status) status.textContent = online ? "Online" : "Offline";
+                if (service) applyLlamaServiceOnlineState(service, online);
+            }
+        } catch (error) {
+            result.textContent = "Test failed";
+            result.className = "mcp-endpoint-test-result mcp-endpoint-test-result--offline";
+        } finally {
+            button.disabled = false;
+            button.setAttribute("aria-busy", "false");
+        }
+    };
+
+    const createMcpToolField = (
+        name,
+        key,
+        definition,
+        savedValues,
+        source = "external"
+    ) => {
         const field = document.createElement("div");
         field.className = "field-group mcp-tool-field";
         const inputId = `mcp-tool-${name}-${key}`;
+        if (String(definition.type || "").toLowerCase() === "button") {
+            field.classList.add("mcp-tool-field--button");
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "modal-cancel-button mcp-endpoint-test-button";
+            button.textContent = definition.name || "Test access";
+            button.setAttribute("data-mcp-endpoint-test", key);
+            const result = document.createElement("span");
+            result.className = "mcp-endpoint-test-result";
+            result.setAttribute("role", "status");
+            result.setAttribute("aria-live", "polite");
+            button.addEventListener("click", () => {
+                testMcpSetupAccess(
+                    name,
+                    source,
+                    String(definition.access_key || ""),
+                    button,
+                    result
+                );
+            });
+            field.append(button, result);
+            return field;
+        }
         const label = document.createElement("label");
         label.setAttribute("for", inputId);
         label.textContent = definition.name || key;
@@ -2000,7 +2095,9 @@
             });
         } else {
             input = document.createElement("input");
-            input.type = definition.type === "integer" ? "number" : "text";
+            input.type = definition.type === "integer"
+                ? "number"
+                : (definition.type === "password" ? "password" : "text");
             if (definition.type === "integer") input.step = "1";
         }
         input.id = inputId;
@@ -2013,6 +2110,11 @@
         if (initialValue !== undefined && initialValue !== null) {
             input.value = String(initialValue);
         }
+        if (
+            definition.type === "password"
+            && savedMcpPasswords.has(`${source}::${name}`)
+        ) input.placeholder = "Saved password";
+        input.required = definition.required === true;
         if (input instanceof HTMLSelectElement) {
             const selectShell = document.createElement("div");
             selectShell.className = "select-shell mcp-tool-select-shell";
@@ -2118,7 +2220,8 @@
                 name,
                 key,
                 definition,
-                savedValues
+                savedValues,
+                "external"
             ));
         });
 
@@ -2196,6 +2299,24 @@
         if (label) label.textContent = busy ? "Refreshing…" : "Refresh";
         mcpToolsRefreshBtn.setAttribute("aria-busy", busy ? "true" : "false");
         mcpToolsRefreshBtn.disabled = busy;
+    };
+
+    const setMcpStatusCheckBusy = (busy) => {
+        if (!mcpStatusCheckBtn) return;
+        const idleIcon = mcpStatusCheckBtn.querySelector(
+            ".mcp-status-check-idle-icon"
+        );
+        const spinner = mcpStatusCheckBtn.querySelector(
+            ".mcp-status-check-spinner"
+        );
+        const label = mcpStatusCheckBtn.querySelector(
+            "[data-mcp-status-check-label]"
+        );
+        if (idleIcon) idleIcon.hidden = busy;
+        if (spinner) spinner.hidden = !busy;
+        if (label) label.textContent = busy ? "Checking…" : "Status check";
+        mcpStatusCheckBtn.setAttribute("aria-busy", busy ? "true" : "false");
+        mcpStatusCheckBtn.disabled = busy;
     };
 
     const checkMcpService = async (name, row, requestSequence) => {
@@ -2345,13 +2466,73 @@
         ).trim();
     };
 
+    const mcpEndpointTestDefinition = (definitions) => {
+        const testDefinition = definitions && definitions.test;
+        if (
+            !testDefinition
+            || typeof testDefinition !== "object"
+            || String(testDefinition.type || "").toLowerCase() !== "button"
+        ) return null;
+        const accessKey = String(testDefinition.access_key || "").trim();
+        return accessKey && definitions[accessKey] ? testDefinition : null;
+    };
+
     const checkLlamaManagedService = async (serviceName, definitions) => {
-        const query = new URLSearchParams({
-            name: serviceName,
-            endpoint: llamaServiceEndpoint(serviceName, definitions),
-            timeout_ms: "3000",
+        const testDefinition = mcpEndpointTestDefinition(definitions);
+        if (!testDefinition) return {online: true, status_code: null};
+        const settings = {
+            ...(savedLlamaServiceSettings.get(serviceName) || {}),
+            [testDefinition.access_key]: llamaServiceEndpoint(
+                serviceName,
+                definitions
+            ),
+            timeout_ms: 3000,
+        };
+        return api.json(mcpEndpointTestUrl, {
+            method: "POST",
+            body: {
+                source: "llama_service",
+                service: serviceName,
+                access_key: testDefinition.access_key,
+                settings,
+            },
         });
-        return api.request(`${llamaManagedMcpStatusUrl}?${query.toString()}`);
+    };
+
+    const applyLlamaServiceOnlineState = (service, online) => {
+        service.classList.toggle("llama-managed-service--offline", !online);
+        service.setAttribute("data-llama-service-online", online ? "true" : "false");
+        const serviceSwitch = service.querySelector(
+            "[data-llama-managed-service-switch]"
+        );
+        const serviceEnabled = Boolean(savedLlamaServiceStates.get(
+            service.getAttribute("data-llama-managed-service")
+        ));
+        if (serviceSwitch) {
+            serviceSwitch.disabled = !online;
+            setMcpSwitch(serviceSwitch, online && serviceEnabled);
+        }
+        service.querySelectorAll("[data-llama-managed-tool-switch]").forEach(
+            (toolSwitch) => {
+                const row = toolSwitch.closest(".llama-managed-tool-row");
+                const removed = row?.classList.contains(
+                    "llama-managed-tool-row--removed"
+                );
+                const available = online && !removed;
+                toolSwitch.setAttribute(
+                    "data-llama-tool-available",
+                    available ? "true" : "false"
+                );
+                toolSwitch.disabled = !available || !serviceEnabled;
+                const toolName = toolSwitch.getAttribute(
+                    "data-llama-managed-tool-switch"
+                );
+                setMcpSwitch(
+                    toolSwitch,
+                    available && Boolean(savedLlamaToolStates.get(toolName))
+                );
+            }
+        );
     };
 
     const updateLlamaServiceAvailability = async (
@@ -2363,7 +2544,6 @@
         providerName
     ) => {
         const status = service.querySelector("[data-llama-managed-service-status]");
-        const serviceSwitch = service.querySelector("[data-llama-managed-service-switch]");
         let online = false;
         if (!providerOnline) {
             status.textContent = `${providerName} offline`;
@@ -2374,38 +2554,12 @@
             try {
                 const result = await checkLlamaManagedService(serviceName, definitions);
                 online = Boolean(result && result.online);
-                status.textContent = online ? "Online" : "API offline";
+                status.textContent = online ? "Online" : "Offline";
             } catch (error) {
-                status.textContent = "API check failed";
+                status.textContent = "Offline";
             }
         }
-        service.classList.toggle("llama-managed-service--offline", !online);
-        service.setAttribute("data-llama-service-online", online ? "true" : "false");
-        const serviceEnabled = Boolean(savedLlamaServiceStates.get(serviceName));
-        if (serviceSwitch) {
-            serviceSwitch.disabled = !online;
-            setMcpSwitch(
-                serviceSwitch,
-                online && serviceEnabled
-            );
-        }
-        service.querySelectorAll("[data-llama-managed-tool-switch]").forEach(
-            (toolSwitch) => {
-                const row = toolSwitch.closest(".llama-managed-tool-row");
-                const removed = row?.classList.contains("llama-managed-tool-row--removed");
-                const available = online && !removed;
-                toolSwitch.setAttribute(
-                    "data-llama-tool-available",
-                    available ? "true" : "false"
-                );
-                toolSwitch.disabled = !available || !serviceEnabled;
-                const toolName = toolSwitch.getAttribute("data-llama-managed-tool-switch");
-                setMcpSwitch(
-                    toolSwitch,
-                    available && Boolean(savedLlamaToolStates.get(toolName))
-                );
-            }
-        );
+        applyLlamaServiceOnlineState(service, online);
         return online;
     };
 
@@ -2443,7 +2597,8 @@
                 serviceName,
                 key,
                 fieldDefinition,
-                savedValues
+                savedValues,
+                "llama_service"
             ));
         });
 
@@ -2797,7 +2952,9 @@
         mcpServiceList.replaceChildren();
         setMcpSaveBusy(false);
         setMcpRefreshBusy(false);
+        setMcpStatusCheckBusy(false);
         if (mcpSettingsSaveBtn) mcpSettingsSaveBtn.disabled = true;
+        if (mcpStatusCheckBtn) mcpStatusCheckBtn.disabled = true;
         const loading = document.createElement("p");
         loading.className = "mcp-settings-loading";
         loading.textContent = "Reading MCP services…";
@@ -2825,6 +2982,12 @@
                 renderMcpFirstRun(config || {}, requestSequence);
                 await managedTools;
                 if (mcpSettingsSaveBtn) mcpSettingsSaveBtn.disabled = false;
+                if (
+                    requestSequence === mcpSettingsSequence
+                    && mcpStatusCheckBtn
+                ) {
+                    mcpStatusCheckBtn.disabled = false;
+                }
                 return;
             }
             const checks = names.map((name) => {
@@ -2838,6 +3001,12 @@
                 && mcpSettingsSaveBtn
             ) {
                 mcpSettingsSaveBtn.disabled = false;
+            }
+            if (
+                requestSequence === mcpSettingsSequence
+                && mcpStatusCheckBtn
+            ) {
+                mcpStatusCheckBtn.disabled = false;
             }
         } catch (error) {
             if (requestSequence !== mcpSettingsSequence) return;
@@ -2969,7 +3138,13 @@
                 const serviceName = service.getAttribute("data-llama-managed-service");
                 const providerOnline = service.getAttribute("data-llama-provider-online") === "true";
                 const servicePresent = service.getAttribute("data-llama-service-present") === "true";
-                if (!serviceName || !providerOnline || !servicePresent) return;
+                const serviceOnline = service.getAttribute("data-llama-service-online") === "true";
+                if (
+                    !serviceName
+                    || !providerOnline
+                    || !servicePresent
+                    || !serviceOnline
+                ) return;
                 const settings = readMcpAccordionSettings(
                     service.querySelector("[data-llama-managed-defaults]"),
                     savedLlamaServiceSettings.get(serviceName) || {}
@@ -3037,6 +3212,73 @@
         } catch (error) {
             window.alert(`MCP tools could not be refreshed: ${error}`);
             setMcpRefreshBusy(false);
+        }
+    };
+
+    const syncMcpStatusCheckSettings = () => {
+        mcpServiceList?.querySelectorAll("[data-mcp-service-row]").forEach((row) => {
+            const name = row.getAttribute("data-mcp-service-row");
+            if (!name) return;
+            const settings = readMcpAccordionSettings(
+                row.querySelector("[data-mcp-tool-setup]"),
+                savedMcpToolSettings.get(name) || {}
+            );
+            savedMcpToolSettings.set(name, settings);
+        });
+        mcpServiceList?.querySelectorAll("[data-llama-managed-service]").forEach(
+            (service) => {
+                const name = service.getAttribute("data-llama-managed-service");
+                if (!name) return;
+                const settings = readMcpAccordionSettings(
+                    service.querySelector("[data-llama-managed-defaults]"),
+                    savedLlamaServiceSettings.get(name) || {}
+                );
+                savedLlamaServiceSettings.set(name, settings);
+            }
+        );
+    };
+
+    const checkAllMcpStatuses = async () => {
+        if (!mcpStatusCheckBtn || !mcpServiceList) return;
+        const requestSequence = ++mcpSettingsSequence;
+        setMcpStatusCheckBusy(true);
+        try {
+            syncMcpStatusCheckSettings();
+            const customChecks = Array.from(
+                mcpServiceList.querySelectorAll("[data-mcp-service-row]")
+            ).map((row) => {
+                const name = row.getAttribute("data-mcp-service-row");
+                if (!name) return Promise.resolve();
+                row.classList.add("mcp-service-row--checking");
+                row.querySelector(".mcp-service-spinner")?.removeAttribute("hidden");
+                const status = row.querySelector("[data-mcp-service-status]");
+                if (status) status.textContent = "Checking…";
+                return checkMcpService(name, row, requestSequence);
+            });
+            const managedChecks = Array.from(
+                mcpServiceList.querySelectorAll("[data-llama-managed-service]")
+            ).map(async (service) => {
+                const serviceName = service.getAttribute(
+                    "data-llama-managed-service"
+                );
+                if (!serviceName) return;
+                const definitions = await loadMcpSetupDefinitions(serviceName);
+                await updateLlamaServiceAvailability(
+                    serviceName,
+                    service,
+                    definitions,
+                    service.getAttribute("data-llama-provider-online") === "true",
+                    service.getAttribute("data-llama-service-present") === "true",
+                    service.getAttribute("data-mcp-provider") || "provider"
+                );
+            });
+            await Promise.all([...customChecks, ...managedChecks]);
+        } catch (error) {
+            window.alert(`MCP status check failed: ${error}`);
+        } finally {
+            if (requestSequence === mcpSettingsSequence) {
+                setMcpStatusCheckBusy(false);
+            }
         }
     };
 
@@ -4100,6 +4342,7 @@
     });
     mcpSettingsSaveBtn?.addEventListener("click", saveMcpSettings);
     mcpToolsRefreshBtn?.addEventListener("click", refreshMcpTools);
+    mcpStatusCheckBtn?.addEventListener("click", checkAllMcpStatuses);
     mcpSettingsModal?.addEventListener("click", (event) => {
         if (event.target === mcpSettingsModal) closeMcpSettings();
     });

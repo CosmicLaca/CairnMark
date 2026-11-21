@@ -309,6 +309,12 @@ APPLICATION_ROUTES = (
         ("GET",),
     ),
     (
+        "/chat/mcp_endpoint_test",
+        "chat_mcp_endpoint_test",
+        chat_controller.mcp_endpoint_test,
+        ("POST",),
+    ),
+    (
         "/chat/llama_managed_tools",
         "chat_llama_managed_tools",
         chat_controller.llama_managed_tools,
