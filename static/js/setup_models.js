@@ -65,6 +65,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const providerLabel = modal.dataset.providerLabel;
         const singleModel = modal.dataset.singleModel === 'true';
         const apiProvider = modal.dataset.apiProvider === 'true';
+        const customProvider = modal.dataset.customProvider === 'true';
+        const newCustomProvider = modal.dataset.newCustomProvider === 'true';
         const closeButton = modal.querySelector('.close-modal-button');
         const cancelButton = modal.querySelector('.modal-cancel-button');
         const saveButton = modal.querySelector('.modal-save-button');
@@ -76,16 +78,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const modelSearchSummary = modal.querySelector('.model-search-summary');
         const selectAllButton = modal.querySelector('.select-all-button');
         const selectAllText = modal.querySelector('.select-all-text');
+        const providerNameInput = modal.querySelector('.provider-name');
         const ipInput = modal.querySelector('.provider-ip');
         const portInput = modal.querySelector('.provider-port');
         const apiKeyInput = modal.querySelector('.provider-api-key');
         const providerCount = setupButton.querySelector('[data-provider-count]');
         const providerModelName = setupButton.querySelector('[data-provider-model-name]');
-        const providerProtocol = setupButton.closest('.provider-card')
-            .querySelector('[data-provider-protocol]');
+        const providerCard = setupButton.closest('.provider-card');
+        const providerProtocol = providerCard?.querySelector('[data-provider-protocol]');
         const providerAction = setupButton.closest('.provider-action-bar');
-        const providerToggle = providerAction.querySelector('[data-provider-toggle]');
-        const providerStatus = providerAction.querySelector('[data-provider-status]');
+        const providerToggle = providerAction?.querySelector('[data-provider-toggle]');
+        const providerStatus = providerAction?.querySelector('[data-provider-status]');
         const providerTabStatus = document.querySelector(
             `[data-provider-tab="${provider}"] [data-provider-tab-status]`,
         );
@@ -101,6 +104,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return {
                 ip: ipInput.value.trim(),
                 port: portInput.value.trim(),
+                api_key: apiKeyInput?.value.trim() || '',
+                provider_name: providerNameInput?.value.trim() || '',
             };
         }
 
@@ -159,6 +164,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         async function refreshProviderStatus() {
+            if (newCustomProvider) {
+                return;
+            }
             providerToggle.disabled = true;
             providerStatus.textContent = 'Checking…';
             try {
@@ -338,7 +346,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     apiKeyInput.value = '';
                     apiKeyInput.placeholder = data.has_api_key
                         ? 'Saved API key — leave blank to reuse'
-                        : 'Enter API key';
+                        : (customProvider ? 'Optional API key' : 'Enter API key');
                 }
                 if (singleModel && data.ip && data.port) {
                     await readModelsFromServer(true);
@@ -354,6 +362,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         async function readModelsFromServer(silent = false) {
             const connection = connectionPayload();
+            if (newCustomProvider && !connection.provider_name) {
+                alert('Please enter a provider name');
+                return;
+            }
             if (!connection.ip || !connection.port) {
                 alert('Please enter both IP address and port');
                 return;
@@ -406,6 +418,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         : item.querySelector('input[type="checkbox"]').checked,
                 }));
 
+            if (newCustomProvider && !connection.provider_name) {
+                alert('Please enter a provider name');
+                return;
+            }
             if (!connection.ip || !connection.port) {
                 alert('Please enter both IP address and port');
                 return;
@@ -423,13 +439,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     body: {provider, models, ...connection},
                 });
                 updateProviderSummary(models, result.models_count, result.enabled_count);
-                if (!apiProvider) {
+                if (providerProtocol) {
                     providerProtocol.textContent = `${connection.ip.replace(/\/$/, '')}:${connection.port}`;
-                } else {
+                }
+                if (apiKeyInput) {
                     apiKeyInput.value = '';
-                    apiKeyInput.placeholder = 'Saved API key — leave blank to reuse';
+                    apiKeyInput.placeholder = result.has_api_key || connection.api_key
+                        ? 'Saved API key — leave blank to reuse'
+                        : (customProvider ? 'Optional API key' : 'Enter API key');
                 }
                 setModalOpen(false);
+                if (newCustomProvider) {
+                    window.location.reload();
+                    return;
+                }
                 await refreshProviderStatus();
             } catch (error) {
                 console.error(`Error saving ${providerLabel} configuration:`, error);
@@ -442,6 +465,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         setupButton.addEventListener('click', async () => {
             setModalOpen(true);
+            if (newCustomProvider) {
+                providerNameInput.value = '';
+                apiKeyInput.value = '';
+                modelList.hidden = true;
+                modelListItems.replaceChildren();
+                saveButton.disabled = true;
+                providerNameInput.focus();
+                return;
+            }
             await loadSavedConfiguration();
             (apiKeyInput || ipInput).focus();
         });
@@ -457,21 +489,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         readModelsButton.addEventListener('click', () => readModelsFromServer(false));
         saveButton.addEventListener('click', saveConfiguration);
-        providerToggle.addEventListener('change', async () => {
-            const requestedState = providerToggle.checked;
-            providerToggle.disabled = true;
-            try {
-                await api.json('/setup_models/provider_state', {
-                    method: 'POST',
-                    body: {provider, enabled: requestedState},
-                });
-            } catch (error) {
-                console.error(`Error changing ${providerLabel} state:`, error);
-                alert(error.message);
-            } finally {
-                await refreshProviderStatus();
-            }
-        });
+        if (providerToggle) {
+            providerToggle.addEventListener('change', async () => {
+                const requestedState = providerToggle.checked;
+                providerToggle.disabled = true;
+                try {
+                    await api.json('/setup_models/provider_state', {
+                        method: 'POST',
+                        body: {provider, enabled: requestedState},
+                    });
+                } catch (error) {
+                    console.error(`Error changing ${providerLabel} state:`, error);
+                    alert(error.message);
+                } finally {
+                    await refreshProviderStatus();
+                }
+            });
+        }
 
         if (selectAllButton) {
             selectAllButton.addEventListener('click', () => {
@@ -484,7 +518,9 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        refreshProviderStatus();
+        if (!newCustomProvider) {
+            refreshProviderStatus();
+        }
     });
 
     document.addEventListener('keydown', (event) => {

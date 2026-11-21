@@ -20,6 +20,8 @@ ON model_configurations (provider_name, model_name);
 
 CREATE TABLE IF NOT EXISTS provider_configurations (
     provider_name TEXT PRIMARY KEY,
+    display_name TEXT,
+    is_custom BOOLEAN NOT NULL DEFAULT 0,
     server_ip TEXT NOT NULL,
     server_port INTEGER NOT NULL,
     api_key TEXT,
@@ -34,6 +36,8 @@ def _migrate(connection):
     tables = {
         "provider_configurations": {
             "api_key": "TEXT",
+            "display_name": "TEXT",
+            "is_custom": "BOOLEAN NOT NULL DEFAULT 0",
         },
         "model_configurations": {
             "size_gb": "INTEGER",
@@ -135,7 +139,8 @@ class ModelConfigurationRepository:
         if values is _UNSET:
             row = self.store.fetch(
                 """
-                SELECT provider_name, server_ip, server_port, api_key, is_enabled
+                SELECT provider_name, display_name, is_custom,
+                       server_ip, server_port, api_key, is_enabled
                 FROM provider_configurations
                 WHERE provider_name = ?
                 """,
@@ -146,18 +151,29 @@ class ModelConfigurationRepository:
                 return None
             return {
                 "provider": row[0],
-                "ip": row[1],
-                "port": row[2],
-                "api_key": decrypt_token(row[3]),
-                "enabled": bool(row[4]),
+                "display_name": row[1] or row[0],
+                "custom": bool(row[2]),
+                "ip": row[3],
+                "port": row[4],
+                "api_key": decrypt_token(row[5]),
+                "enabled": bool(row[6]),
             }
 
         self.store.execute(
             """
             INSERT INTO provider_configurations
-                (provider_name, server_ip, server_port, api_key)
-            VALUES (?, ?, ?, ?)
+                (provider_name, display_name, is_custom,
+                 server_ip, server_port, api_key)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(provider_name) DO UPDATE SET
+                display_name = COALESCE(
+                    excluded.display_name,
+                    provider_configurations.display_name
+                ),
+                is_custom = MAX(
+                    excluded.is_custom,
+                    provider_configurations.is_custom
+                ),
                 server_ip = excluded.server_ip,
                 server_port = excluded.server_port,
                 api_key = COALESCE(excluded.api_key, provider_configurations.api_key),
@@ -165,11 +181,28 @@ class ModelConfigurationRepository:
             """,
             (
                 name,
+                values.get("display_name"),
+                bool(values.get("custom", False)),
                 values["ip"],
                 values["port"],
                 encrypt_token(values.get("api_key")),
             ),
         )
+
+    def custom_providers(self):
+        """Return saved custom-provider identities in display order."""
+        rows = self.store.fetch(
+            """
+            SELECT provider_name, display_name
+            FROM provider_configurations
+            WHERE is_custom = 1
+            ORDER BY display_name COLLATE NOCASE, provider_name COLLATE NOCASE
+            """
+        )
+        return [
+            {"provider": provider, "display_name": display_name or provider}
+            for provider, display_name in rows
+        ]
 
     def set_enabled(self, provider, enabled):
         """Persist the overall enabled state for a configured provider."""

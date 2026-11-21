@@ -6,13 +6,12 @@ from flask import current_app, jsonify, request
 
 from services.model_providers import (
     CATALOG_ERRORS,
-    PROVIDER_SPECS,
     ModelProviderService,
     ProviderCatalogError,
     ProviderConflictError,
     ProviderValidationError,
 )
-from services.provider_setup import provider_setup_cards
+from services.provider_setup import custom_provider_modal, provider_setup_cards
 
 
 PROVIDER_OPERATION_ERRORS = CATALOG_ERRORS + (sqlite3.Error,)
@@ -26,7 +25,10 @@ class ProviderController:
 
     def setup_context(self):
         """Build provider summaries used by the setup page."""
-        return {"providers": provider_setup_cards(self.service)}
+        return {
+            "providers": provider_setup_cards(self.service),
+            "custom_provider": custom_provider_modal(),
+        }
 
     def fetch_models(self):
         """Read a live catalog without changing saved configuration."""
@@ -81,6 +83,8 @@ class ProviderController:
             return jsonify({"error": "A valid provider is required"}), 400
         try:
             return jsonify(self.service.load_configuration(provider))
+        except ProviderValidationError as error:
+            return jsonify({"error": str(error)}), 400
         except sqlite3.Error:
             current_app.logger.exception(
                 "Could not load configuration for %s", provider
@@ -230,10 +234,12 @@ class ProviderController:
         data = request.get_json(silent=True) or {}
         provider = str(data.get("provider", "")).strip()
         enabled = data.get("enabled")
-        if provider not in PROVIDER_SPECS or not isinstance(enabled, bool):
+        if not provider or not isinstance(enabled, bool):
             return jsonify({"error": "Valid provider state is required"}), 400
         try:
             return jsonify(self.service.update_state(provider, enabled))
+        except ProviderValidationError as error:
+            return jsonify({"error": str(error)}), 400
         except ProviderConflictError as error:
             return jsonify({"error": str(error)}), 409
 

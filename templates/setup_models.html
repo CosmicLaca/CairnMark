@@ -6,7 +6,7 @@
 {% endblock %}
 
 {% macro provider_steps(provider) %}
-  {% if provider.name == "llama.cpp" %}
+  {% if provider.name == "llama.cpp" or provider.custom %}
     {% set steps = (("Connect", "Set server address"), ("Discover", "Read live models"), ("Curate", "Save enabled states")) %}
   {% elif provider.single_model %}
     {% set steps = (("Connect", "Port 8001 default"), ("Identify", "Read loaded model"), ("Save", "Keep provider state")) %}
@@ -73,6 +73,8 @@
   data-provider-label="{{ provider.title }}"
   data-single-model="{{ 'true' if provider.single_model else 'false' }}"
   data-api-provider="{{ 'true' if provider.api_provider else 'false' }}"
+  data-custom-provider="{{ 'true' if provider.custom else 'false' }}"
+  data-new-custom-provider="{{ 'true' if provider.new_custom else 'false' }}"
   {% if provider.api_provider %}data-provider-endpoint="{{ provider.endpoint }}"{% endif %}
   aria-hidden="true"
   aria-modal="true"
@@ -103,7 +105,7 @@
           <span class="connection-route">{{ provider.catalog_route }}</span>
         </header>
 
-        <div class="connection-fields{% if provider.api_provider %} is-api-provider{% endif %}">
+        <div class="connection-fields{% if provider.api_provider %} is-api-provider{% elif provider.custom %} is-custom-provider{% endif %}">
           {% if provider.api_provider %}
             <div class="form-group api-key-field">
               <label for="{{ provider.slug }}-api-key">{{ provider.title }} API key</label>
@@ -114,6 +116,16 @@
               </div>
             </div>
           {% else %}
+            {% if provider.custom %}
+              <div class="form-group provider-name-field">
+                <label for="{{ provider.slug }}-provider-name">Provider name</label>
+                <span class="field-description">Your name for this provider</span>
+                <div class="model-input-shell">
+                  <span aria-hidden="true">◇</span>
+                  <input class="provider-name" type="text" id="{{ provider.slug }}-provider-name" name="{{ provider.slug }}-provider-name" value="{{ '' if provider.new_custom else provider.title }}" maxlength="80" {% if not provider.new_custom %}readonly{% else %}required{% endif %}>
+                </div>
+              </div>
+            {% endif %}
             <div class="form-group server-address-field">
               <label for="{{ provider.slug }}-ip">Server address</label>
               <span class="field-description">Protocol and local IP address</span>
@@ -130,6 +142,16 @@
                 <input class="provider-port" type="number" id="{{ provider.slug }}-port" name="{{ provider.slug }}-port" value="{{ provider.default_port }}" min="1" max="65535" required>
               </div>
             </div>
+            {% if provider.custom %}
+              <div class="form-group api-key-field">
+                <label for="{{ provider.slug }}-api-key">API key <small>(optional)</small></label>
+                <span class="field-description">Encrypted locally when supplied</span>
+                <div class="model-input-shell">
+                  <span aria-hidden="true">✦</span>
+                  <input class="provider-api-key" type="password" id="{{ provider.slug }}-api-key" name="{{ provider.slug }}-api-key" placeholder="Optional API key" autocomplete="new-password">
+                </div>
+              </div>
+            {% endif %}
           {% endif %}
           <button class="read-models-button" type="button">
             <span aria-hidden="true">↻</span>
@@ -198,9 +220,9 @@
         <span aria-hidden="true">{{ provider.index }}</span><strong>{{ provider.title }}</strong><small data-provider-tab-status>offline</small>
       </button>
     {% endfor %}
-    <div class="category-tab provider-tab">
-      <span aria-hidden="true">+</span><strong>Add custom provider</strong><small>custom</small>
-    </div>
+    <button class="category-tab provider-tab" type="button" data-provider-setup data-provider="{{ custom_provider.name }}" data-modal-target="{{ custom_provider.slug }}-setup-modal">
+      <span aria-hidden="true">+</span><strong>Add custom provider</strong>
+    </button>
   </div>
 </nav>
 
@@ -223,6 +245,7 @@
 {% for provider in providers %}
   {{ provider_modal(provider) }}
 {% endfor %}
+{{ provider_modal(custom_provider) }}
 {% endblock %}
 
 {% block scripts %}

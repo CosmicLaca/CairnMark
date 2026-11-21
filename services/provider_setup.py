@@ -84,8 +84,10 @@ CATALOG_ROUTES = {
 def provider_setup_cards(service):
     """Combine provider declarations with saved setup state for the template."""
     providers = []
-    for index, provider in enumerate(PROVIDER_ORDER, start=1):
-        spec = PROVIDER_SPECS[provider]
+    custom_providers = [item["provider"] for item in service.custom_providers()]
+    for index, provider in enumerate((*PROVIDER_ORDER, *custom_providers), start=1):
+        spec = service.spec(provider)
+        custom = provider not in PROVIDER_SPECS
         overview = service.saved_provider_overview(provider)
         configuration = overview["configuration"]
         protocol = (
@@ -98,17 +100,27 @@ def provider_setup_cards(service):
                 provider,
                 spec.fixed_endpoint.removeprefix("https://"),
             )
+        kind = "CUSTOM" if custom else ("LOCAL" if spec.local else "ONLINE")
+        glyph = "◇" if custom else (
+            "⎔" if provider == "llama.cpp" else (
+                "◉" if spec.single_live_model else "✦"
+            )
+        )
         providers.append(
             {
                 "name": provider,
-                "slug": provider.removesuffix(".cpp"),
+                "slug": provider.removesuffix(".cpp").replace(":", "-"),
+                "custom": custom,
+                "new_custom": False,
                 "title": spec.display_name,
                 "index": f"{index:02d}",
-                "kind": "LOCAL" if spec.local else "ONLINE",
-                "glyph": "⎔" if provider == "llama.cpp" else (
-                    "◉" if spec.single_live_model else "✦"
+                "kind": kind,
+                "glyph": glyph,
+                "description": PROVIDER_DESCRIPTIONS.get(
+                    provider,
+                    "Use an OpenAI-compatible endpoint and retain the models "
+                    "Cairnmark should make available.",
                 ),
-                "description": PROVIDER_DESCRIPTIONS[provider],
                 "protocol": protocol,
                 "summary": overview["summary"],
                 "model_name": (
@@ -124,3 +136,26 @@ def provider_setup_cards(service):
             }
         )
     return providers
+
+
+def custom_provider_modal():
+    """Return presentation data for the new custom-provider dialog."""
+    return {
+        "name": "__custom__",
+        "slug": "custom-provider",
+        "custom": True,
+        "new_custom": True,
+        "title": "Custom provider",
+        "index": "+",
+        "kind": "CUSTOM",
+        "glyph": "◇",
+        "description": "Connect an OpenAI-compatible provider.",
+        "protocol": "Setup needed",
+        "summary": {"total": 0, "enabled": 0},
+        "model_name": "Setup required",
+        "api_provider": False,
+        "single_model": False,
+        "endpoint": "",
+        "default_port": 1234,
+        "catalog_route": "GET /v1/models",
+    }

@@ -251,7 +251,8 @@ body.modal-open {
     grid-template-columns: auto;
 }
 
-.provider-tab[data-provider-filter] {
+.provider-tab[data-provider-filter],
+.provider-tab[data-provider-setup] {
     cursor: pointer;
 }
 
@@ -954,6 +955,14 @@ body.modal-open {
     grid-template-columns: minmax(300px, 1fr) minmax(170px, 0.38fr);
 }
 
+.connection-fields.is-custom-provider {
+    grid-template-columns: minmax(170px, 0.8fr) minmax(240px, 1.2fr) 120px;
+}
+
+.connection-fields.is-custom-provider .api-key-field {
+    grid-column: 1 / 3;
+}
+
 .model-modal-content .form-group {
     min-width: 0;
     margin: 0;
@@ -1363,7 +1372,8 @@ body.modal-open {
         min-height: 270px;
     }
 
-    .connection-fields {
+    .connection-fields,
+    .connection-fields.is-custom-provider {
         grid-template-columns: minmax(220px, 1fr) 120px;
     }
 
@@ -1383,8 +1393,13 @@ body.modal-open {
 
     .provider-steps,
     .connection-fields,
-    .connection-fields.is-api-provider {
+    .connection-fields.is-api-provider,
+    .connection-fields.is-custom-provider {
         grid-template-columns: 1fr;
+    }
+
+    .connection-fields.is-custom-provider .api-key-field {
+        grid-column: auto;
     }
 
     .provider-setup-button {

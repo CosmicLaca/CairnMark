@@ -2,6 +2,7 @@
 
 import base64
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -84,6 +85,7 @@ class ProviderSpec:
     fixed_endpoint: str | None = None
     fixed_port: int | None = None
     requires_api_key: bool = False
+    supports_api_key: bool = False
     local: bool = False
     single_live_model: bool = False
     catalog_endpoint: str | None = None
@@ -221,6 +223,8 @@ PROVIDER_SPECS = {
         ),
     )
 }
+
+CUSTOM_PROVIDER_SENTINEL = "__custom__"
 
 # Sampling fields reported by local providers that may be forwarded as request
 # body overrides from the chat parameter modal.
@@ -1002,9 +1006,10 @@ class ProviderCatalogClient:
         api_key=None,
         provider=None,
         catalog_address=None,
+        provider_spec=None,
     ):
         """Return normalized model entries reported by a provider SDK."""
-        spec = PROVIDER_SPECS.get(provider)
+        spec = provider_spec or PROVIDER_SPECS.get(provider)
         if not spec or not spec.sdk_client:
             raise ProviderValidationError("A valid provider SDK is required")
         models_url = self.models_url(
@@ -1039,19 +1044,68 @@ class ModelProviderService:
         self.models = model_repository or MODEL_CONFIGURATIONS
         self.parameters = parameter_repository or MODEL_PARAMETERS
 
-    @staticmethod
-    def spec(provider):
+    def spec(self, provider):
         """Return a supported provider definition."""
+        declared = PROVIDER_SPECS.get(provider)
+        if declared is not None:
+            return declared
+        configuration = self.models.provider(provider)
+        if configuration and configuration.get("custom"):
+            return self._custom_provider_spec(
+                provider,
+                configuration["display_name"],
+            )
+        raise ProviderValidationError("A valid provider is required")
+
+    def provider_label(self, provider):
+        """Return the user-facing label for a provider name."""
         try:
-            return PROVIDER_SPECS[provider]
-        except KeyError as error:
-            raise ProviderValidationError("A valid provider is required") from error
+            return self.spec(provider).display_name
+        except ProviderValidationError:
+            return provider
 
     @staticmethod
-    def provider_label(provider):
-        """Return the user-facing label for a provider name."""
-        spec = PROVIDER_SPECS.get(provider)
-        return spec.display_name if spec else provider
+    def _custom_provider_spec(provider, display_name):
+        """Build OpenAI-compatible rules for one saved custom provider."""
+        return ProviderSpec(
+            provider,
+            display_name,
+            supports_api_key=True,
+            local=True,
+            sdk_client="openai",
+        )
+
+    def _custom_provider_identity(self, raw_name):
+        """Validate a new custom name and return its stable storage key."""
+        display_name = " ".join(str(raw_name or "").split())
+        if not display_name or len(display_name) > 80:
+            raise ProviderValidationError(
+                "Provider name is required and must be 80 characters or fewer"
+            )
+        reserved_names = {
+            value.casefold()
+            for spec in PROVIDER_SPECS.values()
+            for value in (spec.name, spec.display_name)
+        }
+        if display_name.casefold() in reserved_names:
+            raise ProviderValidationError(
+                "Choose a provider name that is not already built in"
+            )
+        slug = re.sub(r"[^\w]+", "-", display_name.casefold()).strip("-_")
+        if not slug:
+            raise ProviderValidationError(
+                "Provider name must contain letters or numbers"
+            )
+        provider = f"custom:{slug}"
+        if self.models.provider(provider):
+            raise ProviderValidationError(
+                "A custom provider with this name already exists"
+            )
+        return provider, display_name
+
+    def custom_providers(self):
+        """Return saved custom-provider identities for setup-page rendering."""
+        return self.models.custom_providers()
 
     def saved_provider_overview(self, provider):
         """Return persisted connection and model counts for setup-page views."""
@@ -1074,10 +1128,12 @@ class ModelProviderService:
             raise ProviderOfflineError("The selected model server is offline.")
         return provider, model
 
-    @staticmethod
-    def _selector_entry(provider, model_name, size_gb=None):
+    def _selector_entry(self, provider, model_name, size_gb=None):
         """Build one active-model selector entry with its size marker."""
-        spec = PROVIDER_SPECS.get(provider)
+        try:
+            spec = self.spec(provider)
+        except ProviderValidationError:
+            spec = None
         display_name = spec.display_name if spec else provider
         label = f"{display_name}::{model_name}"
         if spec is not None and not spec.local:
@@ -1147,11 +1203,15 @@ class ModelProviderService:
             return str(model.get("id") or model.get("name") or "Unknown model")
         return str(model)
 
-    def connection(self, provider, data=None):
+    def connection(self, provider, data=None, spec=None):
         """Resolve and validate a submitted or saved provider connection."""
-        spec = self.spec(provider)
+        spec = spec or self.spec(provider)
         data = data or {}
-        saved = self.models.provider(provider)
+        saved = (
+            None
+            if provider == CUSTOM_PROVIDER_SENTINEL
+            else self.models.provider(provider)
+        )
         if spec.fixed_endpoint:
             submitted_key = str(data.get("api_key", "")).strip()
             api_key = submitted_key or (saved["api_key"] if saved else None)
@@ -1160,7 +1220,12 @@ class ModelProviderService:
         else:
             address = str(data.get("ip", "")).strip()
             port = data.get("port", "")
-            api_key = None
+            submitted_key = str(data.get("api_key", "")).strip()
+            api_key = (
+                submitted_key or (saved["api_key"] if saved else None)
+                if spec.supports_api_key
+                else None
+            )
 
         if spec.requires_api_key and not api_key:
             raise ProviderValidationError(
@@ -1189,9 +1254,9 @@ class ModelProviderService:
             "port": spec.fixed_port,
         }
 
-    def _fetch_catalog(self, provider, connection, timeout=5):
+    def _fetch_catalog(self, provider, connection, timeout=5, spec=None):
         """Fetch a catalog using the provider's discovery endpoint and headers."""
-        spec = self.spec(provider)
+        spec = spec or self.spec(provider)
         return self.catalog_client.fetch_catalog(
             connection["ip"],
             connection["port"],
@@ -1199,12 +1264,19 @@ class ModelProviderService:
             api_key=connection.get("api_key"),
             provider=provider,
             catalog_address=spec.catalog_endpoint,
+            provider_spec=spec,
         )
 
     def fetch_models(self, provider, data):
         """Read a live model catalog without changing saved data."""
-        connection = self.connection(provider, data)
-        return self._fetch_catalog(provider, connection)
+        spec = None
+        if provider == CUSTOM_PROVIDER_SENTINEL:
+            custom_provider, display_name = self._custom_provider_identity(
+                data.get("provider_name")
+            )
+            spec = self._custom_provider_spec(custom_provider, display_name)
+        connection = self.connection(provider, data, spec=spec)
+        return self._fetch_catalog(provider, connection, spec=spec)
 
     @staticmethod
     def _catalog_sizes(live_models):
@@ -1236,7 +1308,14 @@ class ModelProviderService:
         if changed:
             self.models.models(provider, merged)
 
-    def _models_with_sizes(self, provider, connection, models, timeout=5):
+    def _models_with_sizes(
+        self,
+        provider,
+        connection,
+        models,
+        timeout=5,
+        spec=None,
+    ):
         """Attach authoritative sizes to submitted models for a local provider.
 
         The catalog is read again so the stored size matches the served file.
@@ -1248,7 +1327,12 @@ class ModelProviderService:
             if model.get("size_gb") is not None
         }
         try:
-            live_models = self._fetch_catalog(provider, connection, timeout=timeout)
+            live_models = self._fetch_catalog(
+                provider,
+                connection,
+                timeout=timeout,
+                spec=spec,
+            )
         except CATALOG_ERRORS:
             live_models = []
         sizes.update(self._catalog_sizes(live_models))
@@ -1264,13 +1348,20 @@ class ModelProviderService:
 
     def save_configuration(self, provider, data):
         """Validate and persist one provider configuration."""
-        spec = self.spec(provider)
+        custom_display_name = None
+        if provider == CUSTOM_PROVIDER_SENTINEL:
+            provider, custom_display_name = self._custom_provider_identity(
+                data.get("provider_name")
+            )
+            spec = self._custom_provider_spec(provider, custom_display_name)
+        else:
+            spec = self.spec(provider)
         models = data.get("models")
         if not isinstance(models, list):
             raise ProviderValidationError("Models must be a list")
         if any(not isinstance(model, dict) for model in models):
             raise ProviderValidationError("Every model must be an object")
-        connection = self.connection(provider, data)
+        connection = self.connection(provider, data, spec=spec)
 
         live_models = None
         if spec.single_live_model or spec.requires_api_key:
@@ -1289,7 +1380,12 @@ class ModelProviderService:
             if not models:
                 raise ProviderValidationError("Read and select models first")
             if spec.local:
-                models = self._models_with_sizes(provider, connection, models)
+                models = self._models_with_sizes(
+                    provider,
+                    connection,
+                    models,
+                    spec=spec,
+                )
             else:
                 models = [{**model, "size_gb": None} for model in models]
             self.models.models(provider, models)
@@ -1301,6 +1397,8 @@ class ModelProviderService:
                 "ip": connection["ip"],
                 "port": connection["port"],
                 "api_key": connection["api_key"],
+                "display_name": custom_display_name,
+                "custom": custom_display_name is not None,
             },
         )
         configuration = self.saved_connection(provider)
@@ -1310,12 +1408,13 @@ class ModelProviderService:
             "enabled_count": summary["enabled"],
             "model_name": model_name,
             "provider_enabled": configuration["enabled"],
+            "has_api_key": bool(configuration.get("api_key")),
             "provider": provider,
         }
 
     def load_configuration(self, provider):
         """Return browser-safe saved state for one provider."""
-        spec = PROVIDER_SPECS.get(provider)
+        spec = self.spec(provider)
         configuration = self.models.provider(provider)
         models = (
             []
