@@ -17,6 +17,13 @@ CREATE TABLE IF NOT EXISTS mcp_settings (
     settings TEXT NOT NULL DEFAULT '{}',
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (source, service_name, tool_name)
+);
+CREATE TABLE IF NOT EXISTS mcp_tool_cache (
+    service_name TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    definition TEXT NOT NULL DEFAULT '{}',
+    refreshed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (service_name, tool_name)
 )
 """
 
@@ -131,6 +138,62 @@ class McpSettingsRepository:
             many=True,
         )
         return rowcount
+
+    def cached_tools(self, service_name=None):
+        """Return cached Custom MCP tool definitions."""
+        statement = (
+            "SELECT service_name, tool_name, definition "
+            "FROM mcp_tool_cache"
+        )
+        parameters = ()
+        if service_name:
+            statement += " WHERE service_name = ?"
+            parameters = (service_name,)
+        statement += " ORDER BY service_name, tool_name"
+        rows = self.store.fetch(statement, parameters)
+        tools = []
+        for service, tool_name, definition_text in rows:
+            try:
+                definition = json.loads(definition_text)
+            except (TypeError, ValueError):
+                definition = {}
+            tools.append(
+                {
+                    "service": service,
+                    "tool": tool_name,
+                    "definition": (
+                        definition if isinstance(definition, dict) else {}
+                    ),
+                }
+            )
+        return tools
+
+    def replace_cached_tools(self, service_name, tools):
+        """Atomically replace one accessible service's cached tool snapshot."""
+        values = [
+            (
+                service_name,
+                tool["name"],
+                json.dumps(tool, ensure_ascii=False),
+            )
+            for tool in tools
+            if isinstance(tool, dict) and str(tool.get("name") or "").strip()
+        ]
+        with self.store.transaction() as connection:
+            connection.execute(
+                "DELETE FROM mcp_tool_cache WHERE service_name = ?",
+                (service_name,),
+            )
+            if values:
+                connection.executemany(
+                    """
+                    INSERT INTO mcp_tool_cache (
+                        service_name, tool_name, definition
+                    ) VALUES (?, ?, ?)
+                    """,
+                    values,
+                )
+        return len(values)
 
 
 MCP_SETTINGS = McpSettingsRepository()

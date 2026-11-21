@@ -276,11 +276,11 @@ class McpServiceRegistry:
             return False
 
     @staticmethod
-    async def _check_stdio_async(details, timeout_ms):
+    async def _discover_stdio_async(details, timeout_ms):
         command = str(details.get("command") or "").strip()
         args = details.get("args", [])
         if not command or not isinstance(args, list):
-            return 0
+            return []
         environment = details.get("environment")
         if not isinstance(environment, dict):
             environment = None
@@ -295,8 +295,19 @@ class McpServiceRegistry:
                 async with stdio_client(parameters, errlog=stderr) as streams:
                     async with ClientSession(streams[0], streams[1]) as session:
                         await session.initialize()
-                        tools = await session.list_tools()
-                        return len(tools.tools)
+                        result = await session.list_tools()
+                        return [
+                            tool.model_dump(
+                                mode="json",
+                                by_alias=True,
+                                exclude_none=True,
+                            )
+                            for tool in result.tools
+                        ]
+
+    @classmethod
+    async def _check_stdio_async(cls, details, timeout_ms):
+        return len(await cls._discover_stdio_async(details, timeout_ms))
 
     def _check_stdio(self, details, timeout_ms):
         try:
@@ -304,6 +315,13 @@ class McpServiceRegistry:
         except Exception as error:
             LOGGER.warning("MCP stdio health check failed: %s", error)
             return 0
+
+    def _discover_stdio(self, details, timeout_ms):
+        try:
+            return asyncio.run(self._discover_stdio_async(details, timeout_ms))
+        except Exception as error:
+            LOGGER.warning("MCP stdio tool discovery failed: %s", error)
+            return []
 
     def check(self, name, endpoint=None, timeout_ms=None):
         """Check one registered service and any required local endpoint."""
@@ -336,6 +354,49 @@ class McpServiceRegistry:
             "online": tools_count > 0,
             "status_code": status_code,
             "tools_count": tools_count,
+        }
+
+    def discover_tools(self, name, endpoint=None, timeout_ms=None):
+        """Read full tool definitions from one accessible Custom MCP service."""
+        services = self.services()
+        if name not in services:
+            raise ValueError("Unknown MCP service.")
+        details = services[name]
+        if details.get("disabled") is True:
+            return {"name": name, "online": False, "tools": []}
+        timeout_ms = self._timeout_ms(details, timeout_ms)
+        configured_endpoint = self._configured_endpoint(name, details, endpoint)
+        status_code = None
+        if name in {"searxng", "comfyui"}:
+            endpoint_online, status_code = self._check_http_endpoint(
+                name,
+                configured_endpoint,
+                timeout_ms,
+            )
+            if not endpoint_online:
+                return {
+                    "name": name,
+                    "online": False,
+                    "status_code": status_code,
+                    "tools": [],
+                }
+        elif name == "postgres" and not self._check_postgres_endpoint(
+            configured_endpoint,
+            timeout_ms,
+        ):
+            return {
+                "name": name,
+                "online": False,
+                "status_code": None,
+                "tools": [],
+            }
+
+        tools = self._discover_stdio(details, timeout_ms)
+        return {
+            "name": name,
+            "online": bool(tools),
+            "status_code": status_code,
+            "tools": tools,
         }
 
     def check_managed_service(self, name, endpoint, timeout_ms=3000):

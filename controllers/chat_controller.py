@@ -813,7 +813,59 @@ class ChatController:
 
     def mcp_settings_get(self):
         """Return saved MCP preferences keyed per service and tool."""
-        return jsonify({"records": self.mcp_settings.all()})
+        return jsonify(
+            {
+                "records": self.mcp_settings.all(),
+                "custom_tools": self.mcp_settings.cached_tools(),
+            }
+        )
+
+    def mcp_tools_refresh(self):
+        """Refresh cached tool definitions for accessible Custom MCP services."""
+        registry = self._mcp_registry()
+        saved_settings = {
+            record["service"]: record["settings"]
+            for record in self.mcp_settings.all()
+            if record["source"] == "external"
+        }
+        refreshed = []
+        skipped = []
+        try:
+            service_names = sorted(registry.services())
+        except (OSError, ValueError, json.JSONDecodeError):
+            current_app.logger.exception("Could not read MCP configuration")
+            return jsonify({"error": "Could not read MCP configuration."}), 500
+
+        for name in service_names:
+            settings = saved_settings.get(name, {})
+            try:
+                result = registry.discover_tools(
+                    name,
+                    settings.get("endpoint"),
+                    settings.get("timeout_ms"),
+                )
+            except (OSError, ValueError, json.JSONDecodeError):
+                current_app.logger.exception(
+                    "Could not refresh MCP tools for service=%s",
+                    name,
+                )
+                result = {"online": False, "tools": []}
+            if result.get("online"):
+                count = self.mcp_settings.replace_cached_tools(
+                    name,
+                    result.get("tools", []),
+                )
+                refreshed.append({"service": name, "tools": count})
+            else:
+                skipped.append(name)
+
+        return jsonify(
+            {
+                "refreshed": refreshed,
+                "skipped": skipped,
+                "custom_tools": self.mcp_settings.cached_tools(),
+            }
+        )
 
     @staticmethod
     def _managed_tool_identity(tool):
@@ -856,11 +908,16 @@ class ChatController:
             tool_name = str(record.get("tool") or "").strip()
             enabled = record.get("enabled")
             settings = record.get("settings", {})
-            if source not in {"external", "llama_service", "llama_tool"}:
+            if source not in {
+                "external",
+                "external_tool",
+                "llama_service",
+                "llama_tool",
+            }:
                 return jsonify({"error": "A valid MCP record source is required."}), 400
             if not service_name or not isinstance(enabled, bool):
                 return jsonify({"error": "MCP service and boolean state are required."}), 400
-            if source == "llama_tool" and not tool_name:
+            if source in {"external_tool", "llama_tool"} and not tool_name:
                 return jsonify({"error": "A managed MCP tool name is required."}), 400
             if not isinstance(settings, dict):
                 return jsonify({"error": "MCP settings must be an object."}), 400
@@ -878,20 +935,38 @@ class ChatController:
         eligible = []
         skipped = []
         external_status = {}
-        for record in (item for item in normalized if item["source"] == "external"):
+        external_settings = {
+            item["service"]: item["settings"]
+            for item in normalized
+            if item["source"] == "external"
+        }
+        cached_external_tools = {
+            (tool["service"], tool["tool"])
+            for tool in self.mcp_settings.cached_tools()
+        }
+        for record in (
+            item for item in normalized if item["source"].startswith("external")
+        ):
             name = record["service"]
             if name not in external_status:
+                service_settings = external_settings.get(name, {})
                 try:
                     external_status[name] = bool(
                         registry.check(
                             name,
-                            record["settings"].get("endpoint"),
-                            record["settings"].get("timeout_ms"),
+                            service_settings.get("endpoint"),
+                            service_settings.get("timeout_ms"),
                         ).get("online")
                     )
                 except (OSError, ValueError, json.JSONDecodeError):
                     external_status[name] = False
-            (eligible if external_status[name] else skipped).append(record)
+            accessible = external_status[name]
+            if record["source"] == "external_tool":
+                accessible = accessible and (
+                    name,
+                    record["tool"],
+                ) in cached_external_tools
+            (eligible if accessible else skipped).append(record)
 
         managed_records = [
             item for item in normalized if item["source"].startswith("llama_")

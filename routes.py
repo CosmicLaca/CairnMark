@@ -297,6 +297,12 @@ APPLICATION_ROUTES = (
         ("POST",),
     ),
     (
+        "/chat/mcp_tools/refresh",
+        "chat_mcp_tools_refresh",
+        chat_controller.mcp_tools_refresh,
+        ("POST",),
+    ),
+    (
         "/chat/mcp_status",
         "chat_mcp_status",
         chat_controller.mcp_status,

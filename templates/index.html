@@ -674,6 +674,13 @@
       <div class="mcp-service-list" data-mcp-service-list aria-live="polite"></div>
     </div>
     <footer class="modal-footer more-params-footer">
+      <div class="more-params-footer-left">
+        <button type="button" class="modal-cancel-button mcp-refresh-button" data-mcp-tools-refresh>
+          <span class="mcp-refresh-idle-icon" aria-hidden="true">↻</span>
+          <span class="mcp-refresh-spinner" aria-hidden="true" hidden>↻</span>
+          <span data-mcp-refresh-label>Refresh</span>
+        </button>
+      </div>
       <div class="more-params-footer-actions">
         <button type="button" class="modal-cancel-button" data-mcp-settings-close>Cancel</button>
         <button type="button" class="modal-save-button" data-mcp-settings-save disabled>
@@ -699,6 +706,7 @@
     window.CairnmarkMcpServerSaveUrl = {{ url_for('chat_save_mcp_server')|tojson }};
     window.CairnmarkMcpSettingsUrl = {{ url_for('chat_mcp_settings_get')|tojson }};
     window.CairnmarkMcpSettingsSaveUrl = {{ url_for('chat_mcp_settings_save')|tojson }};
+    window.CairnmarkMcpToolsRefreshUrl = {{ url_for('chat_mcp_tools_refresh')|tojson }};
     window.CairnmarkLlamaManagedToolsUrl = {{ url_for('chat_llama_managed_tools')|tojson }};
     window.CairnmarkLlamaManagedMcpStatusUrl = {{ url_for('chat_llama_managed_mcp_status')|tojson }};
     window.CairnmarkToolSetupUrlTemplate = {{ url_for('static', filename='tool-setup-__SERVICE__.json')|tojson }};

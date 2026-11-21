@@ -81,6 +81,7 @@
     const mcpSettingsModal = document.querySelector("[data-mcp-settings-modal]");
     const mcpServiceList = document.querySelector("[data-mcp-service-list]");
     const mcpSettingsSaveBtn = document.querySelector("[data-mcp-settings-save]");
+    const mcpToolsRefreshBtn = document.querySelector("[data-mcp-tools-refresh]");
     const mcpSettingsCloseBtns = document.querySelectorAll("[data-mcp-settings-close]");
     const attachmentsEl = document.querySelector("[data-chat-attachments]");
     const audioAttachmentsEl = document.querySelector("[data-chat-audio-attachments]");
@@ -130,6 +131,8 @@
     const mcpSettingsUrl = window.CairnmarkMcpSettingsUrl || "/chat/mcp_settings";
     const mcpSettingsSaveUrl = window.CairnmarkMcpSettingsSaveUrl
         || "/chat/mcp_settings/save";
+    const mcpToolsRefreshUrl = window.CairnmarkMcpToolsRefreshUrl
+        || "/chat/mcp_tools/refresh";
     const llamaManagedToolsUrl = window.CairnmarkLlamaManagedToolsUrl
         || "/chat/llama_managed_tools";
     const llamaManagedMcpStatusUrl = window.CairnmarkLlamaManagedMcpStatusUrl
@@ -138,6 +141,8 @@
         || "/static/tool-setup-__SERVICE__.json";
     const savedMcpStates = new Map();
     const savedMcpToolSettings = new Map();
+    const savedCustomToolStates = new Map();
+    const cachedCustomTools = new Map();
     const mcpSetupDefinitions = new Map();
     const savedLlamaToolStates = new Map();
     const savedLlamaServiceStates = new Map();
@@ -227,11 +232,12 @@
         return mcpToolHelp;
     };
 
-    const createMcpName = (name) => {
+    const createMcpName = (name, displayName = name) => {
         const wrapper = document.createElement("span");
         wrapper.className = "mcp-name-with-help";
         const label = document.createElement("strong");
-        label.textContent = name;
+        label.textContent = displayName;
+        if (displayName !== name) wrapper.title = name;
         wrapper.appendChild(label);
         const help = mcpToolHelp[name];
         if (typeof help !== "string" || !help.trim()) return wrapper;
@@ -1752,9 +1758,15 @@
         control.setAttribute("aria-checked", checked ? "true" : "false");
     };
 
+    const customMcpToolKey = (serviceName, toolName) => (
+        `${serviceName}::${toolName}`
+    );
+
     const hydrateMcpSettings = (payload) => {
         savedMcpStates.clear();
         savedMcpToolSettings.clear();
+        savedCustomToolStates.clear();
+        cachedCustomTools.clear();
         savedLlamaToolStates.clear();
         savedLlamaServiceStates.clear();
         savedLlamaServiceSettings.clear();
@@ -1769,6 +1781,11 @@
             if (record.source === "external") {
                 savedMcpStates.set(record.service, record.enabled === true);
                 savedMcpToolSettings.set(record.service, settings);
+            } else if (record.source === "external_tool" && record.tool) {
+                savedCustomToolStates.set(
+                    customMcpToolKey(record.service, record.tool),
+                    record.enabled === true
+                );
             } else if (record.source === "llama_service") {
                 savedLlamaServiceStates.set(record.service, record.enabled === true);
                 savedLlamaServiceSettings.set(record.service, settings);
@@ -1776,9 +1793,86 @@
                 savedLlamaToolStates.set(record.tool, record.enabled === true);
             }
         });
+        const customTools = Array.isArray(payload && payload.custom_tools)
+            ? payload.custom_tools
+            : [];
+        customTools.forEach((tool) => {
+            if (!tool || typeof tool !== "object" || !tool.service || !tool.tool) return;
+            if (!cachedCustomTools.has(tool.service)) {
+                cachedCustomTools.set(tool.service, []);
+            }
+            cachedCustomTools.get(tool.service).push(tool);
+        });
+    };
+
+    const createCustomMcpToolRow = (serviceName, cachedTool) => {
+        const toolName = String(cachedTool.tool || "").trim();
+        const definition = cachedTool.definition && typeof cachedTool.definition === "object"
+            ? cachedTool.definition
+            : {};
+        const row = document.createElement("div");
+        row.className = "llama-managed-tool-row custom-mcp-tool-row";
+        const identity = document.createElement("div");
+        identity.className = "llama-managed-tool-identity";
+        const name = document.createElement("strong");
+        name.textContent = toolName;
+        const description = document.createElement("span");
+        description.textContent = definition.description || "No description available.";
+        identity.append(name, description);
+
+        const toolSwitch = document.createElement("button");
+        toolSwitch.type = "button";
+        toolSwitch.className = "chat-toggle-switch llama-managed-tool-switch";
+        toolSwitch.setAttribute("data-custom-mcp-tool-switch", toolName);
+        toolSwitch.setAttribute("data-custom-mcp-service", serviceName);
+        toolSwitch.setAttribute("role", "switch");
+        toolSwitch.setAttribute("aria-label", `Enable ${toolName}`);
+        const stateKey = customMcpToolKey(serviceName, toolName);
+        setMcpSwitch(toolSwitch, Boolean(savedCustomToolStates.get(stateKey)));
+        const track = document.createElement("span");
+        track.className = "chat-toggle-switch-track";
+        track.setAttribute("aria-hidden", "true");
+        const knob = document.createElement("span");
+        knob.className = "chat-toggle-switch-knob";
+        track.appendChild(knob);
+        toolSwitch.appendChild(track);
+        toolSwitch.addEventListener("click", () => {
+            if (toolSwitch.disabled) return;
+            const enabled = toolSwitch.getAttribute("aria-checked") !== "true";
+            setMcpSwitch(toolSwitch, enabled);
+            savedCustomToolStates.set(stateKey, enabled);
+        });
+        row.append(identity, toolSwitch);
+        return row;
+    };
+
+    const applyCustomMcpServiceState = (row, online) => {
+        const serviceSwitch = row.querySelector("[data-mcp-service-switch]");
+        const serviceName = serviceSwitch?.getAttribute("data-mcp-service-switch");
+        const serviceEnabled = Boolean(savedMcpStates.get(serviceName));
+        row.setAttribute("data-mcp-service-online", online ? "true" : "false");
+        if (serviceSwitch) {
+            serviceSwitch.disabled = !online;
+            setMcpSwitch(serviceSwitch, online && serviceEnabled);
+        }
+        row.querySelectorAll("[data-custom-mcp-tool-switch]").forEach((toolSwitch) => {
+            const toolName = toolSwitch.getAttribute("data-custom-mcp-tool-switch");
+            toolSwitch.setAttribute(
+                "data-custom-tool-available",
+                online ? "true" : "false"
+            );
+            toolSwitch.disabled = !online || !serviceEnabled;
+            setMcpSwitch(
+                toolSwitch,
+                online && Boolean(savedCustomToolStates.get(
+                    customMcpToolKey(serviceName, toolName)
+                ))
+            );
+        });
     };
 
     const createMcpServiceRow = (name, details) => {
+        const serviceTools = cachedCustomTools.get(name) || [];
         const savedSettings = savedMcpToolSettings.get(name) || {};
         const settings = {
             command: details.command || "",
@@ -1806,7 +1900,12 @@
         sourceBadge.className = "mcp-source-badge mcp-source-badge--custom";
         sourceBadge.textContent = "Custom";
         sourceBadge.title = "Custom or imported MCP service";
-        identity.append(marker, serviceName, sourceBadge);
+        const toolCount = document.createElement("span");
+        toolCount.className = "mcp-service-tool-count";
+        toolCount.textContent = `${serviceTools.length} ${
+            serviceTools.length === 1 ? "tool" : "tools"
+        }`;
+        identity.append(marker, serviceName, sourceBadge, toolCount);
 
         const controls = document.createElement("div");
         controls.className = "mcp-service-controls";
@@ -1833,10 +1932,10 @@
         serviceSwitch.appendChild(track);
         serviceSwitch.addEventListener("click", () => {
             if (serviceSwitch.disabled) return;
-            setMcpSwitch(
-                serviceSwitch,
-                serviceSwitch.getAttribute("aria-checked") !== "true"
-            );
+            const enabled = serviceSwitch.getAttribute("aria-checked") !== "true";
+            setMcpSwitch(serviceSwitch, enabled);
+            savedMcpStates.set(name, enabled);
+            applyCustomMcpServiceState(row, true);
         });
         const offlineTooltip = document.createElement("span");
         offlineTooltip.className = "mcp-service-offline-tooltip";
@@ -1856,8 +1955,27 @@
         spinner.setAttribute("aria-label", `Checking ${name}`);
         spinner.setAttribute("role", "status");
         spinner.textContent = "↻";
-        controls.append(statusLabel, switchWrap, setupIcon, spinner);
-        row.append(identity, controls);
+        const toolList = document.createElement("div");
+        toolList.className = "llama-managed-service-tools custom-mcp-service-tools";
+        toolList.hidden = true;
+        serviceTools.forEach((tool) => {
+            toolList.appendChild(createCustomMcpToolRow(name, tool));
+        });
+        const expandButton = document.createElement("button");
+        expandButton.type = "button";
+        expandButton.className = "llama-managed-expand custom-mcp-expand";
+        expandButton.setAttribute("aria-label", `Show tools for ${name}`);
+        expandButton.setAttribute("aria-expanded", "false");
+        expandButton.textContent = "▼";
+        expandButton.disabled = serviceTools.length === 0;
+        if (expandButton.disabled) {
+            expandButton.title = "Refresh to discover tools";
+        }
+        expandButton.addEventListener("click", () => {
+            toggleLlamaAccordion(expandButton, toolList);
+        });
+        controls.append(statusLabel, switchWrap, setupIcon, spinner, expandButton);
+        row.append(identity, controls, toolList);
         setupIcon.addEventListener("click", () => {
             toggleMcpToolSetup(name, details, row, setupIcon);
         });
@@ -2068,6 +2186,18 @@
         if (busy) mcpSettingsSaveBtn.disabled = true;
     };
 
+    const setMcpRefreshBusy = (busy) => {
+        if (!mcpToolsRefreshBtn) return;
+        const idleIcon = mcpToolsRefreshBtn.querySelector(".mcp-refresh-idle-icon");
+        const spinner = mcpToolsRefreshBtn.querySelector(".mcp-refresh-spinner");
+        const label = mcpToolsRefreshBtn.querySelector("[data-mcp-refresh-label]");
+        if (idleIcon) idleIcon.hidden = busy;
+        if (spinner) spinner.hidden = !busy;
+        if (label) label.textContent = busy ? "Refreshing…" : "Refresh";
+        mcpToolsRefreshBtn.setAttribute("aria-busy", busy ? "true" : "false");
+        mcpToolsRefreshBtn.disabled = busy;
+    };
+
     const checkMcpService = async (name, row, requestSequence) => {
         const serviceSwitch = row.querySelector("[data-mcp-service-switch]");
         const statusLabel = row.querySelector("[data-mcp-service-status]");
@@ -2101,20 +2231,15 @@
             row.classList.toggle("mcp-service-row--offline", !online);
             row.classList.toggle("mcp-service-row--online", online);
             if (statusLabel) statusLabel.textContent = online ? "Online" : "Offline";
-            serviceSwitch.disabled = !online;
             if (offlineTooltip) offlineTooltip.hidden = online;
-            setMcpSwitch(
-                serviceSwitch,
-                online && Boolean(savedMcpStates.get(name))
-            );
+            applyCustomMcpServiceState(row, online);
             if (!online) savedMcpStates.set(name, false);
         } catch (error) {
             if (requestSequence !== mcpSettingsSequence) return;
             row.classList.add("mcp-service-row--offline");
             if (statusLabel) statusLabel.textContent = "Offline";
-            serviceSwitch.disabled = true;
             if (offlineTooltip) offlineTooltip.hidden = false;
-            setMcpSwitch(serviceSwitch, false);
+            applyCustomMcpServiceState(row, false);
             savedMcpStates.set(name, false);
         } finally {
             if (requestSequence === mcpSettingsSequence) {
@@ -2153,6 +2278,13 @@
     const llamaToolName = (tool) => {
         const definition = llamaToolDefinition(tool);
         return String((tool && tool.tool) || definition.name || "").trim();
+    };
+
+    const llamaToolDisplayName = (serviceName, toolName) => {
+        const prefix = `${serviceName}_`;
+        return toolName.startsWith(prefix) && toolName.length > prefix.length
+            ? toolName.slice(prefix.length)
+            : toolName;
     };
 
     const llamaToolServiceName = (tool) => {
@@ -2342,7 +2474,7 @@
         );
     };
 
-    const createLlamaManagedToolRow = (entry, providerOnline) => {
+    const createLlamaManagedToolRow = (serviceName, entry, providerOnline) => {
         const tool = entry.tool;
         const removed = Boolean(entry.removed);
         const toolName = llamaToolName(tool);
@@ -2353,7 +2485,10 @@
 
         const identity = document.createElement("div");
         identity.className = "llama-managed-tool-identity";
-        const name = createMcpName(toolName);
+        const name = createMcpName(
+            toolName,
+            llamaToolDisplayName(serviceName, toolName)
+        );
         const description = document.createElement("span");
         description.textContent = removed
             ? "This previously discovered tool is no longer available."
@@ -2499,7 +2634,11 @@
         toolList.className = "llama-managed-service-tools";
         toolList.hidden = true;
         entries.forEach((entry) => {
-            toolList.appendChild(createLlamaManagedToolRow(entry, providerOnline));
+            toolList.appendChild(createLlamaManagedToolRow(
+                serviceName,
+                entry,
+                providerOnline
+            ));
         });
         const expandButton = document.createElement("button");
         expandButton.type = "button";
@@ -2657,6 +2796,7 @@
         mcpSettingsModal.hidden = false;
         mcpServiceList.replaceChildren();
         setMcpSaveBusy(false);
+        setMcpRefreshBusy(false);
         if (mcpSettingsSaveBtn) mcpSettingsSaveBtn.disabled = true;
         const loading = document.createElement("p");
         loading.className = "mcp-settings-loading";
@@ -2800,6 +2940,28 @@
                 enabled: savedMcpStates.get(name),
                 settings,
             });
+            row.querySelectorAll("[data-custom-mcp-tool-switch]").forEach(
+                (toolSwitch) => {
+                    if (
+                        toolSwitch.getAttribute("data-custom-tool-available")
+                        !== "true"
+                    ) return;
+                    const toolName = toolSwitch.getAttribute(
+                        "data-custom-mcp-tool-switch"
+                    );
+                    if (!toolName) return;
+                    const stateKey = customMcpToolKey(name, toolName);
+                    const enabled = Boolean(savedCustomToolStates.get(stateKey));
+                    savedCustomToolStates.set(stateKey, enabled);
+                    records.push({
+                        source: "external_tool",
+                        service: name,
+                        tool: toolName,
+                        enabled,
+                        settings: {},
+                    });
+                }
+            );
         });
 
         mcpServiceList?.querySelectorAll("[data-llama-managed-service]").forEach(
@@ -2863,6 +3025,18 @@
             window.alert(`MCP settings could not be saved: ${error}`);
             setMcpSaveBusy(false);
             mcpSettingsSaveBtn.disabled = false;
+        }
+    };
+
+    const refreshMcpTools = async () => {
+        if (!mcpToolsRefreshBtn) return;
+        setMcpRefreshBusy(true);
+        try {
+            await api.json(mcpToolsRefreshUrl, {method: "POST"});
+            await openMcpSettings();
+        } catch (error) {
+            window.alert(`MCP tools could not be refreshed: ${error}`);
+            setMcpRefreshBusy(false);
         }
     };
 
@@ -3925,6 +4099,7 @@
         button.addEventListener("click", closeMcpSettings);
     });
     mcpSettingsSaveBtn?.addEventListener("click", saveMcpSettings);
+    mcpToolsRefreshBtn?.addEventListener("click", refreshMcpTools);
     mcpSettingsModal?.addEventListener("click", (event) => {
         if (event.target === mcpSettingsModal) closeMcpSettings();
     });

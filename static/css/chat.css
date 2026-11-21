@@ -1295,6 +1295,13 @@
     font-size: 0.62rem;
 }
 
+.mcp-service-tool-count {
+    flex: 0 0 auto;
+    color: var(--muted);
+    font-size: 0.65rem;
+    white-space: nowrap;
+}
+
 .mcp-service-controls {
     gap: 10px;
 }
@@ -1702,6 +1709,17 @@
 
 .llama-managed-service-tools {
     display: grid;
+}
+
+.custom-mcp-service-tools {
+    grid-column: 1 / -1;
+    margin: 0 -12px -10px;
+    border-top: 1px solid var(--line);
+    background: rgba(111, 214, 195, 0.035);
+}
+
+.custom-mcp-service-tools .llama-managed-tool-row:first-child {
+    border-top: 0;
 }
 
 .llama-managed-tool-row {
@@ -2180,6 +2198,20 @@
     flex-wrap: wrap;
     gap: 8px;
     align-items: center;
+}
+
+.mcp-refresh-button[aria-busy="true"] {
+    cursor: wait;
+}
+
+.mcp-refresh-spinner[hidden],
+.mcp-refresh-idle-icon[hidden] {
+    display: none;
+}
+
+.mcp-refresh-spinner:not([hidden]) {
+    display: inline-flex;
+    animation: chat-spin 0.75s linear infinite;
 }
 
 .more-params-save-model-button[hidden] {
