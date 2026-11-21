@@ -559,6 +559,93 @@
         }
     };
 
+    let externalImageHover = null;
+    let externalImageHoverTimer = null;
+
+    const ensureExternalImageHover = () => {
+        if (externalImageHover) return externalImageHover;
+        const overlay = document.createElement("div");
+        overlay.className = "chat-image-hover-preview";
+        overlay.hidden = true;
+        overlay.innerHTML = `
+            <a class="chat-image-hover-link" target="_blank" rel="noopener noreferrer">
+                <img class="chat-image-hover-image" alt="Large external image preview">
+            </a>
+            <button class="chat-image-hover-download" type="button" title="Download image" aria-label="Download image">⇩</button>
+        `;
+        const cancelHide = () => {
+            if (externalImageHoverTimer !== null) {
+                window.clearTimeout(externalImageHoverTimer);
+                externalImageHoverTimer = null;
+            }
+        };
+        overlay.addEventListener("mouseenter", cancelHide);
+        overlay.addEventListener("mouseleave", () => {
+            externalImageHoverTimer = window.setTimeout(() => {
+                overlay.hidden = true;
+            }, 160);
+        });
+        overlay.querySelector(".chat-image-hover-download")
+            .addEventListener("click", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const button = event.currentTarget;
+                downloadExternalImage(overlay.dataset.imageUrl || "", button);
+            });
+        document.body.appendChild(overlay);
+        externalImageHover = overlay;
+        return overlay;
+    };
+
+    const hideExternalImageHover = () => {
+        if (!externalImageHover) return;
+        if (externalImageHoverTimer !== null) {
+            window.clearTimeout(externalImageHoverTimer);
+        }
+        externalImageHoverTimer = window.setTimeout(() => {
+            externalImageHover.hidden = true;
+        }, 160);
+    };
+
+    const positionExternalImageHover = (overlay, target) => {
+        const targetRect = target.getBoundingClientRect();
+        const overlayRect = overlay.getBoundingClientRect();
+        const margin = 12;
+        const gap = 8;
+        let left = targetRect.right + gap;
+        if (left + overlayRect.width > window.innerWidth - margin) {
+            left = targetRect.left - overlayRect.width - gap;
+        }
+        left = Math.max(
+            margin,
+            Math.min(left, window.innerWidth - overlayRect.width - margin)
+        );
+        const top = Math.max(
+            margin,
+            Math.min(targetRect.top, window.innerHeight - overlayRect.height - margin)
+        );
+        overlay.style.left = `${Math.round(left)}px`;
+        overlay.style.top = `${Math.round(top)}px`;
+        overlay.style.visibility = "visible";
+    };
+
+    const showExternalImageHover = (preview, image, url) => {
+        if (!preview.classList.contains("is-available") || !image.src) return;
+        const overlay = ensureExternalImageHover();
+        if (externalImageHoverTimer !== null) {
+            window.clearTimeout(externalImageHoverTimer);
+            externalImageHoverTimer = null;
+        }
+        const hoverImage = overlay.querySelector(".chat-image-hover-image");
+        const hoverLink = overlay.querySelector(".chat-image-hover-link");
+        overlay.dataset.imageUrl = url;
+        hoverLink.href = url;
+        hoverImage.src = image.src;
+        overlay.style.visibility = "hidden";
+        overlay.hidden = false;
+        window.requestAnimationFrame(() => positionExternalImageHover(overlay, image));
+    };
+
     const hydrateAssistantImages = (root) => {
         root.querySelectorAll("[data-chat-image-preview]:not([data-image-bound])")
             .forEach((preview) => {
@@ -591,7 +678,16 @@
                 image.addEventListener("error", () => {
                     image.removeAttribute("src");
                     preview.classList.remove("is-available");
+                    hideExternalImageHover();
                 });
+                image.addEventListener("mouseenter", () => {
+                    showExternalImageHover(preview, image, url);
+                });
+                image.addEventListener("mouseleave", hideExternalImageHover);
+                image.closest("a")?.addEventListener("focus", () => {
+                    showExternalImageHover(preview, image, url);
+                });
+                image.closest("a")?.addEventListener("blur", hideExternalImageHover);
                 download.addEventListener("click", (event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -601,10 +697,49 @@
             });
     };
 
+    const hydrateAssistantAudio = (root) => {
+        root.querySelectorAll("[data-chat-audio-preview]:not([data-audio-bound])")
+            .forEach((preview) => {
+                preview.setAttribute("data-audio-bound", "true");
+                const url = preview.getAttribute("data-audio-url") || "";
+                const mount = preview.querySelector("[data-chat-audio-player]");
+                if (!url || !mount || !chatMedia?.createAudio) return;
+
+                let label = "Audio stream";
+                try {
+                    label = new URL(url).hostname || label;
+                } catch (error) {
+                    // The Markdown renderer already validates the URL.
+                }
+                const player = chatMedia.createAudio(
+                    url,
+                    label,
+                    true,
+                    { preload: "none" }
+                );
+                player.classList.add("chat-audio-player--external");
+                const audio = player.querySelector("audio");
+                audio?.addEventListener("error", () => {
+                    player.classList.add("is-unavailable");
+                    const name = player.querySelector(".chat-attachment-name");
+                    if (name) {
+                        name.textContent = "Stream unavailable";
+                        name.title = "Open the original stream URL instead";
+                    }
+                });
+                mount.appendChild(player);
+            });
+    };
+
+    const hydrateAssistantMedia = (root) => {
+        hydrateAssistantImages(root);
+        hydrateAssistantAudio(root);
+    };
+
     const attachAssistantActions = (contentEl, raw) => {
         rawSource.set(contentEl, raw);
         contentEl.innerHTML = renderMarkdown(raw);
-        hydrateAssistantImages(contentEl);
+        hydrateAssistantMedia(contentEl);
         const message = contentEl.parentElement;
         if (!message || message.querySelector(".chat-message-actions")) return;
 
@@ -618,7 +753,7 @@
             const showingRaw = toggleBtn.textContent === "Rendered";
             if (showingRaw) {
                 contentEl.innerHTML = renderMarkdown(rawSource.get(contentEl));
-                hydrateAssistantImages(contentEl);
+                hydrateAssistantMedia(contentEl);
                 toggleBtn.textContent = "Raw";
             } else {
                 contentEl.textContent = rawSource.get(contentEl);
@@ -971,7 +1106,7 @@
             loading.streamContent.innerHTML = renderMarkdown(
                 streamingMarkdown(loading.pendingMarkdown)
             );
-            if (flush) hydrateAssistantImages(loading.streamContent);
+            if (flush) hydrateAssistantMedia(loading.streamContent);
             loading.streamContent.hidden = false;
             loading.element.classList.add("is-streaming");
             loading.spinner.hidden = true;

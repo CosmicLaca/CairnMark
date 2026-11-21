@@ -168,7 +168,127 @@ that page is an explicit user action and shares it with that third party.
 CairnMark does not transmit it automatically. This browser workflow is
 independent of SearXNG and requires no `settings.yml` change.
 
-## 4. Understand the two CairnMark connection types
+## 4. Configure and test audio and video search
+
+SearXNG separates media searches into categories. Video tools normally query
+the `videos` category, while music and radio tools normally query `music`.
+Keeping a general web-search engine does not automatically provide results in
+either media category.
+
+When `keep_only` is enabled, add the media engines you intend to use to the
+active `settings.yml`. The following is a practical starting point; retain any
+general and image engines you already use:
+
+```yaml
+use_default_settings:
+  engines:
+    keep_only:
+      - bing
+      - bing videos
+      - youtube
+      - dailymotion
+      - vimeo
+      - bandcamp
+      - genius
+      - mixcloud
+      - soundcloud
+      - radio browser
+
+search:
+  safe_search: 0
+  formats:
+    - html
+    - json
+
+engines:
+  - name: bing videos
+    disabled: false
+  - name: youtube
+    disabled: false
+  - name: dailymotion
+    disabled: false
+  - name: vimeo
+    disabled: false
+  - name: bandcamp
+    disabled: false
+  - name: genius
+    disabled: false
+  - name: mixcloud
+    disabled: false
+  - name: soundcloud
+    disabled: false
+  - name: radio browser
+    disabled: false
+```
+
+Engine names, categories, and availability vary by SearXNG release. Check the
+running server's `/config` response before copying this list. Remove an engine
+that the active version does not expose instead of leaving an invalid name in
+`keep_only`. Restart SearXNG after every `settings.yml` change.
+
+Test video search directly before involving CairnMark:
+
+```powershell
+$query = [uri]::EscapeDataString('latest "Szabad sajtó klub" Kontroll YouTube')
+$video = Invoke-RestMethod "http://127.0.0.1:8888/search?q=$query&format=json&categories=videos&safesearch=0"
+$video.results | Select-Object -First 10 title, url, engine, publishedDate, duration
+$video.unresponsive_engines
+```
+
+Then test music or radio search:
+
+```powershell
+$query = [uri]::EscapeDataString("hard rock radio 128 kbps mp3")
+$music = Invoke-RestMethod "http://127.0.0.1:8888/search?q=$query&format=json&categories=music&safesearch=0"
+$music.results | Select-Object -First 10 title, url, engine, content
+$music.unresponsive_engines
+```
+
+A non-empty response confirms only that SearXNG returned media results. A
+result URL may still be a web page rather than a directly playable stream or
+media file. Radio Browser is useful for station discovery, but the model may
+need to crawl a returned playlist page or use another exposed SearXNG subtool
+to obtain the station's direct stream URL.
+
+In CairnMark's **MCP settings**:
+
+1. Enable the SearXNG parent service.
+2. Enable its video-search and/or music-search subtools. Tool names come from
+   the connected MCP service and may include the `searxng_` prefix.
+3. Leave **Search engine names** empty for the first test. This allows SearXNG
+   to use all engines enabled for the requested category.
+4. After a successful test, optionally select several exact engine names. The
+   field supports multiple values and sends the selected values as a list.
+5. Keep **Response Format** on JSON for tool use, choose the required SafeSearch
+   level, save the modal, and ensure global tool use is enabled.
+
+Example video request:
+
+> Use the SearXNG video-search tool to find the latest “Szabad sajtó klub”
+> video published by Kontroll on its official YouTube channel. Return the exact
+> title, publication date, channel name, and direct YouTube watch URL. Do not
+> invent or simulate results.
+
+Example music request:
+
+> Use the SearXNG music-search tool to find official Axel Rudi Pell tracks.
+> Return the track title, provider, source-page URL, and direct playable URL
+> when the search result supplies one. Do not replace missing URLs with examples.
+
+Example radio request:
+
+> Use SearXNG and Radio Browser to find five working hard-rock radio stations.
+> Return station name, codec, bitrate, source page, and the direct stream URL in
+> a table whose final column is named Stream URL.
+
+CairnMark turns recognized direct stream links into lazy audio controls. A
+plain direct link is recognized by a common audio extension or by an explicit
+label such as **Stream URL**; playlist pages and ordinary website links remain
+links. YouTube and Vimeo video-page URLs become embedded players. Other video
+providers remain external links unless they return a supported direct-media
+URL.
+
+## 5. Understand the two CairnMark connection types
 
 CairnMark can show the same MCP service through two independent providers:
 
@@ -183,7 +303,7 @@ tooltip identifies them as `[provider]::[service]`, for example
 `llama.cpp::searxng` and `custom::searxng`. Change the entry that corresponds to
 the provider you intend to use.
 
-## 5. Recommended CairnMark SearXNG settings
+## 6. Recommended CairnMark SearXNG settings
 
 Open the chat page, select the tool icon, and configure the relevant SearXNG
 service in **MCP settings**:
@@ -210,7 +330,7 @@ Use **Status check** to repeat endpoint checks without rediscovering every MCP
 tool. Use **Refresh** when services or subtools have been added, removed, or
 renamed; it refreshes the cached Custom tool metadata in `instance/tools.db`.
 
-## 6. Test tool use in chat
+## 7. Test tool use in chat
 
 After saving the setup, try:
 
@@ -244,6 +364,24 @@ successful request.
 An image URL protected by a CAPTCHA, expiring token, hotlink restriction, or
 login may appear in search data but still fail to load in the chat bubble. That
 is a source-site restriction, not an MCP connection failure.
+
+### General search works, but audio or video search returns no results
+
+- Query the `music` or `videos` category directly with the PowerShell examples
+  above.
+- Confirm the active `settings.yml` keeps engines that actually serve that
+  category; a similarly named general-search engine is not equivalent.
+- Inspect `unresponsive_engines` and remove or replace engines that are blocked,
+  suspended, rate-limited, or unsupported by the installed version.
+- Leave CairnMark's engine selection empty until the corresponding direct
+  SearXNG category works. Then select only exact names exposed by `/config`.
+- Confirm that the matching MCP music-search or video-search subtool, its parent
+  service, and global tool use are all enabled.
+
+If results appear but no player is shown, inspect the returned URL. Search
+pages, playlist index pages, and unsupported video hosts remain normal links.
+Ask the model for a direct stream URL or a direct YouTube/Vimeo watch URL, and
+require it not to invent unavailable media links.
 
 ### Direct requests work, but CairnMark returns no results
 

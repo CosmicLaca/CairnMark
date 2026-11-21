@@ -27,17 +27,19 @@
         sync();
     };
 
-    const createAudio = (src, name = "", compact = true) => {
+    const createAudio = (src, name = "", compact = true, { preload = "metadata" } = {}) => {
         const player = document.createElement("div");
         player.className = compact
             ? "chat-audio-player chat-audio-player--compact"
             : "chat-audio-player";
         player.innerHTML = `
-            <audio preload="metadata" hidden></audio>
+            <audio hidden></audio>
             <button type="button" class="chat-audio-toggle" title="Play">▶</button>
             <button type="button" class="chat-audio-back" title="Rewind to beginning">⏪</button>
         `;
-        player.querySelector("audio").src = src;
+        const audio = player.querySelector("audio");
+        audio.preload = preload;
+        audio.src = src;
         if (name) {
             const label = document.createElement("span");
             label.className = "chat-attachment-name";

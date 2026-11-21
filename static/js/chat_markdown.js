@@ -9,6 +9,45 @@
         .replace(/'/g, "&#39;");
 
     const IMAGE_PATH_PATTERN = /\.(?:avif|bmp|gif|jpe?g|png|webp)$/i;
+    const AUDIO_PATH_PATTERN = /\.(?:aac|flac|m4a|mp3|oga|ogg|opus|wav)$/i;
+    const AUDIO_LABEL_PATTERN = /^\s*(?:(?:direct\s+)?(?:audio\s+)?stream|audio|listen|play|radio)(?:\s+url)?\s*$/i;
+    const AUDIO_CONTEXT_PATTERN = /\b(?:(?:direct\s+)?(?:audio\s+)?stream|listen)(?:\s+url)?\s*[:=-]?\s*$/i;
+
+    const videoEmbed = (url) => {
+        const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+        if (["youtube.com", "m.youtube.com", "music.youtube.com"].includes(hostname)) {
+            const parts = url.pathname.split("/").filter(Boolean);
+            const videoId = url.searchParams.get("v")
+                || (["embed", "shorts", "live"].includes(parts[0]) ? parts[1] : "");
+            if (/^[A-Za-z0-9_-]{11}$/.test(videoId || "")) {
+                return {
+                    provider: "YouTube",
+                    url: `https://www.youtube-nocookie.com/embed/${videoId}`,
+                };
+            }
+        }
+        if (hostname === "youtu.be") {
+            const videoId = url.pathname.split("/").filter(Boolean)[0] || "";
+            if (/^[A-Za-z0-9_-]{11}$/.test(videoId)) {
+                return {
+                    provider: "YouTube",
+                    url: `https://www.youtube-nocookie.com/embed/${videoId}`,
+                };
+            }
+        }
+        if (["vimeo.com", "player.vimeo.com"].includes(hostname)) {
+            const videoId = url.pathname.split("/").filter(Boolean)
+                .reverse()
+                .find((part) => /^\d+$/.test(part));
+            if (videoId) {
+                return {
+                    provider: "Vimeo",
+                    url: `https://player.vimeo.com/video/${videoId}`,
+                };
+            }
+        }
+        return null;
+    };
 
     const splitLinkSuffix = (value) => {
         let href = String(value);
@@ -32,7 +71,11 @@
         return { href, suffix };
     };
 
-    const safeLink = (label, href, { previewImage = false } = {}) => {
+    const safeLink = (
+        label,
+        href,
+        { previewImage = false, previewAudio = false } = {}
+    ) => {
         try {
             const decodedHref = String(href)
                 .replace(/&amp;/g, "&")
@@ -55,13 +98,40 @@
                     + `<button class="chat-markdown-image-download" type="button" title="Download image" aria-label="Download image">⇩</button>`
                     + `</span>`;
             }
-            return `<a href="${escapeHtml(url.href)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+            const safeUrl = escapeHtml(url.href);
+            const embed = ["http:", "https:"].includes(url.protocol)
+                ? videoEmbed(url)
+                : null;
+            if (embed) {
+                const safeEmbedUrl = escapeHtml(embed.url);
+                return `<span class="chat-markdown-video-preview">`
+                    + `<a class="chat-markdown-video-source" href="${safeUrl}" target="_blank" rel="noopener noreferrer">${label}</a>`
+                    + `<span class="chat-markdown-video-frame">`
+                    + `<iframe src="${safeEmbedUrl}" title="Embedded ${embed.provider} video" loading="lazy" `
+                    + `referrerpolicy="strict-origin-when-cross-origin" `
+                    + `allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`
+                    + `</span></span>`;
+            }
+            if (
+                ["http:", "https:"].includes(url.protocol)
+                && (
+                    previewAudio
+                    || AUDIO_PATH_PATTERN.test(url.pathname)
+                    || AUDIO_LABEL_PATTERN.test(String(label).replace(/<[^>]*>/g, ""))
+                )
+            ) {
+                return `<span class="chat-markdown-audio-preview" data-chat-audio-preview data-audio-url="${safeUrl}">`
+                    + `<a class="chat-markdown-audio-source" href="${safeUrl}" target="_blank" rel="noopener noreferrer">${label}</a>`
+                    + `<span class="chat-markdown-audio-player" data-chat-audio-player></span>`
+                    + `</span>`;
+            }
+            return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${label}</a>`;
         } catch (error) {
             return label;
         }
     };
 
-    const renderInline = (value) => {
+    const renderInline = (value, { audioHint = false } = {}) => {
         const protectedParts = [];
         const protect = (html) => {
             const index = protectedParts.length;
@@ -73,11 +143,16 @@
                 protect(`<code>${code}</code>`)
             ))
             .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label, href) => (
-                protect(safeLink(label, href))
+                protect(safeLink(label, href, { previewAudio: audioHint }))
             ))
-            .replace(/\bhttps?:\/\/[^\s<]+/g, (match) => {
+            .replace(/\bhttps?:\/\/[^\s<]+/g, (match, offset, input) => {
                 const { href, suffix } = splitLinkSuffix(match);
-                return protect(`${safeLink(href, href, { previewImage: true })}${suffix}`);
+                const prefix = input.slice(Math.max(0, offset - 48), offset);
+                const previewAudio = audioHint || AUDIO_CONTEXT_PATTERN.test(prefix);
+                return protect(`${safeLink(href, href, {
+                    previewImage: true,
+                    previewAudio,
+                })}${suffix}`);
             })
             .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
             .replace(/__([^_]+)__/g, "<strong>$1</strong>")
@@ -132,11 +207,11 @@
         });
     };
 
-    const tableCell = (tag, value, alignment) => {
+    const tableCell = (tag, value, alignment, { audioHint = false } = {}) => {
         const className = alignment === "left"
             ? ""
             : ` class="markdown-table-align-${alignment}"`;
-        return `<${tag}${className}>${renderInline(value)}</${tag}>`;
+        return `<${tag}${className}>${renderInline(value, { audioHint })}</${tag}>`;
     };
 
     const renderQuoteLines = (lines) => {
@@ -236,7 +311,11 @@
                     const cells = splitTableRow(lines[lineIndex]);
                     const normalized = alignments.map((_alignment, index) => cells[index] || "");
                     rows.push(`<tr>${normalized.map((cell, index) => (
-                        tableCell("td", cell, alignments[index])
+                        tableCell("td", cell, alignments[index], {
+                            audioHint: /\b(?:audio|listen|radio|stream)\b/i.test(
+                                headerCells[index] || ""
+                            ),
+                        })
                     )).join("")}</tr>`);
                     lineIndex += 1;
                 }

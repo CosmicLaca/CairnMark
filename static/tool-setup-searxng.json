@@ -128,6 +128,42 @@
         "label": "Stack Overflow"
       },
       {
+        "value": "bing videos",
+        "label": "Bing Videos"
+      },
+      {
+        "value": "youtube",
+        "label": "YouTube"
+      },
+      {
+        "value": "dailymotion",
+        "label": "Dailymotion"
+      },
+      {
+        "value": "vimeo",
+        "label": "Vimeo"
+      },
+      {
+        "value": "bandcamp",
+        "label": "Bandcamp"
+      },
+      {
+        "value": "genius",
+        "label": "Genius"
+      },
+      {
+        "value": "mixcloud",
+        "label": "Mixcloud"
+      },
+      {
+        "value": "soundcloud",
+        "label": "SoundCloud"
+      },
+      {
+        "value": "radio browser",
+        "label": "Radio Browser"
+      },
+      {
         "value": "api pool",
         "label": "API Pool"
       }

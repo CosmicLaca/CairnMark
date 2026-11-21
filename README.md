@@ -183,6 +183,12 @@ reachable image is displayed inside the assistant bubble at a fixed 160-pixel
 height while preserving its aspect ratio. Select the preview to open the
 original image in a new browser tab.
 
+Hover over an available embedded image to open a floating larger preview. It
+preserves the original aspect ratio, is limited to 600 pixels wide and 400
+pixels high, and is positioned inside the current viewport. The floating
+preview has its own top-right download button. The original thumbnail and its
+download button remain unchanged.
+
 Each available preview has a download button in its top-right corner. Selecting
 it opens the standard file-save picker when the browser supports one; otherwise
 the browser's normal download behavior is used. The backend accepts public
@@ -204,6 +210,32 @@ This reverse-image workflow is separate from the SearXNG MCP image-search tool.
 SearXNG searches from text queries and does not receive the uploaded image
 bytes. Its local image-engine configuration and test procedure are documented
 in [MCP tool and SearXNG setup](tool-setup.md).
+
+### Play audio and video results
+
+Assistant responses can turn supported media-result URLs into players while
+retaining the original external link.
+
+- A direct audio URL with a common audio extension becomes a compact player.
+  Extensionless radio URLs are also recognized when the response labels them
+  as **Stream URL**, **Audio stream**, **Listen**, or a similarly explicit
+  stream field. Markdown tables whose column heading identifies a stream are
+  supported.
+- Audio players provide play, pause, and rewind controls. External streams use
+  `preload="none"`, so CairnMark does not connect to the station until the user
+  selects Play. A browser playback failure leaves the original URL available
+  and marks the control as unavailable.
+- YouTube watch, share, Shorts, live, and embed URLs become responsive 16:9
+  players using YouTube's privacy-enhanced embed domain. Numeric Vimeo video
+  URLs become Vimeo players. Both use lazy-loaded frames and retain the direct
+  source link above the player.
+- Search-result pages, playlist index pages, and unsupported media providers
+  remain ordinary links. CairnMark does not invent or resolve a direct stream
+  when the tool result supplies only a source page.
+
+Detailed SearXNG music/video engine configuration, direct API tests, MCP switch
+setup, prompts, and troubleshooting are available in
+[MCP tool and SearXNG setup](tool-setup.md).
 
 ### Configure MCP tool connections
 
