@@ -24,6 +24,11 @@ CREATE TABLE IF NOT EXISTS mcp_tool_cache (
     definition TEXT NOT NULL DEFAULT '{}',
     refreshed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (service_name, tool_name)
+);
+CREATE TABLE IF NOT EXISTS mcp_preferences (
+    preference_key TEXT PRIMARY KEY,
+    preference_value TEXT NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
 """
 
@@ -138,6 +143,52 @@ class McpSettingsRepository:
             many=True,
         )
         return rowcount
+
+    def tools_enabled(self):
+        """Return the global tool state, or None before its first save."""
+        rows = self.store.fetch(
+            "SELECT preference_value FROM mcp_preferences "
+            "WHERE preference_key = ?",
+            ("tools_enabled",),
+        )
+        if not rows:
+            return None
+        return rows[0][0] == "true"
+
+    def set_tools_enabled(self, enabled):
+        """Persist the global tool enable switch."""
+        self.store.execute(
+            """
+            INSERT INTO mcp_preferences (preference_key, preference_value)
+            VALUES (?, ?)
+            ON CONFLICT(preference_key) DO UPDATE SET
+                preference_value = excluded.preference_value,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            ("tools_enabled", "true" if enabled else "false"),
+        )
+        return enabled
+
+    def enabled_services(self):
+        """Return source-qualified enabled main services from saved rows."""
+        rows = self.store.fetch(
+            """
+            SELECT DISTINCT source, service_name
+            FROM mcp_settings
+            WHERE source IN ('external', 'llama_service')
+              AND tool_name = ''
+              AND enabled = 1
+            ORDER BY source, service_name COLLATE NOCASE
+            """
+        )
+        provider_names = {
+            "external": "custom",
+            "llama_service": "llama",
+        }
+        return [
+            f"{provider_names[source]}::{service_name}"
+            for source, service_name in rows
+        ]
 
     def cached_tools(self, service_name=None):
         """Return cached Custom MCP tool definitions."""

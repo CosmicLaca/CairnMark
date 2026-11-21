@@ -1108,6 +1108,34 @@
     background: rgba(36, 111, 168, 0.12);
 }
 
+.chat-tool-capability--inactive {
+    opacity: 0.42;
+}
+
+.tool-global-settings-modal .modal-content {
+    width: min(430px, calc(100% - 32px));
+}
+
+.tool-global-setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+}
+
+.tool-global-setting-row .field-hint {
+    margin: 5px 0 0;
+}
+
+.tool-global-switch.chat-toggle-switch {
+    flex: 0 0 46px;
+    width: 46px;
+    min-height: 34px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+}
+
 .more-params-modal.mcp-settings-modal .modal-content {
     display: flex;
     box-sizing: border-box;

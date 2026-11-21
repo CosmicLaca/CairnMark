@@ -660,6 +660,43 @@
   </div>
 </div>
 
+<div class="modal more-params-modal tool-global-settings-modal" id="tool-global-settings-modal" data-tool-global-settings-modal hidden aria-modal="true" role="dialog" aria-labelledby="tool-global-settings-title">
+  <div class="modal-content">
+    <header class="modal-header">
+      <h2 id="tool-global-settings-title">Tool status</h2>
+      <button type="button" class="close-modal-button" data-tool-global-settings-close>&times;</button>
+    </header>
+    <div class="modal-body">
+      <div class="tool-global-setting-row">
+        <div>
+          <strong>Enable/Disable tools</strong>
+          <p class="field-hint">Globally allow or pause the saved tool services.</p>
+        </div>
+        <button
+          type="button"
+          class="chat-toggle-switch tool-global-switch"
+          data-tool-global-switch
+          role="switch"
+          aria-checked="false"
+          aria-label="Enable or disable tools"
+        >
+          <span class="chat-toggle-switch-track" aria-hidden="true">
+            <span class="chat-toggle-switch-knob"></span>
+          </span>
+        </button>
+      </div>
+    </div>
+    <footer class="modal-footer more-params-footer">
+      <div class="more-params-footer-actions">
+        <button type="button" class="modal-cancel-button" data-tool-global-settings-close>Cancel</button>
+        <button type="button" class="modal-save-button" data-tool-global-settings-save>
+          <span aria-hidden="true">✓</span> Save
+        </button>
+      </div>
+    </footer>
+  </div>
+</div>
+
 <div class="modal more-params-modal mcp-settings-modal" id="mcp-settings-modal" data-mcp-settings-modal hidden aria-modal="true" role="dialog" aria-labelledby="mcp-settings-title">
   <div class="modal-content">
     <header class="modal-header">
@@ -711,6 +748,7 @@
     window.CairnmarkMcpServerSaveUrl = {{ url_for('chat_save_mcp_server')|tojson }};
     window.CairnmarkMcpSettingsUrl = {{ url_for('chat_mcp_settings_get')|tojson }};
     window.CairnmarkMcpSettingsSaveUrl = {{ url_for('chat_mcp_settings_save')|tojson }};
+    window.CairnmarkMcpGlobalStateUrl = {{ url_for('chat_mcp_global_state')|tojson }};
     window.CairnmarkMcpToolsRefreshUrl = {{ url_for('chat_mcp_tools_refresh')|tojson }};
     window.CairnmarkMcpEndpointTestUrl = {{ url_for('chat_mcp_endpoint_test')|tojson }};
     window.CairnmarkLlamaManagedToolsUrl = {{ url_for('chat_llama_managed_tools')|tojson }};

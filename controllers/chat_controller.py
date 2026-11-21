@@ -913,6 +913,21 @@ class ChatController:
             }
         )
 
+    def mcp_global_state(self):
+        """Read or save the global tool switch without probing services."""
+        if request.method == "POST":
+            payload = request.get_json(silent=True) or {}
+            enabled = payload.get("enabled")
+            if not isinstance(enabled, bool):
+                return jsonify({"error": "Tool state must be a boolean."}), 400
+            self.mcp_settings.set_tools_enabled(enabled)
+        return jsonify(
+            {
+                "enabled": self.mcp_settings.tools_enabled(),
+                "enabled_services": self.mcp_settings.enabled_services(),
+            }
+        )
+
     def mcp_tools_refresh(self):
         """Refresh cached tool definitions for accessible Custom MCP services."""
         registry = self._mcp_registry()

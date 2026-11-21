@@ -78,6 +78,16 @@
     const mediaUploadsEl = document.querySelector("[data-chat-media-uploads]");
     const toolCapabilityEl = document.querySelector("[data-chat-tool-capability]");
     const toolCapabilityTooltip = document.querySelector("[data-chat-tool-tooltip]");
+    const toolGlobalSettingsModal = document.querySelector(
+        "[data-tool-global-settings-modal]"
+    );
+    const toolGlobalSwitch = document.querySelector("[data-tool-global-switch]");
+    const toolGlobalSaveBtn = document.querySelector(
+        "[data-tool-global-settings-save]"
+    );
+    const toolGlobalCloseBtns = document.querySelectorAll(
+        "[data-tool-global-settings-close]"
+    );
     const mcpSettingsModal = document.querySelector("[data-mcp-settings-modal]");
     const mcpServiceList = document.querySelector("[data-mcp-service-list]");
     const mcpSettingsSaveBtn = document.querySelector("[data-mcp-settings-save]");
@@ -132,6 +142,8 @@
     const mcpSettingsUrl = window.CairnmarkMcpSettingsUrl || "/chat/mcp_settings";
     const mcpSettingsSaveUrl = window.CairnmarkMcpSettingsSaveUrl
         || "/chat/mcp_settings/save";
+    const mcpGlobalStateUrl = window.CairnmarkMcpGlobalStateUrl
+        || "/chat/mcp_global_state";
     const mcpToolsRefreshUrl = window.CairnmarkMcpToolsRefreshUrl
         || "/chat/mcp_tools/refresh";
     const mcpEndpointTestUrl = window.CairnmarkMcpEndpointTestUrl
@@ -169,6 +181,9 @@
     }
     let mcpSettingsSequence = 0;
     let mcpDefaultTimeoutMs = 10000;
+    let toolCapabilityBaseLabel = "";
+    let globalToolsEnabled = null;
+    let enabledMcpServiceNames = [];
     let pendingDocumentPicker = false;
     const pendingAttachments = [];
     const renderMarkdown = window.CairnmarkMarkdown.render;
@@ -1733,7 +1748,8 @@
         toolCapabilityEl.hidden = true;
         toolCapabilityEl.classList.remove(
             "chat-tool-capability--full",
-            "chat-tool-capability--partial"
+            "chat-tool-capability--partial",
+            "chat-tool-capability--inactive"
         );
         toolCapabilityEl.removeAttribute("aria-label");
         toolCapabilityEl.removeAttribute("title");
@@ -1751,11 +1767,79 @@
             return;
         }
 
+        toolCapabilityBaseLabel = label;
         toolCapabilityEl.classList.add(`chat-tool-capability--${state}`);
+        updateToolCapabilityStatus();
+        toolCapabilityEl.hidden = false;
+    };
+
+    const updateToolCapabilityStatus = () => {
+        if (!toolCapabilityEl || !toolCapabilityBaseLabel) return;
+        const hasEnabledServices = enabledMcpServiceNames.length > 0;
+        let status;
+        if (!hasEnabledServices || globalToolsEnabled === null) {
+            status = "All tools disabled";
+        } else if (globalToolsEnabled !== true) {
+            status = "Disabled";
+        } else {
+            status = enabledMcpServiceNames.join(", ");
+        }
+        const label = `${toolCapabilityBaseLabel} · ${status}`;
+        toolCapabilityEl.classList.toggle(
+            "chat-tool-capability--inactive",
+            globalToolsEnabled !== true || !hasEnabledServices
+        );
         toolCapabilityEl.setAttribute("aria-label", label);
         toolCapabilityEl.setAttribute("title", label);
         if (toolCapabilityTooltip) toolCapabilityTooltip.textContent = label;
-        toolCapabilityEl.hidden = false;
+    };
+
+    const applyToolGlobalState = (payload) => {
+        globalToolsEnabled = typeof payload?.enabled === "boolean"
+            ? payload.enabled
+            : null;
+        enabledMcpServiceNames = Array.isArray(payload?.enabled_services)
+            ? [...new Set(payload.enabled_services.map(String).filter(Boolean))]
+            : [];
+        setMcpSwitch(toolGlobalSwitch, globalToolsEnabled === true);
+        updateToolCapabilityStatus();
+    };
+
+    const loadToolGlobalState = async () => {
+        try {
+            applyToolGlobalState(await api.request(mcpGlobalStateUrl));
+        } catch (error) {
+            applyToolGlobalState({enabled: null, enabled_services: []});
+        }
+    };
+
+    const openToolGlobalSettings = async () => {
+        if (!toolGlobalSettingsModal) return;
+        await loadToolGlobalState();
+        toolGlobalSettingsModal.hidden = false;
+    };
+
+    const closeToolGlobalSettings = () => {
+        if (toolGlobalSettingsModal) toolGlobalSettingsModal.hidden = true;
+    };
+
+    const saveToolGlobalSettings = async () => {
+        if (!toolGlobalSaveBtn || !toolGlobalSwitch) return;
+        toolGlobalSaveBtn.disabled = true;
+        try {
+            const payload = await api.json(mcpGlobalStateUrl, {
+                method: "POST",
+                body: {
+                    enabled: toolGlobalSwitch.getAttribute("aria-checked") === "true",
+                },
+            });
+            applyToolGlobalState(payload);
+            closeToolGlobalSettings();
+        } catch (error) {
+            window.alert(`Tool status could not be saved: ${error}`);
+        } finally {
+            toolGlobalSaveBtn.disabled = false;
+        }
     };
 
     const setMcpSwitch = (control, checked) => {
@@ -3195,6 +3279,7 @@
                 method: "POST",
                 body: {records},
             });
+            await loadToolGlobalState();
             closeMcpSettings();
         } catch (error) {
             window.alert(`MCP settings could not be saved: ${error}`);
@@ -4337,6 +4422,23 @@
 
     compactBtn?.addEventListener("click", handleCompact);
     toolCapabilityEl?.addEventListener("click", openMcpSettings);
+    toolCapabilityEl?.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        void openToolGlobalSettings();
+    });
+    toolGlobalSwitch?.addEventListener("click", () => {
+        setMcpSwitch(
+            toolGlobalSwitch,
+            toolGlobalSwitch.getAttribute("aria-checked") !== "true"
+        );
+    });
+    toolGlobalCloseBtns.forEach((button) => {
+        button.addEventListener("click", closeToolGlobalSettings);
+    });
+    toolGlobalSaveBtn?.addEventListener("click", saveToolGlobalSettings);
+    toolGlobalSettingsModal?.addEventListener("click", (event) => {
+        if (event.target === toolGlobalSettingsModal) closeToolGlobalSettings();
+    });
     mcpSettingsCloseBtns.forEach((button) => {
         button.addEventListener("click", closeMcpSettings);
     });
@@ -4505,6 +4607,7 @@
 
     // Keep the always-available document icon visible from first paint.
     void loadParameterHelp();
+    void loadToolGlobalState();
     renderMediaUploads(null);
     if (!modelStateInitialized) setTimeout(updateMoreParamsButtonState, 0);
 
