@@ -404,9 +404,98 @@
         emptyStateEl.hidden = false;
     };
 
+    const externalImageDownloadUrl = "/chat/external_image_download";
+    const externalImageTimeoutMs = 1000;
+
+    const externalImageFilename = (url) => {
+        try {
+            const filename = decodeURIComponent(new URL(url).pathname.split("/").pop() || "");
+            return filename.replace(/[^A-Za-z0-9._-]+/g, "_") || "external-image";
+        } catch (error) {
+            return "external-image";
+        }
+    };
+
+    const downloadExternalImage = async (url, button) => {
+        const endpoint = `${externalImageDownloadUrl}?url=${encodeURIComponent(url)}`;
+        const filename = externalImageFilename(url);
+        button.disabled = true;
+        try {
+            if (typeof window.showSaveFilePicker === "function") {
+                const fileHandle = await window.showSaveFilePicker({
+                    suggestedName: filename,
+                });
+                const response = await fetch(endpoint, { cache: "no-store" });
+                if (!response.ok) {
+                    const payload = await response.json().catch(() => ({}));
+                    throw new Error(payload.error || "Image download failed.");
+                }
+                const writable = await fileHandle.createWritable();
+                await writable.write(await response.blob());
+                await writable.close();
+                return;
+            }
+            const link = document.createElement("a");
+            link.href = endpoint;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        } catch (error) {
+            if (error?.name !== "AbortError") {
+                window.alert(`Image download failed: ${error}`);
+            }
+        } finally {
+            button.disabled = false;
+        }
+    };
+
+    const hydrateAssistantImages = (root) => {
+        root.querySelectorAll("[data-chat-image-preview]:not([data-image-bound])")
+            .forEach((preview) => {
+                preview.setAttribute("data-image-bound", "true");
+                const url = preview.getAttribute("data-image-url") || "";
+                const image = preview.querySelector(".chat-markdown-image");
+                const download = preview.querySelector(".chat-markdown-image-download");
+                if (!url || !image || !download) return;
+
+                let finished = false;
+                const probe = new Image();
+                const finish = (available) => {
+                    if (finished) return;
+                    finished = true;
+                    window.clearTimeout(timeout);
+                    if (!available) return;
+                    image.src = url;
+                    preview.classList.add("is-available");
+                };
+                const timeout = window.setTimeout(
+                    () => finish(false),
+                    externalImageTimeoutMs
+                );
+                probe.addEventListener(
+                    "load",
+                    () => finish(probe.naturalWidth > 0 && probe.naturalHeight > 0),
+                    { once: true }
+                );
+                probe.addEventListener("error", () => finish(false), { once: true });
+                image.addEventListener("error", () => {
+                    image.removeAttribute("src");
+                    preview.classList.remove("is-available");
+                });
+                download.addEventListener("click", (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    downloadExternalImage(url, download);
+                });
+                probe.src = url;
+            });
+    };
+
     const attachAssistantActions = (contentEl, raw) => {
         rawSource.set(contentEl, raw);
         contentEl.innerHTML = renderMarkdown(raw);
+        hydrateAssistantImages(contentEl);
         const message = contentEl.parentElement;
         if (!message || message.querySelector(".chat-message-actions")) return;
 
@@ -420,6 +509,7 @@
             const showingRaw = toggleBtn.textContent === "Rendered";
             if (showingRaw) {
                 contentEl.innerHTML = renderMarkdown(rawSource.get(contentEl));
+                hydrateAssistantImages(contentEl);
                 toggleBtn.textContent = "Raw";
             } else {
                 contentEl.textContent = rawSource.get(contentEl);
@@ -786,6 +876,7 @@
             loading.streamContent.innerHTML = renderMarkdown(
                 streamingMarkdown(loading.pendingMarkdown)
             );
+            if (flush) hydrateAssistantImages(loading.streamContent);
             loading.streamContent.hidden = false;
             loading.element.classList.add("is-streaming");
             loading.spinner.hidden = true;

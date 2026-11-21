@@ -135,6 +135,12 @@ APPLICATION_ROUTES = (
         ("GET",),
     ),
     (
+        "/chat/external_image_download",
+        "chat_external_image_download",
+        chat_controller.download_external_image,
+        ("GET",),
+    ),
+    (
         "/chat/saved",
         "chat_saved_list",
         partial(chat_controller.saved_chat, "list"),

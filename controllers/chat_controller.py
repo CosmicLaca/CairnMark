@@ -13,6 +13,7 @@ from flask import (
     current_app,
     jsonify,
     request,
+    send_file,
     send_from_directory,
     stream_with_context,
 )
@@ -45,6 +46,7 @@ from services.chat_exports import ChatExportRepository
 from services.chat_previews import ChatPreviewStore
 from services.chat_requests import CHAT_PARAMETER_FIELDS, ChatRequestWorkflow
 from services.chat_tools import ChatToolService
+from services.external_images import ExternalImageError, ExternalImageService
 from services.mcp_services import MCP_NAME_PATTERN, McpServiceRegistry
 from services.model_providers import (
     ModelProviderService,
@@ -63,6 +65,7 @@ class ChatController:
         request_workflow=None,
         export_repository=None,
         tool_service=None,
+        external_image_service=None,
     ):
         self.service = service or ModelProviderService()
         self.previews = preview_store or ChatPreviewStore()
@@ -70,6 +73,7 @@ class ChatController:
         self.exports = export_repository or ChatExportRepository()
         self.mcp_settings = MCP_SETTINGS
         self.tools = tool_service
+        self.external_images = external_image_service or ExternalImageService()
 
     @staticmethod
     def _add_tools_to_request_body(request_body, bindings, transcript):
@@ -576,6 +580,20 @@ class ChatController:
         if not file_path.is_file():
             return ("", 404)
         return send_from_directory(directory, safe_name)
+
+    def download_external_image(self):
+        """Download a validated public chat image through a same-origin route."""
+        try:
+            image = self.external_images.download(request.args.get("url", ""))
+        except ExternalImageError as error:
+            return jsonify({"error": str(error)}), 400
+        return send_file(
+            io.BytesIO(image.content),
+            mimetype=image.content_type,
+            as_attachment=True,
+            download_name=image.filename,
+            max_age=0,
+        )
 
     def save_settings(self):
         """Persist only the model, system prompt, and generation controls.

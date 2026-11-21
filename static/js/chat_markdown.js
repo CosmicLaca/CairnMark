@@ -8,7 +8,31 @@
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
 
-    const safeLink = (label, href) => {
+    const IMAGE_PATH_PATTERN = /\.(?:avif|bmp|gif|jpe?g|png|webp)$/i;
+
+    const splitLinkSuffix = (value) => {
+        let href = String(value);
+        let suffix = "";
+        const entitySuffix = href.match(/(?:&(?:quot|gt|lt|#39);)+$/);
+        if (entitySuffix) {
+            suffix = entitySuffix[0];
+            href = href.slice(0, -entitySuffix[0].length);
+        }
+        while (/[.,!?;:\]}]$/.test(href)) {
+            suffix = href.slice(-1) + suffix;
+            href = href.slice(0, -1);
+        }
+        while (href.endsWith(")")) {
+            const openCount = (href.match(/\(/g) || []).length;
+            const closeCount = (href.match(/\)/g) || []).length;
+            if (closeCount <= openCount) break;
+            suffix = `)${suffix}`;
+            href = href.slice(0, -1);
+        }
+        return { href, suffix };
+    };
+
+    const safeLink = (label, href, { previewImage = false } = {}) => {
         try {
             const decodedHref = String(href)
                 .replace(/&amp;/g, "&")
@@ -17,6 +41,19 @@
             const url = new URL(decodedHref, window.location.origin);
             if (!["http:", "https:", "mailto:"].includes(url.protocol)) {
                 return label;
+            }
+            if (
+                previewImage
+                && ["http:", "https:"].includes(url.protocol)
+                && IMAGE_PATH_PATTERN.test(url.pathname)
+            ) {
+                const safeUrl = escapeHtml(url.href);
+                return `<span class="chat-markdown-image-preview" data-chat-image-preview data-image-url="${safeUrl}">`
+                    + `<a class="chat-markdown-image-fallback" href="${safeUrl}" target="_blank" rel="noopener noreferrer">${safeUrl}</a>`
+                    + `<a class="chat-markdown-image-link" href="${safeUrl}" target="_blank" rel="noopener noreferrer">`
+                    + `<img class="chat-markdown-image" alt="External image preview"></a>`
+                    + `<button class="chat-markdown-image-download" type="button" title="Download image" aria-label="Download image">⇩</button>`
+                    + `</span>`;
             }
             return `<a href="${escapeHtml(url.href)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
         } catch (error) {
@@ -38,25 +75,14 @@
             .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label, href) => (
                 protect(safeLink(label, href))
             ))
+            .replace(/\bhttps?:\/\/[^\s<]+/g, (match) => {
+                const { href, suffix } = splitLinkSuffix(match);
+                return protect(`${safeLink(href, href, { previewImage: true })}${suffix}`);
+            })
             .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
             .replace(/__([^_]+)__/g, "<strong>$1</strong>")
             .replace(/\*([^*]+)\*/g, "<em>$1</em>")
             .replace(/_([^_]+)_/g, "<em>$1</em>");
-
-        rendered = rendered.replace(/\bhttps?:\/\/[^\s<]+/g, (match) => {
-            let href = match;
-            let suffix = "";
-            const entitySuffix = href.match(/(?:&(?:quot|gt|lt|#39);)+$/);
-            if (entitySuffix) {
-                suffix = entitySuffix[0] + suffix;
-                href = href.slice(0, -entitySuffix[0].length);
-            }
-            while (/[.,!?;:)\]}]$/.test(href)) {
-                suffix = href.slice(-1) + suffix;
-                href = href.slice(0, -1);
-            }
-            return `${safeLink(href, href)}${suffix}`;
-        });
         return rendered.replace(/@@INLINE(\d+)@@/g, (_match, index) => (
             protectedParts[Number(index)]
         ));
