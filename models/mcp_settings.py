@@ -1,6 +1,8 @@
 """SQLite persistence for MCP service and tool preferences."""
 
 import json
+import sqlite3
+from pathlib import Path
 
 from config import PROJECT_ROOT
 from models.sqlite_store import SQLiteStore
@@ -17,9 +19,54 @@ CREATE TABLE IF NOT EXISTS mcp_settings (
     PRIMARY KEY (source, service_name, tool_name)
 )
 """
-STORE = SQLiteStore(
-    "DATABASE_PATH",
-    default_path=PROJECT_ROOT / "instance" / "cairnmark.db",
+
+
+class McpSettingsStore(SQLiteStore):
+    """Keep MCP preferences isolated and migrate the legacy main-DB table."""
+
+    def configure(self, app, *, create=True):
+        """Create the tools database and move legacy MCP rows into it once."""
+        super().configure(app, create=create)
+        if create:
+            self._migrate_legacy_table(app.config)
+
+    def _migrate_legacy_table(self, config):
+        target_path = self.path(config)
+        legacy_path = Path(config["DATABASE_PATH"])
+        if target_path == legacy_path or not legacy_path.is_file():
+            return
+
+        with sqlite3.connect(legacy_path) as legacy_connection:
+            table_exists = legacy_connection.execute(
+                "SELECT 1 FROM sqlite_master "
+                "WHERE type = 'table' AND name = 'mcp_settings'"
+            ).fetchone()
+            if table_exists is None:
+                return
+            rows = legacy_connection.execute(
+                """
+                SELECT source, service_name, tool_name, enabled, settings,
+                       updated_at
+                FROM mcp_settings
+                """
+            ).fetchall()
+            with sqlite3.connect(target_path) as target_connection:
+                target_connection.executemany(
+                    """
+                    INSERT INTO mcp_settings (
+                        source, service_name, tool_name, enabled, settings,
+                        updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(source, service_name, tool_name) DO NOTHING
+                    """,
+                    rows,
+                )
+            legacy_connection.execute("DROP TABLE mcp_settings")
+
+
+STORE = McpSettingsStore(
+    "TOOLS_DATABASE_PATH",
+    default_path=PROJECT_ROOT / "instance" / "tools.db",
     schema=MCP_SETTINGS_SCHEMA,
 )
 

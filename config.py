@@ -14,6 +14,7 @@ class Config:
     DATABASE_PATH = PROJECT_ROOT / "instance" / "cairnmark.db"
     CHAT_DATABASE_PATH = PROJECT_ROOT / "instance" / "chathistory.db"
     PARAMETER_DATABASE_PATH = PROJECT_ROOT / "instance" / "parameters.db"
+    TOOLS_DATABASE_PATH = PROJECT_ROOT / "instance" / "tools.db"
     BENCHMARK_DIRECTORY = PROJECT_ROOT / "Benchmark-prompts"
     SYSTEM_PROMPT_DIRECTORY = PROJECT_ROOT / "System-prompts"
     CHAT_EXPORT_DIRECTORY = PROJECT_ROOT / "Exported-chat"

@@ -140,6 +140,7 @@
     const savedMcpToolSettings = new Map();
     const mcpSetupDefinitions = new Map();
     const savedLlamaToolStates = new Map();
+    const savedLlamaServiceStates = new Map();
     const savedLlamaServiceSettings = new Map();
     const knownLlamaTools = new Map();
     const knownLlamaToolsStorageKey = "cairnmark:llama-managed-tools";
@@ -1755,6 +1756,7 @@
         savedMcpStates.clear();
         savedMcpToolSettings.clear();
         savedLlamaToolStates.clear();
+        savedLlamaServiceStates.clear();
         savedLlamaServiceSettings.clear();
         const records = Array.isArray(payload && payload.records)
             ? payload.records
@@ -1768,6 +1770,7 @@
                 savedMcpStates.set(record.service, record.enabled === true);
                 savedMcpToolSettings.set(record.service, settings);
             } else if (record.source === "llama_service") {
+                savedLlamaServiceStates.set(record.service, record.enabled === true);
                 savedLlamaServiceSettings.set(record.service, settings);
             } else if (record.source === "llama_tool" && record.tool) {
                 savedLlamaToolStates.set(record.tool, record.enabled === true);
@@ -1801,12 +1804,16 @@
         const serviceName = createMcpName(name);
         const sourceBadge = document.createElement("span");
         sourceBadge.className = "mcp-source-badge mcp-source-badge--custom";
-        sourceBadge.textContent = "Custom MCP";
+        sourceBadge.textContent = "Custom";
         sourceBadge.title = "Custom or imported MCP service";
         identity.append(marker, serviceName, sourceBadge);
 
         const controls = document.createElement("div");
         controls.className = "mcp-service-controls";
+        const statusLabel = document.createElement("span");
+        statusLabel.className = "mcp-service-status";
+        statusLabel.setAttribute("data-mcp-service-status", "");
+        statusLabel.textContent = "Checking…";
         const switchWrap = document.createElement("span");
         switchWrap.className = "mcp-service-switch-wrap";
         const serviceSwitch = document.createElement("button");
@@ -1849,7 +1856,7 @@
         spinner.setAttribute("aria-label", `Checking ${name}`);
         spinner.setAttribute("role", "status");
         spinner.textContent = "↻";
-        controls.append(switchWrap, setupIcon, spinner);
+        controls.append(statusLabel, switchWrap, setupIcon, spinner);
         row.append(identity, controls);
         setupIcon.addEventListener("click", () => {
             toggleMcpToolSetup(name, details, row, setupIcon);
@@ -2063,6 +2070,7 @@
 
     const checkMcpService = async (name, row, requestSequence) => {
         const serviceSwitch = row.querySelector("[data-mcp-service-switch]");
+        const statusLabel = row.querySelector("[data-mcp-service-status]");
         const spinner = row.querySelector(".mcp-service-spinner");
         const offlineTooltip = row.querySelector(".mcp-service-offline-tooltip");
         try {
@@ -2092,6 +2100,7 @@
             const online = Boolean(status && status.online);
             row.classList.toggle("mcp-service-row--offline", !online);
             row.classList.toggle("mcp-service-row--online", online);
+            if (statusLabel) statusLabel.textContent = online ? "Online" : "Offline";
             serviceSwitch.disabled = !online;
             if (offlineTooltip) offlineTooltip.hidden = online;
             setMcpSwitch(
@@ -2102,6 +2111,7 @@
         } catch (error) {
             if (requestSequence !== mcpSettingsSequence) return;
             row.classList.add("mcp-service-row--offline");
+            if (statusLabel) statusLabel.textContent = "Offline";
             serviceSwitch.disabled = true;
             if (offlineTooltip) offlineTooltip.hidden = false;
             setMcpSwitch(serviceSwitch, false);
@@ -2217,12 +2227,14 @@
         service,
         definitions,
         providerOnline,
-        servicePresent
+        servicePresent,
+        providerName
     ) => {
         const status = service.querySelector("[data-llama-managed-service-status]");
+        const serviceSwitch = service.querySelector("[data-llama-managed-service-switch]");
         let online = false;
         if (!providerOnline) {
-            status.textContent = "llama.cpp offline";
+            status.textContent = `${providerName} offline`;
         } else if (!servicePresent) {
             status.textContent = "Service removed";
         } else {
@@ -2236,15 +2248,29 @@
             }
         }
         service.classList.toggle("llama-managed-service--offline", !online);
+        service.setAttribute("data-llama-service-online", online ? "true" : "false");
+        const serviceEnabled = Boolean(savedLlamaServiceStates.get(serviceName));
+        if (serviceSwitch) {
+            serviceSwitch.disabled = !online;
+            setMcpSwitch(
+                serviceSwitch,
+                online && serviceEnabled
+            );
+        }
         service.querySelectorAll("[data-llama-managed-tool-switch]").forEach(
             (toolSwitch) => {
                 const row = toolSwitch.closest(".llama-managed-tool-row");
                 const removed = row?.classList.contains("llama-managed-tool-row--removed");
-                toolSwitch.disabled = !online || removed;
+                const available = online && !removed;
+                toolSwitch.setAttribute(
+                    "data-llama-tool-available",
+                    available ? "true" : "false"
+                );
+                toolSwitch.disabled = !available || !serviceEnabled;
                 const toolName = toolSwitch.getAttribute("data-llama-managed-tool-switch");
                 setMcpSwitch(
                     toolSwitch,
-                    !toolSwitch.disabled && Boolean(savedLlamaToolStates.get(toolName))
+                    available && Boolean(savedLlamaToolStates.get(toolName))
                 );
             }
         );
@@ -2267,7 +2293,9 @@
         const title = document.createElement("strong");
         title.textContent = `${serviceName} defaults`;
         const managedBadge = document.createElement("span");
-        managedBadge.textContent = "Managed by llama.cpp";
+        const providerName = accordion.closest("[data-mcp-provider]")
+            ?.getAttribute("data-mcp-provider") || "provider";
+        managedBadge.textContent = `Managed by ${providerName}`;
         heading.append(title, managedBadge);
 
         const hint = document.createElement("p");
@@ -2351,10 +2379,12 @@
         track.appendChild(knob);
         toolSwitch.appendChild(track);
         toolSwitch.addEventListener("click", () => {
+            const enabled = toolSwitch.getAttribute("aria-checked") !== "true";
             setMcpSwitch(
                 toolSwitch,
-                toolSwitch.getAttribute("aria-checked") !== "true"
+                enabled
             );
+            savedLlamaToolStates.set(toolName, enabled);
         });
         row.append(identity, toolSwitch);
         return row;
@@ -2363,7 +2393,8 @@
     const createLlamaManagedService = async (
         serviceName,
         entries,
-        providerOnline
+        providerOnline,
+        providerName
     ) => {
         const servicePresent = entries.some((entry) => !entry.removed);
         const service = document.createElement("section");
@@ -2371,6 +2402,7 @@
         service.setAttribute("data-llama-managed-service", serviceName);
         service.setAttribute("data-llama-provider-online", providerOnline ? "true" : "false");
         service.setAttribute("data-llama-service-present", servicePresent ? "true" : "false");
+        service.setAttribute("data-mcp-provider", providerName);
 
         const header = document.createElement("div");
         header.className = "llama-managed-service-heading";
@@ -2378,8 +2410,8 @@
         const name = createMcpName(serviceName);
         const sourceBadge = document.createElement("span");
         sourceBadge.className = "mcp-source-badge mcp-source-badge--llama";
-        sourceBadge.textContent = "llama.cpp managed";
-        sourceBadge.title = "Tools supplied by the active llama.cpp provider";
+        sourceBadge.textContent = providerName;
+        sourceBadge.title = `Tools supplied by the active ${providerName} provider`;
         const count = document.createElement("span");
         const activeCount = entries.filter((entry) => !entry.removed).length;
         const removedCount = entries.length - activeCount;
@@ -2394,6 +2426,39 @@
         status.setAttribute("data-llama-managed-service-status", "");
         status.textContent = "Checking API…";
         controls.appendChild(status);
+
+        const serviceSwitch = document.createElement("button");
+        serviceSwitch.type = "button";
+        serviceSwitch.className = "chat-toggle-switch llama-managed-service-switch";
+        serviceSwitch.setAttribute("data-llama-managed-service-switch", serviceName);
+        serviceSwitch.setAttribute("role", "switch");
+        serviceSwitch.setAttribute("aria-label", `Enable all ${serviceName} tools`);
+        setMcpSwitch(
+            serviceSwitch,
+            Boolean(savedLlamaServiceStates.get(serviceName))
+        );
+        const serviceTrack = document.createElement("span");
+        serviceTrack.className = "chat-toggle-switch-track";
+        serviceTrack.setAttribute("aria-hidden", "true");
+        const serviceKnob = document.createElement("span");
+        serviceKnob.className = "chat-toggle-switch-knob";
+        serviceTrack.appendChild(serviceKnob);
+        serviceSwitch.appendChild(serviceTrack);
+        serviceSwitch.addEventListener("click", () => {
+            if (serviceSwitch.disabled) return;
+            const enabled = serviceSwitch.getAttribute("aria-checked") !== "true";
+            setMcpSwitch(serviceSwitch, enabled);
+            savedLlamaServiceStates.set(serviceName, enabled);
+            service.querySelectorAll("[data-llama-managed-tool-switch]").forEach(
+                (toolSwitch) => {
+                    const available = toolSwitch.getAttribute(
+                        "data-llama-tool-available"
+                    ) === "true";
+                    toolSwitch.disabled = !available || !enabled;
+                }
+            );
+        });
+        controls.appendChild(serviceSwitch);
 
         let definitions = {};
         try {
@@ -2441,7 +2506,7 @@
         expandButton.className = "llama-managed-expand";
         expandButton.setAttribute("aria-label", `Show tools for ${serviceName}`);
         expandButton.setAttribute("aria-expanded", "false");
-        expandButton.textContent = "⌄";
+        expandButton.textContent = "▼";
         expandButton.addEventListener("click", () => {
             toggleLlamaAccordion(expandButton, toolList);
         });
@@ -2453,7 +2518,8 @@
             service,
             definitions,
             providerOnline,
-            servicePresent
+            servicePresent,
+            providerName
         );
         return service;
     };
@@ -2464,7 +2530,7 @@
 
         const loading = document.createElement("p");
         loading.className = "mcp-settings-loading llama-managed-loading";
-        loading.textContent = "Checking llama.cpp managed services…";
+        loading.textContent = `Checking ${provider} managed services…`;
         mcpServiceList.appendChild(loading);
 
         try {
@@ -2492,7 +2558,7 @@
                 const notice = document.createElement("div");
                 notice.className = "llama-managed-status-row";
                 const title = document.createElement("strong");
-                title.textContent = "llama.cpp managed services";
+                title.textContent = `${provider} managed services`;
                 const status = document.createElement("span");
                 status.textContent = !payload.configured
                     ? "Not configured"
@@ -2506,7 +2572,8 @@
                     createLlamaManagedService(
                         serviceName,
                         serviceEntries,
-                        providerOnline
+                        providerOnline,
+                        provider
                     )
                 ))
             );
@@ -2518,7 +2585,7 @@
             const notice = document.createElement("div");
             notice.className = "llama-managed-status-row";
             const title = document.createElement("strong");
-            title.textContent = "llama.cpp managed services";
+            title.textContent = `${provider} managed services`;
             const status = document.createElement("span");
             status.textContent = "Check failed";
             notice.append(title, status);
@@ -2750,17 +2817,22 @@
                     source: "llama_service",
                     service: serviceName,
                     tool: "",
-                    enabled: true,
+                    enabled: service.querySelector(
+                        "[data-llama-managed-service-switch]"
+                    )?.getAttribute("aria-checked") === "true",
                     settings,
                 });
                 service.querySelectorAll("[data-llama-managed-tool-switch]").forEach(
                     (toolSwitch) => {
-                        if (toolSwitch.disabled) return;
+                        if (
+                            toolSwitch.getAttribute("data-llama-tool-available")
+                            !== "true"
+                        ) return;
                         const toolName = toolSwitch.getAttribute(
                             "data-llama-managed-tool-switch"
                         );
                         if (!toolName) return;
-                        const enabled = toolSwitch.getAttribute("aria-checked") === "true";
+                        const enabled = Boolean(savedLlamaToolStates.get(toolName));
                         savedLlamaToolStates.set(toolName, enabled);
                         records.push({
                             source: "llama_tool",
