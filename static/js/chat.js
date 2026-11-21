@@ -2171,15 +2171,64 @@
             return field;
         }
         const label = document.createElement("label");
-        label.setAttribute("for", inputId);
         label.textContent = definition.name || key;
+        const hasSavedValue = Object.prototype.hasOwnProperty.call(savedValues, key);
+        const hasDefaultValue = Object.prototype.hasOwnProperty.call(definition, "default");
+        const initialValue = hasSavedValue
+            ? savedValues[key]
+            : (hasDefaultValue ? definition.default : undefined);
+        if (
+            definition.type === "list"
+            && definition.multiple === true
+            && Array.isArray(definition.values)
+        ) {
+            field.classList.add("mcp-tool-field--multiple");
+            label.id = `${inputId}-label`;
+            const selectedValues = new Set(
+                (Array.isArray(initialValue) ? initialValue : [initialValue])
+                    .filter((value) => value !== undefined && value !== null && value !== "")
+                    .map(String)
+            );
+            const options = document.createElement("div");
+            options.id = inputId;
+            options.className = "mcp-tool-multi-list";
+            options.setAttribute("role", "group");
+            options.setAttribute("aria-labelledby", label.id);
+            options.setAttribute("data-mcp-multiple-setting", key);
+            definition.values.forEach((value, index) => {
+                const structured = value && typeof value === "object";
+                const optionValue = String(
+                    structured ? (value.value ?? "") : value
+                );
+                const optionLabel = String(
+                    structured ? (value.label ?? value.value ?? "") : value
+                );
+                const option = document.createElement("label");
+                option.className = "mcp-tool-multi-option";
+                const checkbox = document.createElement("input");
+                checkbox.type = "checkbox";
+                checkbox.value = optionValue;
+                checkbox.id = `${inputId}-${index}`;
+                checkbox.checked = selectedValues.has(optionValue);
+                const text = document.createElement("span");
+                text.textContent = optionLabel;
+                option.append(checkbox, text);
+                options.appendChild(option);
+            });
+            field.append(label, options);
+            return field;
+        }
+        label.setAttribute("for", inputId);
         let input;
         if (definition.type === "list" && Array.isArray(definition.values)) {
             input = document.createElement("select");
             definition.values.forEach((value) => {
                 const option = document.createElement("option");
-                option.value = String(value);
-                option.textContent = String(value);
+                const structured = value && typeof value === "object";
+                option.value = String(structured ? (value.value ?? "") : value);
+                option.textContent = String(
+                    structured ? (value.label ?? value.value ?? "") : value
+                );
                 input.appendChild(option);
             });
         } else {
@@ -2191,11 +2240,6 @@
         }
         input.id = inputId;
         input.setAttribute("data-mcp-tool-setting", key);
-        const hasSavedValue = Object.prototype.hasOwnProperty.call(savedValues, key);
-        const hasDefaultValue = Object.prototype.hasOwnProperty.call(definition, "default");
-        const initialValue = hasSavedValue
-            ? savedValues[key]
-            : (hasDefaultValue ? definition.default : undefined);
         if (initialValue !== undefined && initialValue !== null) {
             input.value = String(initialValue);
         }
@@ -3106,6 +3150,15 @@
 
     const readMcpAccordionSettings = (accordion, initialSettings) => {
         const settings = {...initialSettings};
+        accordion?.querySelectorAll("[data-mcp-multiple-setting]").forEach(
+            (group) => {
+                const key = group.getAttribute("data-mcp-multiple-setting");
+                if (!key) return;
+                settings[key] = Array.from(
+                    group.querySelectorAll('input[type="checkbox"]:checked')
+                ).map((input) => input.value);
+            }
+        );
         accordion?.querySelectorAll("[data-mcp-tool-setting]").forEach((input) => {
             const key = input.getAttribute("data-mcp-tool-setting");
             if (!key) return;

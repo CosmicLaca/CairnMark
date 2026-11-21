@@ -151,6 +151,9 @@ you select **Send** and restored on the next page load.
 
 ### Configure MCP tool connections
 
+For the complete local SearXNG and CairnMark configuration workflow, see
+[MCP tool and SearXNG setup](tool-setup.md).
+
 The tool button appears in the attachment row when the selected model reports
 tool-call capability in its saved `chat_template_caps` data. A green button
 means the model reports full tool and tool-call support. A blue button means it

@@ -218,7 +218,11 @@ class ChatToolService:
         merged = {
             key: cls._coerce_setting(value, properties[key])
             for key, value in binding.settings.items()
-            if key in properties and key not in CONNECTION_SETTING_KEYS
+            if (
+                key in properties
+                and key not in CONNECTION_SETTING_KEYS
+                and value not in (None, "", [])
+            )
         }
         merged.update(arguments)
         return merged
@@ -228,7 +232,12 @@ class ChatToolService:
         if not isinstance(result, dict):
             text = str(result)
         elif result.get("error"):
-            raise RuntimeError(str(result["error"]))
+            text = str(result["error"])
+            if not (
+                "Unresponsive engines:" in text
+                and "No results." in text
+            ):
+                raise RuntimeError(text)
         elif "plain_text_response" in result:
             text = str(result.get("plain_text_response") or "")
         else:
@@ -244,7 +253,10 @@ class ChatToolService:
             if structured is not None:
                 parts.append(json.dumps(structured, ensure_ascii=False))
             text = "\n".join(part for part in parts if part)
-            if result.get("isError"):
+            if result.get("isError") and not (
+                "Unresponsive engines:" in text
+                and "No results." in text
+            ):
                 raise RuntimeError(text or "MCP tool returned an error")
             if not text:
                 text = json.dumps(result, ensure_ascii=False)
@@ -273,6 +285,33 @@ class ChatToolService:
                 binding.settings,
             )
         return self._result_text(result)
+
+    @staticmethod
+    def _is_degraded_search_result(result_text):
+        """Recognize an empty SearXNG response caused by engine failures."""
+        return (
+            "Unresponsive engines:" in result_text
+            and "No results." in result_text
+        )
+
+    @staticmethod
+    def _relaxed_search_call(binding, arguments):
+        """Remove optional search constraints for one bounded retry."""
+        relaxed_settings = dict(binding.settings)
+        relaxed_arguments = dict(arguments)
+        for key in ("categories", "engines", "time_range"):
+            relaxed_settings.pop(key, None)
+            relaxed_arguments.pop(key, None)
+        relaxed_settings["pageno"] = 1
+        relaxed_arguments["pageno"] = 1
+        return ChatToolBinding(
+            alias=binding.alias,
+            source=binding.source,
+            service=binding.service,
+            tool=binding.tool,
+            definition=binding.definition,
+            settings=relaxed_settings,
+        ), relaxed_arguments
 
     def iter_complete(
         self,
@@ -322,7 +361,11 @@ class ChatToolService:
             assistant = dict(assistant)
             assistant["tool_calls"] = tool_calls
             transcript.append(assistant)
+            processed_tool_calls = []
             for call in tool_calls:
+                if tool_call_count >= MAX_TOOL_CALLS:
+                    break
+                processed_tool_calls.append(call)
                 function = call.get("function", {})
                 alias = str(function.get("name") or "")
                 binding = by_alias.get(alias)
@@ -343,6 +386,25 @@ class ChatToolService:
                     if binding is None:
                         raise ValueError("The requested tool is not enabled.")
                     result_text = self._execute(binding, arguments)
+                    if (
+                        self._is_degraded_search_result(result_text)
+                        and tool_call_count < MAX_TOOL_CALLS
+                    ):
+                        tool_call_count += 1
+                        yield {
+                            "type": "status",
+                            "text": (
+                                f"{binding.source}::{binding.tool} call... "
+                                f"[{tool_call_count}]"
+                            ),
+                        }
+                        relaxed_binding, relaxed_arguments = (
+                            self._relaxed_search_call(binding, arguments)
+                        )
+                        result_text = self._execute(
+                            relaxed_binding,
+                            relaxed_arguments,
+                        )
                 except Exception as error:  # noqa: BLE001
                     result_text = f"Tool call failed: {error}"
                 transcript.append(
@@ -353,6 +415,7 @@ class ChatToolService:
                         "content": result_text,
                     }
                 )
+            assistant["tool_calls"] = processed_tool_calls
             yield {"type": "status", "text": "thinking…"}
 
             if tool_call_count < MAX_TOOL_CALLS:
