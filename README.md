@@ -227,9 +227,29 @@ Use the modal footer controls as follows:
   that cache instead of rediscovering every Custom tool.
 - **Cancel** closes the modal without saving the edited settings.
 
-MCP connection discovery, configuration, status checks, and persistence are
-available in this preview. Sending these configured tools with chat requests
-and executing model-initiated tool calls are still under development.
+When the global tool state, a main service, and one or more of its subtools are
+enabled, CairnMark automatically exposes only those subtools to a capable chat
+model. The model may select a tool, CairnMark executes it, returns the result to
+the model, and repeats until the model produces its final answer. Custom tools
+run through the Python MCP client using their `services/mcv.json` declaration,
+with stdio `command`/`args` and streamable-HTTP `url` transports supported;
+llama.cpp-managed tools run through the provider's tool endpoint. Same-named
+tools from different sources receive distinct internal names, and a model can
+never invoke a service or subtool that is not enabled. One chat request can
+execute at most six tool calls. After the sixth call, CairnMark sends the
+accumulated tool results back without tool definitions and requires a final
+answer instead of failing the request. During execution, the assistant bubble
+shows `[source]::[tool] call... [n]`, then
+returns to **thinking…** while the model processes the tool result.
+
+For a first SearXNG test, enable tools globally, enable either the Custom or
+llama.cpp SearXNG service, and enable its search subtool. Then send a request
+such as: **Search the web with SearXNG for the latest llama.cpp release. Cite
+the result URLs and tell me which search tool you used.** A successful request
+causes the model to call the enabled search function and answer from the
+returned results. With **Stream responses** enabled, tool rounds complete in
+the backend first and the final formatted answer is then delivered to the chat
+bubble.
 
 ### Use llama.cpp parameters and context sizes
 

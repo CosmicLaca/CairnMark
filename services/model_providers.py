@@ -1845,6 +1845,51 @@ class ModelProviderService:
             "tools": tools,
         }
 
+    def call_llama_managed_tool(self, tool_name, arguments, timeout=30):
+        """Invoke one llama.cpp-managed tool through its server endpoint."""
+        configuration = self.saved_connection("llama.cpp")
+        if not configuration:
+            raise ProviderValidationError("llama.cpp is not configured")
+        if not isinstance(arguments, dict):
+            raise ProviderValidationError("Tool arguments must be an object")
+        models_url = self.catalog_client.models_url(
+            configuration["ip"],
+            configuration["port"],
+        )
+        parsed = urllib.parse.urlsplit(models_url)
+        tools_url = urllib.parse.urlunsplit(
+            (parsed.scheme, parsed.netloc, "/tools", "", "")
+        )
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        api_key = configuration.get("api_key")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        tool_request = urllib.request.Request(
+            tools_url,
+            data=json.dumps(
+                {"tool": tool_name, "params": arguments}
+            ).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(tool_request, timeout=timeout) as response:
+                payload = json.load(response)
+        except (OSError, TimeoutError, urllib.error.URLError, ValueError) as error:
+            raise ProviderValidationError(
+                f"llama.cpp tool {tool_name} failed"
+            ) from error
+        if not isinstance(payload, dict):
+            raise ProviderValidationError(
+                f"llama.cpp tool {tool_name} returned an invalid result"
+            )
+        if payload.get("error"):
+            raise ProviderValidationError(str(payload["error"]))
+        return payload
+
     def _completion_context(self, provider):
         """Return SDK inputs shared by all completion entry points."""
         configuration = self.saved_connection(provider)
@@ -1968,6 +2013,119 @@ class ModelProviderService:
             attachments=attachments,
             documents=documents,
         )
+
+    def chat_completion_with_tools(
+        self,
+        provider,
+        model,
+        messages,
+        tools,
+        temperature,
+        top_p,
+        top_k,
+        max_tokens=None,
+        min_p=None,
+        repeat_penalty=None,
+        repeat_last_n=None,
+        dry_multiplier=None,
+        seed=None,
+        timeout=300,
+        extra_parameters=None,
+        attachments=None,
+        documents=None,
+    ):
+        """Return one OpenAI-compatible completion with structured tool calls."""
+        spec, configuration, base_url = self._completion_context(provider)
+        if spec.sdk_client != "openai":
+            raise ProviderValidationError(
+                f"{spec.display_name} does not support CairnMark MCP tool calls"
+            )
+        parameters = self._sampling_parameters(
+            temperature,
+            top_p,
+            top_k,
+            max_tokens,
+            min_p=min_p,
+            repeat_penalty=repeat_penalty,
+            repeat_last_n=repeat_last_n,
+            dry_multiplier=dry_multiplier,
+            seed=seed,
+        )
+        sdk = self.catalog_client.sdk_client
+        kwargs = sdk._provided_parameters(
+            parameters,
+            {
+                "temperature": "temperature",
+                "top_p": "top_p",
+                "max_tokens": "max_tokens",
+            },
+        )
+        body_parameters = {
+            **sdk._extra_body(spec, parameters),
+            **self.local_extra_parameters(provider, extra_parameters),
+        }
+        combined_attachments = list(attachments or [])
+        for document in (documents or []):
+            combined_attachments.append(
+                {
+                    "type": "document",
+                    "data": document.get("content", ""),
+                    "mime_type": document.get("mime_type", "text/plain"),
+                    "original_name": document.get("filename", "document"),
+                }
+            )
+        if combined_attachments:
+            messages = sdk._openai_messages_with_attachments(
+                messages,
+                combined_attachments,
+            )
+        if body_parameters:
+            kwargs["extra_body"] = body_parameters
+        with sdk.openai_factory(
+            api_key=configuration.get("api_key") or "not-needed",
+            base_url=base_url,
+            timeout=timeout,
+            default_headers=dict(spec.catalog_headers) or None,
+        ) as client:
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                tools=tools,
+                tool_choice="auto",
+                **kwargs,
+            )
+
+        message = response.choices[0].message
+        normalized_calls = []
+        for index, tool_call in enumerate(
+            getattr(message, "tool_calls", None) or []
+        ):
+            function = getattr(tool_call, "function", None)
+            normalized_calls.append(
+                {
+                    "id": str(
+                        getattr(tool_call, "id", None) or f"call_{index}"
+                    ),
+                    "type": "function",
+                    "function": {
+                        "name": str(getattr(function, "name", "")),
+                        "arguments": str(
+                            getattr(function, "arguments", "{}") or "{}"
+                        ),
+                    },
+                }
+            )
+        usage = response.usage
+        return {
+            "role": "assistant",
+            "content": sdk._message_text(message.content),
+            "tool_calls": normalized_calls,
+        }, {
+            "prompt_tokens": getattr(usage, "prompt_tokens", 0) if usage else 0,
+            "completion_tokens": (
+                getattr(usage, "completion_tokens", 0) if usage else 0
+            ),
+        }
 
     def chat_completion_with_params_stream(
         self, provider, model, messages, temperature, top_p, top_k, max_tokens=None,

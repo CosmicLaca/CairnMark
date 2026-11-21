@@ -14,6 +14,7 @@ from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from mcp.client.streamable_http import streamablehttp_client
 
 from config import PROJECT_ROOT
 
@@ -427,6 +428,38 @@ class McpServiceRegistry:
                             for tool in result.tools
                         ]
 
+    @staticmethod
+    async def _discover_http_async(details, timeout_ms, endpoint=None):
+        """Discover tools from an MCP streamable-HTTP declaration."""
+        url = str(
+            details.get("url")
+            or details.get("endpoint")
+            or endpoint
+            or ""
+        ).strip()
+        if not url:
+            return []
+        headers = details.get("headers")
+        if not isinstance(headers, dict):
+            headers = None
+        async with asyncio.timeout(timeout_ms / 1000):
+            async with streamablehttp_client(
+                url,
+                headers=headers,
+                timeout=timeout_ms / 1000,
+            ) as streams:
+                async with ClientSession(streams[0], streams[1]) as session:
+                    await session.initialize()
+                    result = await session.list_tools()
+                    return [
+                        tool.model_dump(
+                            mode="json",
+                            by_alias=True,
+                            exclude_none=True,
+                        )
+                        for tool in result.tools
+                    ]
+
     @classmethod
     async def _check_stdio_async(cls, details, timeout_ms):
         return len(await cls._discover_stdio_async(details, timeout_ms))
@@ -444,6 +477,151 @@ class McpServiceRegistry:
         except Exception as error:
             LOGGER.warning("MCP stdio tool discovery failed: %s", error)
             return []
+
+    @staticmethod
+    def _uses_http_transport(details):
+        transport = str(details.get("type") or "").lower()
+        return bool(details.get("url")) or transport in {
+            "http",
+            "remote",
+            "streamable_http",
+            "streamable-http",
+        }
+
+    def _discover_transport(self, details, timeout_ms, endpoint=None):
+        if not self._uses_http_transport(details):
+            return self._discover_stdio(details, timeout_ms)
+        try:
+            return asyncio.run(
+                self._discover_http_async(details, timeout_ms, endpoint)
+            )
+        except Exception as error:
+            LOGGER.warning("MCP tool discovery failed: %s", error)
+            return []
+
+    @staticmethod
+    async def _call_stdio_async(details, timeout_ms, tool_name, arguments):
+        """Call one tool through a short-lived MCP stdio session."""
+        command = str(details.get("command") or "").strip()
+        args = details.get("args", [])
+        if not command or not isinstance(args, list):
+            raise ValueError("The MCP service has no usable command.")
+        environment = details.get("environment")
+        if not isinstance(environment, dict):
+            environment = None
+        parameters = StdioServerParameters(
+            command=command,
+            args=[str(argument) for argument in args],
+            env=environment,
+            cwd=details.get("cwd") or None,
+        )
+        with open(os.devnull, "w", encoding="utf-8") as stderr:
+            async with asyncio.timeout(timeout_ms / 1000):
+                async with stdio_client(parameters, errlog=stderr) as streams:
+                    async with ClientSession(streams[0], streams[1]) as session:
+                        await session.initialize()
+                        result = await session.call_tool(tool_name, arguments)
+        return result.model_dump(
+            mode="json",
+            by_alias=True,
+            exclude_none=True,
+        )
+
+    @staticmethod
+    async def _call_http_async(
+        details,
+        timeout_ms,
+        tool_name,
+        arguments,
+        endpoint=None,
+    ):
+        """Call one tool through MCP streamable HTTP."""
+        url = str(
+            details.get("url")
+            or details.get("endpoint")
+            or endpoint
+            or ""
+        ).strip()
+        if not url:
+            raise ValueError("The MCP service has no streamable HTTP URL.")
+        headers = details.get("headers")
+        if not isinstance(headers, dict):
+            headers = None
+        async with asyncio.timeout(timeout_ms / 1000):
+            async with streamablehttp_client(
+                url,
+                headers=headers,
+                timeout=timeout_ms / 1000,
+            ) as streams:
+                async with ClientSession(streams[0], streams[1]) as session:
+                    await session.initialize()
+                    result = await session.call_tool(tool_name, arguments)
+        return result.model_dump(
+            mode="json",
+            by_alias=True,
+            exclude_none=True,
+        )
+
+    def call_tool(
+        self,
+        name,
+        tool_name,
+        arguments,
+        settings=None,
+    ):
+        """Execute a registered Custom MCP tool with saved service settings."""
+        services = self.services()
+        if name not in services:
+            raise ValueError("Unknown MCP service.")
+        details = services[name]
+        if details.get("disabled") is True:
+            raise ValueError("The MCP service is disabled.")
+        if not isinstance(arguments, dict):
+            raise ValueError("MCP tool arguments must be an object.")
+
+        settings = settings if isinstance(settings, dict) else {}
+        timeout_ms = self._timeout_ms(details, settings.get("timeout_ms"))
+        endpoint = self._configured_endpoint(
+            name,
+            details,
+            settings.get("endpoint"),
+        )
+        if name == "postgres":
+            details = self._details_with_postgres_endpoint(
+                details,
+                endpoint,
+                settings.get("user", ""),
+                settings.get("password", ""),
+            )
+        try:
+            if self._uses_http_transport(details):
+                return asyncio.run(
+                    self._call_http_async(
+                        details,
+                        timeout_ms,
+                        tool_name,
+                        arguments,
+                        endpoint,
+                    )
+                )
+            return asyncio.run(
+                self._call_stdio_async(
+                    details,
+                    timeout_ms,
+                    tool_name,
+                    arguments,
+                )
+            )
+        except Exception as error:
+            LOGGER.warning(
+                "MCP tool call failed for service=%s tool=%s: %s",
+                name,
+                tool_name,
+                error,
+            )
+            raise RuntimeError(
+                f"MCP tool {name}::{tool_name} failed: {error}"
+            ) from error
 
     def check(
         self,
@@ -481,7 +659,16 @@ class McpServiceRegistry:
                 password,
             )
 
-        tools_count = self._check_stdio(details, timeout_ms)
+        if self._uses_http_transport(details):
+            tools_count = len(
+                self._discover_transport(
+                    details,
+                    timeout_ms,
+                    configured_endpoint,
+                )
+            )
+        else:
+            tools_count = self._check_stdio(details, timeout_ms)
         return {
             "name": name,
             "online": tools_count > 0,
@@ -535,7 +722,11 @@ class McpServiceRegistry:
                 password,
             )
 
-        tools = self._discover_stdio(details, timeout_ms)
+        tools = self._discover_transport(
+            details,
+            timeout_ms,
+            configured_endpoint,
+        )
         return {
             "name": name,
             "online": bool(tools),

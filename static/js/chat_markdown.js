@@ -10,25 +10,57 @@
 
     const safeLink = (label, href) => {
         try {
-            const url = new URL(href, window.location.origin);
+            const decodedHref = String(href)
+                .replace(/&amp;/g, "&")
+                .replace(/&quot;/g, "\"")
+                .replace(/&#39;/g, "'");
+            const url = new URL(decodedHref, window.location.origin);
             if (!["http:", "https:", "mailto:"].includes(url.protocol)) {
                 return label;
             }
-            return `<a href="${escapeHtml(url.href)}" target="_blank" rel="noopener">${label}</a>`;
+            return `<a href="${escapeHtml(url.href)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
         } catch (error) {
             return label;
         }
     };
 
-    const renderInline = (value) => value
-        .replace(/`([^`]+)`/g, "<code>$1</code>")
-        .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-        .replace(/__([^_]+)__/g, "<strong>$1</strong>")
-        .replace(/\*([^*]+)\*/g, "<em>$1</em>")
-        .replace(/_([^_]+)_/g, "<em>$1</em>")
-        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label, href) => (
-            safeLink(label, href)
+    const renderInline = (value) => {
+        const protectedParts = [];
+        const protect = (html) => {
+            const index = protectedParts.length;
+            protectedParts.push(html);
+            return `@@INLINE${index}@@`;
+        };
+        let rendered = String(value)
+            .replace(/`([^`]+)`/g, (_match, code) => (
+                protect(`<code>${code}</code>`)
+            ))
+            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label, href) => (
+                protect(safeLink(label, href))
+            ))
+            .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+            .replace(/__([^_]+)__/g, "<strong>$1</strong>")
+            .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+            .replace(/_([^_]+)_/g, "<em>$1</em>");
+
+        rendered = rendered.replace(/\bhttps?:\/\/[^\s<]+/g, (match) => {
+            let href = match;
+            let suffix = "";
+            const entitySuffix = href.match(/(?:&(?:quot|gt|lt|#39);)+$/);
+            if (entitySuffix) {
+                suffix = entitySuffix[0] + suffix;
+                href = href.slice(0, -entitySuffix[0].length);
+            }
+            while (/[.,!?;:)\]}]$/.test(href)) {
+                suffix = href.slice(-1) + suffix;
+                href = href.slice(0, -1);
+            }
+            return `${safeLink(href, href)}${suffix}`;
+        });
+        return rendered.replace(/@@INLINE(\d+)@@/g, (_match, index) => (
+            protectedParts[Number(index)]
         ));
+    };
 
     const splitTableRow = (value) => {
         let row = String(value).trim();

@@ -44,12 +44,14 @@ from services.chat_attachments import AttachmentProcessingError
 from services.chat_exports import ChatExportRepository
 from services.chat_previews import ChatPreviewStore
 from services.chat_requests import CHAT_PARAMETER_FIELDS, ChatRequestWorkflow
+from services.chat_tools import ChatToolService
 from services.mcp_services import MCP_NAME_PATTERN, McpServiceRegistry
 from services.model_providers import (
     ModelProviderService,
     ProviderOfflineError,
     ProviderValidationError,
 )
+
 
 class ChatController:
     """Provide chat context and handle chat messages."""
@@ -60,12 +62,21 @@ class ChatController:
         preview_store=None,
         request_workflow=None,
         export_repository=None,
+        tool_service=None,
     ):
         self.service = service or ModelProviderService()
         self.previews = preview_store or ChatPreviewStore()
         self.requests = request_workflow or ChatRequestWorkflow(self.service)
         self.exports = export_repository or ChatExportRepository()
         self.mcp_settings = MCP_SETTINGS
+        self.tools = tool_service
+
+    @staticmethod
+    def _add_tools_to_request_body(request_body, bindings, transcript):
+        """Record the model-visible tools and actual tool-loop messages."""
+        target = request_body.get("video_request", request_body)
+        target["tools"] = [binding.definition for binding in bindings]
+        target["messages"] = transcript
 
     def context(self):
         settings = CHAT_SETTINGS.form()
@@ -183,6 +194,18 @@ class ChatController:
                 "min_p",
             )
         }
+        tool_service = self.tools or ChatToolService(
+            self.service,
+            settings=self.mcp_settings,
+            registry=self._mcp_registry(),
+        )
+        try:
+            tool_bindings = tool_service.bindings(provider)
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            current_app.logger.exception(
+                "Could not load enabled MCP tools for provider=%s", provider
+            )
+            return jsonify({"error": str(error)}), 502
 
         needs_conversion = any(
             isinstance(item, dict) and item.get("type") in ("video", "audio")
@@ -205,14 +228,33 @@ class ChatController:
                     chat_request.extra_parameters,
                     documents=chat_request.documents,
                 )
-                response_text, usage = self.requests.complete(
-                    provider,
-                    model,
-                    plan,
-                    request_parameters,
-                    chat_request.extra_parameters,
-                    documents=chat_request.documents,
-                )
+                if tool_bindings:
+                    response_text, usage, transcript = (
+                        self.requests.complete_with_tools(
+                            tool_service,
+                            tool_bindings,
+                            provider,
+                            model,
+                            plan,
+                            request_parameters,
+                            chat_request.extra_parameters,
+                            documents=chat_request.documents,
+                        )
+                    )
+                    self._add_tools_to_request_body(
+                        request_body,
+                        tool_bindings,
+                        transcript,
+                    )
+                else:
+                    response_text, usage = self.requests.complete(
+                        provider,
+                        model,
+                        plan,
+                        request_parameters,
+                        chat_request.extra_parameters,
+                        documents=chat_request.documents,
+                    )
             except AttachmentProcessingError as error:
                 return jsonify({"error": str(error)}), 422
             except Exception as error:  # noqa: BLE001
@@ -274,7 +316,33 @@ class ChatController:
                     chat_request.extra_parameters,
                     documents=chat_request.documents,
                 )
-                if plan.split:
+                if tool_bindings:
+                    transcript = []
+                    for tool_event in self.requests.iter_complete_with_tools(
+                        tool_service,
+                        tool_bindings,
+                        provider,
+                        model,
+                        plan,
+                        request_parameters,
+                        chat_request.extra_parameters,
+                        documents=chat_request.documents,
+                    ):
+                        if tool_event.get("type") == "status":
+                            yield f"data: {json.dumps(tool_event)}\n\n"
+                            continue
+                        response_text = tool_event["response"]
+                        usage = tool_event["usage"]
+                        transcript = tool_event["transcript"]
+                    self._add_tools_to_request_body(
+                        request_body,
+                        tool_bindings,
+                        transcript,
+                    )
+                    if response_text:
+                        yield f"data: {json.dumps({'type': 'chunk', 'text': response_text})}\n\n"
+                    yield f"data: {json.dumps({'type': 'done', 'usage': usage})}\n\n"
+                elif plan.split:
                     response_text, usage = self.requests.complete(
                         provider,
                         model,

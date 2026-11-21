@@ -447,6 +447,105 @@ class ChatRequestWorkflow:
         }
         return response_text, usage
 
+    def complete_with_tools(
+        self,
+        tool_service,
+        bindings,
+        provider,
+        model,
+        plan,
+        request_parameters,
+        extra_parameters,
+        documents=None,
+    ):
+        """Run tools for the primary request and preserve split-audio behavior."""
+        primary_text, primary_usage, transcript = tool_service.complete(
+            provider,
+            model,
+            plan.primary_messages,
+            bindings,
+            request_parameters,
+            extra_parameters,
+            attachments=plan.primary_attachments,
+            documents=documents,
+        )
+        audio_text = ""
+        audio_usage = {}
+        if plan.audio_attachments:
+            audio_text, audio_usage = self.service.chat_completion_with_params(
+                provider,
+                model,
+                plan.audio_messages,
+                **request_parameters,
+                extra_parameters=extra_parameters,
+                attachments=plan.audio_attachments,
+                documents=documents,
+            )
+        response_text = primary_text
+        if audio_text:
+            response_text = f"{primary_text}\n\nAudio transcription:\n{audio_text}"
+        usage = {
+            key: primary_usage.get(key, 0) + audio_usage.get(key, 0)
+            for key in ("prompt_tokens", "completion_tokens")
+        }
+        return response_text, usage, transcript
+
+    def iter_complete_with_tools(
+        self,
+        tool_service,
+        bindings,
+        provider,
+        model,
+        plan,
+        request_parameters,
+        extra_parameters,
+        documents=None,
+    ):
+        """Yield tool statuses followed by the combined final result."""
+        completed = None
+        for event in tool_service.iter_complete(
+            provider,
+            model,
+            plan.primary_messages,
+            bindings,
+            request_parameters,
+            extra_parameters,
+            attachments=plan.primary_attachments,
+            documents=documents,
+        ):
+            if event.get("type") == "status":
+                yield event
+            elif event.get("type") == "complete":
+                completed = event
+        if completed is None:
+            raise RuntimeError("The tool workflow ended without a response.")
+
+        audio_text = ""
+        audio_usage = {}
+        if plan.audio_attachments:
+            audio_text, audio_usage = self.service.chat_completion_with_params(
+                provider,
+                model,
+                plan.audio_messages,
+                **request_parameters,
+                extra_parameters=extra_parameters,
+                attachments=plan.audio_attachments,
+                documents=documents,
+            )
+        response_text = completed["response"]
+        if audio_text:
+            response_text = f"{response_text}\n\nAudio transcription:\n{audio_text}"
+        usage = {
+            key: completed["usage"].get(key, 0) + audio_usage.get(key, 0)
+            for key in ("prompt_tokens", "completion_tokens")
+        }
+        yield {
+            "type": "complete",
+            "response": response_text,
+            "usage": usage,
+            "transcript": completed["transcript"],
+        }
+
     @staticmethod
     def result_payload(
         response_text,
