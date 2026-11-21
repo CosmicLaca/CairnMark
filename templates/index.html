@@ -138,7 +138,10 @@
           <div class="chat-user-body">
             <div class="chat-user-previews">
               {% for preview in message.preview_images %}
-              <img class="chat-user-preview" src="{{ url_for('chat_preview', filename=preview) }}" alt="Attached image preview" onerror="this.outerHTML='<span class=\\'chat-user-preview--broken\\'>🔗</span>'">
+              <span class="chat-user-preview-frame">
+                <img class="chat-user-preview" src="{{ url_for('chat_preview', filename=preview) }}" alt="Attached image preview" onerror="this.parentElement.classList.add('is-broken'); this.outerHTML='<span class=\\'chat-user-preview--broken\\'>🔗</span>'">
+                <button type="button" class="chat-reverse-image-button" data-reverse-image-src="{{ url_for('chat_preview', filename=preview) }}" title="Reverse image search" aria-label="Reverse image search">⌕</button>
+              </span>
               {% endfor %}
               {% if message.preview_media %}
               {% for media in message.preview_media %}
@@ -493,6 +496,33 @@
       </div>
     </div>
   </aside>
+</div>
+
+<div class="modal reverse-image-modal" id="reverse-image-modal" data-reverse-image-modal hidden aria-modal="true" role="dialog" aria-labelledby="reverse-image-title">
+  <div class="modal-content">
+    <header class="modal-header">
+      <div>
+        <span class="modal-eyebrow">External visual search</span>
+        <h2 id="reverse-image-title">Reverse image search</h2>
+      </div>
+      <button type="button" class="close-modal-button" data-reverse-image-close>&times;</button>
+    </header>
+    <div class="modal-body reverse-image-modal-body">
+      <img class="reverse-image-preview" data-reverse-image-preview alt="Image selected for reverse search">
+      <div class="reverse-image-copy">
+        <p>Choose a provider. CairnMark saves a local copy, then opens the provider's official upload page in a new tab.</p>
+        <p class="field-hint">The image is not sent automatically. Uploading it on the opened page shares it with that third party.</p>
+      </div>
+      <div class="reverse-image-services" aria-label="Reverse image search providers">
+        <button type="button" class="modal-save-button" data-reverse-image-service data-provider-url="https://lens.google.com/">Google Lens</button>
+        <button type="button" class="modal-save-button" data-reverse-image-service data-provider-url="https://tineye.com/">TinEye</button>
+        <button type="button" class="modal-save-button" data-reverse-image-service data-provider-url="https://yandex.com/images/">Yandex Images</button>
+      </div>
+    </div>
+    <footer class="modal-footer">
+      <button type="button" class="modal-cancel-button" data-reverse-image-close>Cancel</button>
+    </footer>
+  </div>
 </div>
 
 <div class="modal" id="save-chat-modal" data-save-chat-modal hidden aria-modal="true" role="dialog">

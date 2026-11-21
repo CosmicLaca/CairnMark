@@ -43,6 +43,14 @@
     const saveNameInput = document.querySelector("[data-save-chat-name]");
     const saveConfirmBtn = document.querySelector("[data-save-chat-confirm]");
     const saveCloseBtns = document.querySelectorAll("[data-save-chat-close]");
+    const reverseImageModal = document.querySelector("[data-reverse-image-modal]");
+    const reverseImagePreview = document.querySelector("[data-reverse-image-preview]");
+    const reverseImageServiceBtns = document.querySelectorAll(
+        "[data-reverse-image-service]"
+    );
+    const reverseImageCloseBtns = document.querySelectorAll(
+        "[data-reverse-image-close]"
+    );
     const savedSpSelect = document.querySelector("[data-chat-saved-sp]");
     const deleteSpBtn = document.querySelector("[data-chat-delete-sp]");
     const promptModal = document.querySelector("[data-prompt-modal]");
@@ -134,6 +142,7 @@
     let autoCompactThreshold = Number(
         window.CairnmarkChatCompactSettings?.threshold
     ) || 75;
+    let reverseImageSource = "";
     const mcpConfigUrl = window.CairnmarkMcpConfigUrl || "/chat/mcp_configuration";
     const mcpImportUrl = window.CairnmarkMcpImportUrl
         || "/chat/mcp_configuration/import_opencode";
@@ -389,7 +398,107 @@
                 }
             }
         });
+        historyEl.addEventListener("click", (event) => {
+            const button = event.target.closest("[data-reverse-image-src]");
+            if (!button || !reverseImageModal || !reverseImagePreview) return;
+            reverseImageSource = button.dataset.reverseImageSrc || "";
+            if (!reverseImageSource) return;
+            hideHoverPreview();
+            reverseImagePreview.src = reverseImageSource;
+            reverseImageModal.hidden = false;
+        });
     }
+
+    const closeReverseImageModal = () => {
+        if (reverseImageModal) reverseImageModal.hidden = true;
+        if (reverseImagePreview) reverseImagePreview.removeAttribute("src");
+        reverseImageSource = "";
+    };
+
+    const saveReverseImageAndOpenProvider = async (button) => {
+        const providerUrl = button.dataset.providerUrl || "";
+        if (!reverseImageSource || !providerUrl) return;
+
+        const providerTab = window.open("about:blank", "_blank");
+        if (providerTab) providerTab.opener = null;
+        button.disabled = true;
+        try {
+            let fileHandle = null;
+            if (typeof window.showSaveFilePicker === "function") {
+                fileHandle = await window.showSaveFilePicker({
+                    suggestedName: "reverse-image.jpg",
+                    types: [{
+                        description: "JPEG image",
+                        accept: { "image/jpeg": [".jpg", ".jpeg"] },
+                    }],
+                });
+            }
+
+            const response = await fetch(reverseImageSource, { cache: "no-store" });
+            if (!response.ok) throw new Error(`Image read failed (${response.status}).`);
+            const blob = await response.blob();
+            if (fileHandle) {
+                const writable = await fileHandle.createWritable();
+                await writable.write(blob);
+                await writable.close();
+            } else {
+                const objectUrl = URL.createObjectURL(blob);
+                const anchor = document.createElement("a");
+                anchor.href = objectUrl;
+                anchor.download = "reverse-image.jpg";
+                document.body.appendChild(anchor);
+                anchor.click();
+                anchor.remove();
+                window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+            }
+
+            if (providerTab) {
+                providerTab.location.replace(providerUrl);
+            } else {
+                window.alert(
+                    "The image was saved, but the provider tab was blocked. "
+                    + "Allow pop-ups and try again."
+                );
+            }
+            closeReverseImageModal();
+        } catch (error) {
+            if (providerTab) providerTab.close();
+            if (error?.name !== "AbortError") {
+                window.alert(`Reverse image search could not start: ${error}`);
+            }
+        } finally {
+            button.disabled = false;
+        }
+    };
+
+    const createUserImagePreview = (source) => {
+        const frame = document.createElement("span");
+        frame.className = "chat-user-preview-frame";
+        const img = document.createElement("img");
+        img.className = "chat-user-preview";
+        img.alt = "Attached image preview";
+        img.src = String(source).startsWith("data:")
+            ? source
+            : `/chat/preview/${encodeURIComponent(source)}`;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "chat-reverse-image-button";
+        button.dataset.reverseImageSrc = img.src;
+        button.title = "Reverse image search";
+        button.setAttribute("aria-label", "Reverse image search");
+        button.textContent = "⌕";
+        img.addEventListener("error", () => {
+            hideHoverPreview();
+            frame.classList.add("is-broken");
+            const broken = document.createElement("span");
+            broken.className = "chat-user-preview--broken";
+            broken.textContent = "🔗";
+            broken.title = "Preview image missing";
+            img.replaceWith(broken);
+        });
+        frame.append(img, button);
+        return frame;
+    };
 
     const syncEmptyState = () => {
         if (!historyEl || !emptyStateEl) return;
@@ -699,21 +808,7 @@
                 const previews = document.createElement("div");
                 previews.className = "chat-user-previews";
                 previewImages.forEach((src) => {
-                    const img = document.createElement("img");
-                    img.className = "chat-user-preview";
-                    img.alt = "Attached image preview";
-                    img.src = String(src).startsWith("data:")
-                        ? src
-                        : `/chat/preview/${encodeURIComponent(src)}`;
-                    img.addEventListener("error", () => {
-                        hideHoverPreview();
-                        const broken = document.createElement("span");
-                        broken.className = "chat-user-preview--broken";
-                        broken.textContent = "🔗";
-                        broken.title = "Preview image missing";
-                        img.replaceWith(broken);
-                    });
-                    previews.appendChild(img);
+                    previews.appendChild(createUserImagePreview(src));
                 });
                 videoMedia.forEach((item) => {
                     const src = item.url || (item.filename ? `/chat/preview/${encodeURIComponent(item.filename)}` : null);
@@ -4626,6 +4721,15 @@
     saveOpenBtn?.addEventListener("click", openSaveModal);
     saveConfirmBtn?.addEventListener("click", handleSaveChat);
     saveCloseBtns.forEach((b) => b.addEventListener("click", closeSaveModal));
+    reverseImageCloseBtns.forEach((button) => {
+        button.addEventListener("click", closeReverseImageModal);
+    });
+    reverseImageServiceBtns.forEach((button) => {
+        button.addEventListener("click", () => saveReverseImageAndOpenProvider(button));
+    });
+    reverseImageModal?.addEventListener("click", (event) => {
+        if (event.target === reverseImageModal) closeReverseImageModal();
+    });
     savedSelect?.addEventListener("change", handleLoadChat);
     replaceBtn?.addEventListener("click", handleReplaceChat);
     deleteBtn?.addEventListener("click", handleDeleteChat);

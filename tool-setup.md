@@ -103,7 +103,72 @@ The search response should contain a non-empty `results` list. Also inspect
 temporarily suspended. Fix the local SearXNG configuration before debugging the
 chat or model when the direct API request also has no results.
 
-## 3. Understand the two CairnMark connection types
+## 3. Configure and test image search
+
+SearXNG image search is a **text-query image search**. The MCP tool receives a
+query such as `Axel Rudi Pell concert`, then returns matching source pages,
+thumbnail URLs, and direct-image URLs. It does not receive the uploaded image
+bytes and cannot perform pixel-based reverse-image matching.
+
+The active `settings.yml` must keep the JSON response format and at least one
+working image engine. When `keep_only` is used, include image engines alongside
+the general engines you need. A minimal example is:
+
+```yaml
+use_default_settings:
+  engines:
+    keep_only:
+      - bing
+      - yahoo
+      - bing images
+      - google images
+
+search:
+  safe_search: 0
+  formats:
+    - html
+    - json
+```
+
+Engine names and availability depend on the installed SearXNG version. Other
+releases may expose engines such as `duckduckgo images` or `openverse`.
+Check `http://127.0.0.1:8888/config` and use only names reported by the running
+server. An engine can still be blocked, rate-limited, or temporarily suspended,
+so adding more names does not guarantee more results.
+
+Restart SearXNG after changing `settings.yml`, then test image search directly:
+
+```powershell
+$query = [uri]::EscapeDataString("Axel Rudi Pell concert")
+$result = Invoke-RestMethod "http://127.0.0.1:8888/search?q=$query&format=json&categories=images&safesearch=0"
+$result.results | Select-Object -First 5 title, url, img_src, thumbnail_src
+$result.unresponsive_engines
+```
+
+A working response has a non-empty `results` list. Fix empty direct responses or
+reported `unresponsive_engines` in SearXNG before testing CairnMark.
+
+In **MCP settings**, enable the SearXNG parent service and its image-search
+subtool. Leave the engine selection empty for the first test so the server can
+use all image engines enabled in its active configuration. An example chat
+request is:
+
+> Use the SearXNG image-search tool to find ten Axel Rudi Pell concert photos.
+> Return each source-page URL and direct-image URL.
+
+The assistant bubble must show a SearXNG tool-call status. If the model answers
+with phrases such as “simulated results” or produces example URLs without a
+tool-call round, it chose not to invoke the available tool; those results are
+not evidence of a successful search.
+
+For true reverse-image search, hover over an uploaded image thumbnail in a user
+chat bubble and select its search icon. CairnMark saves a local copy and opens
+Google Lens, TinEye, or Yandex Images in a new tab. Uploading the saved copy on
+that page is an explicit user action and shares it with that third party.
+CairnMark does not transmit it automatically. This browser workflow is
+independent of SearXNG and requires no `settings.yml` change.
+
+## 4. Understand the two CairnMark connection types
 
 CairnMark can show the same MCP service through two independent providers:
 
@@ -118,7 +183,7 @@ tooltip identifies them as `[provider]::[service]`, for example
 `llama.cpp::searxng` and `custom::searxng`. Change the entry that corresponds to
 the provider you intend to use.
 
-## 4. Recommended CairnMark SearXNG settings
+## 5. Recommended CairnMark SearXNG settings
 
 Open the chat page, select the tool icon, and configure the relevant SearXNG
 service in **MCP settings**:
@@ -145,7 +210,7 @@ Use **Status check** to repeat endpoint checks without rediscovering every MCP
 tool. Use **Refresh** when services or subtools have been added, removed, or
 renamed; it refreshes the cached Custom tool metadata in `instance/tools.db`.
 
-## 5. Test tool use in chat
+## 6. Test tool use in chat
 
 After saving the setup, try:
 
@@ -163,6 +228,22 @@ The problem is outside CairnMark. Check `unresponsive_engines`, remove blocked
 engines, verify the active `settings.yml`, and restart SearXNG. Search engines
 may return HTTP 403/429 responses or become suspended after an earlier
 successful request.
+
+### General search works, but image search returns no results
+
+- Query the `images` category directly as shown above.
+- Confirm that the active `settings.yml` keeps at least one image engine, not
+  only its similarly named general-search engine.
+- Inspect `unresponsive_engines` for access-denied, suspension, timeout, or
+  rate-limit failures.
+- Leave CairnMark's engine selection empty until the server's default image
+  search works. Then restrict it only to exact names exposed by `/config`.
+- Try more than one working image engine. Public engines can reject automated
+  requests independently.
+
+An image URL protected by a CAPTCHA, expiring token, hotlink restriction, or
+login may appear in search data but still fail to load in the chat bubble. That
+is a source-site restriction, not an MCP connection failure.
 
 ### Direct requests work, but CairnMark returns no results
 

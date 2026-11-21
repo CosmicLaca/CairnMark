@@ -149,6 +149,36 @@ instead of exposing their Markdown source.
 The switch is off until a value has been saved. Its current value is saved when
 you select **Send** and restored on the next page load.
 
+### View, download, and reverse-search images
+
+When an assistant response contains a direct public image URL, CairnMark keeps
+the original link and attempts a one-second browser availability check. A
+reachable image is displayed inside the assistant bubble at a fixed 160-pixel
+height while preserving its aspect ratio. Select the preview to open the
+original image in a new browser tab.
+
+Each available preview has a download button in its top-right corner. Selecting
+it opens the standard file-save picker when the browser supports one; otherwise
+the browser's normal download behavior is used. The backend accepts public
+HTTP/HTTPS image responses only, validates redirects and image content, rejects
+private or local-network addresses, and limits downloads to 25 MB.
+
+If the one-second check fails, or the source requires a CAPTCHA, login,
+short-lived token, or hotlink permission, CairnMark leaves the original URL as
+a link instead of showing a broken preview.
+
+Uploaded images in user chat bubbles also provide a reverse-image search action.
+Hover over the thumbnail and select the search icon, then choose **Google
+Lens**, **TinEye**, or **Yandex Images**. CairnMark saves a local JPEG copy and
+opens the provider's official upload page in a new tab. It does not send the
+image to that provider automatically; uploading the saved image remains an
+explicit user action.
+
+This reverse-image workflow is separate from the SearXNG MCP image-search tool.
+SearXNG searches from text queries and does not receive the uploaded image
+bytes. Its local image-engine configuration and test procedure are documented
+in [MCP tool and SearXNG setup](tool-setup.md).
+
 ### Configure MCP tool connections
 
 For the complete local SearXNG and CairnMark configuration workflow, see
