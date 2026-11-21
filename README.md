@@ -203,7 +203,13 @@ with a **Test access** definition adds a button that tests the configured
 endpoint, including unsaved values currently shown in the form. SearXNG,
 PostgreSQL, and ComfyUI currently provide endpoint schemas; PostgreSQL also
 supports optional username and password fields. Password values are not sent
-back to the browser after saving.
+back to the browser after saving. Every setup field declared with
+`"type": "password"` is encrypted in `instance/tools.db`, regardless of its
+JSON key name, and decrypted only for backend service use. MCP secrets use the
+same Fernet key as provider API credentials. The key is created at
+`.secret/encryption.key` on first use if it does not already exist. Plaintext
+passwords from earlier preview versions are encrypted automatically the next
+time CairnMark initializes its databases.
 
 Custom-service timeout fields default to 10,000 milliseconds and can be
 overridden per service. Services whose required process, provider, or endpoint
@@ -400,7 +406,7 @@ A minimal benchmark looks like this:
 | `instance/cairnmark.db` | Provider settings, benchmark metadata, and interface preferences |
 | `instance/chathistory.db` | Current and saved chats and system prompts |
 | `instance/parameters.db` | Saved local-model generation defaults |
-| `instance/tools.db` | MCP service settings, switch states, global tool state, and cached Custom tool definitions |
+| `instance/tools.db` | MCP settings, encrypted service passwords, switch states, global tool state, and cached Custom tool definitions |
 | `instance/preview/` | Chat attachment previews |
 | `services/mcv.json` | Editable private declarations for Custom MCP services |
 | `static/tool-setup-[service].json` | Optional editable service-specific MCP form and endpoint-test definitions |
@@ -409,8 +415,8 @@ A minimal benchmark looks like this:
 
 For a complete backup, stop CairnMark and copy `Benchmark-prompts/`,
 `System-prompts/`, `Exported-chat/`, `instance/`, and `.secret/` together. Keep
-`instance/cairnmark.db` paired with its original `.secret/` directory or
-saved API keys cannot be decrypted.
+the databases in `instance/` paired with their original `.secret/` directory or
+saved API keys and MCP service passwords cannot be decrypted.
 
 Do not publish these directories. They can contain credentials, private
 prompts, attachments, and model responses.

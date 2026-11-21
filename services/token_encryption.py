@@ -1,4 +1,4 @@
-"""Recoverable encryption for provider API tokens."""
+"""Recoverable encryption for locally stored provider and service credentials."""
 
 from pathlib import Path
 

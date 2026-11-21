@@ -156,7 +156,7 @@
         || "/static/tool-setup-__SERVICE__.json";
     const savedMcpStates = new Map();
     const savedMcpToolSettings = new Map();
-    const savedMcpPasswords = new Set();
+    const savedMcpSecretFields = new Set();
     const savedCustomToolStates = new Map();
     const cachedCustomTools = new Map();
     const mcpSetupDefinitions = new Map();
@@ -1853,7 +1853,7 @@
     const hydrateMcpSettings = (payload) => {
         savedMcpStates.clear();
         savedMcpToolSettings.clear();
-        savedMcpPasswords.clear();
+        savedMcpSecretFields.clear();
         savedCustomToolStates.clear();
         cachedCustomTools.clear();
         savedLlamaToolStates.clear();
@@ -1867,9 +1867,14 @@
             const settings = record.settings && typeof record.settings === "object"
                 ? record.settings
                 : {};
-            if (record.password_saved === true) {
-                savedMcpPasswords.add(`${record.source}::${record.service}`);
-            }
+            const secretFields = Array.isArray(record.secret_fields_saved)
+                ? record.secret_fields_saved
+                : (record.password_saved === true ? ["password"] : []);
+            secretFields.forEach((fieldName) => {
+                savedMcpSecretFields.add(
+                    `${record.source}::${record.service}::${fieldName}`
+                );
+            });
             if (record.source === "external") {
                 savedMcpStates.set(record.service, record.enabled === true);
                 savedMcpToolSettings.set(record.service, settings);
@@ -2196,7 +2201,7 @@
         }
         if (
             definition.type === "password"
-            && savedMcpPasswords.has(`${source}::${name}`)
+            && savedMcpSecretFields.has(`${source}::${name}::${key}`)
         ) input.placeholder = "Saved password";
         input.required = definition.required === true;
         if (input instanceof HTMLSelectElement) {

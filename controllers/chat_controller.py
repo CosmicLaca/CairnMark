@@ -790,11 +790,12 @@ class ChatController:
             {},
         )
         settings = dict(saved)
+        secret_fields = self._mcp_secret_fields(name) | {"password"}
         settings.update(
             {
                 key: value
                 for key, value in submitted.items()
-                if key != "password" or value not in (None, "")
+                if key not in secret_fields or value not in (None, "")
             }
         )
         endpoint_definition = definitions[access_key]
@@ -818,12 +819,30 @@ class ChatController:
             return jsonify({"error": str(error)}), 400
 
     @staticmethod
-    def _mcp_endpoint_test_setup(name):
+    def _mcp_setup_definitions(name):
         setup_path = Path(current_app.static_folder) / f"tool-setup-{name}.json"
         try:
             with setup_path.open("r", encoding="utf-8-sig") as setup_file:
                 definitions = json.load(setup_file)
         except (OSError, json.JSONDecodeError):
+            return None
+        return definitions if isinstance(definitions, dict) else None
+
+    @classmethod
+    def _mcp_secret_fields(cls, name):
+        """Return fields whose service schema declares password input."""
+        definitions = cls._mcp_setup_definitions(name) or {}
+        return {
+            key
+            for key, definition in definitions.items()
+            if isinstance(definition, dict)
+            and str(definition.get("type") or "").lower() == "password"
+        }
+
+    @classmethod
+    def _mcp_endpoint_test_setup(cls, name):
+        definitions = cls._mcp_setup_definitions(name)
+        if definitions is None:
             return None, None
         test_definition = definitions.get("test")
         if (
@@ -902,9 +921,18 @@ class ChatController:
         records = self.mcp_settings.all()
         for record in records:
             settings = dict(record["settings"])
-            password = settings.pop("password", "")
+            secret_fields = self._mcp_secret_fields(record["service"]) | {
+                "password"
+            }
+            saved_secret_fields = sorted(
+                field_name
+                for field_name in secret_fields
+                if settings.pop(field_name, "")
+            )
             record["settings"] = settings
-            if password:
+            if saved_secret_fields:
+                record["secret_fields_saved"] = saved_secret_fields
+            if "password" in saved_secret_fields:
                 record["password_saved"] = True
         return jsonify(
             {
@@ -1009,11 +1037,21 @@ class ChatController:
         if not isinstance(records, list):
             return jsonify({"error": "MCP records must be a list."}), 400
 
-        saved_passwords = {
-            (record["source"], record["service"]): record["settings"]["password"]
-            for record in self.mcp_settings.all()
-            if record["settings"].get("password")
-        }
+        saved_secrets = {}
+        for saved_record in self.mcp_settings.all():
+            secret_fields = self._mcp_secret_fields(saved_record["service"]) | {
+                "password"
+            }
+            for field_name in secret_fields:
+                secret = saved_record["settings"].get(field_name)
+                if secret:
+                    saved_secrets[
+                        (
+                            saved_record["source"],
+                            saved_record["service"],
+                            field_name,
+                        )
+                    ] = secret
         normalized = []
         for record in records:
             if not isinstance(record, dict):
@@ -1037,9 +1075,13 @@ class ChatController:
             if not isinstance(settings, dict):
                 return jsonify({"error": "MCP settings must be an object."}), 400
             settings = dict(settings)
-            saved_password = saved_passwords.get((source, service_name))
-            if settings.get("password") in (None, "") and saved_password:
-                settings["password"] = saved_password
+            secret_fields = self._mcp_secret_fields(service_name) | {"password"}
+            for field_name in secret_fields:
+                saved_secret = saved_secrets.get(
+                    (source, service_name, field_name)
+                )
+                if settings.get(field_name) in (None, "") and saved_secret:
+                    settings[field_name] = saved_secret
             normalized.append(
                 {
                     "source": source,
@@ -1047,6 +1089,7 @@ class ChatController:
                     "tool": tool_name,
                     "enabled": enabled,
                     "settings": settings,
+                    "secret_fields": sorted(secret_fields),
                 }
             )
 

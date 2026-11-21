@@ -6,6 +6,7 @@ from pathlib import Path
 
 from config import PROJECT_ROOT
 from models.sqlite_store import SQLiteStore
+from services import token_encryption
 
 
 MCP_SETTINGS_SCHEMA = """
@@ -32,6 +33,63 @@ CREATE TABLE IF NOT EXISTS mcp_preferences (
 )
 """
 
+PASSWORD_SCHEME = "fernet"
+PASSWORD_SCHEME_KEY = "scheme"
+PASSWORD_CIPHERTEXT_KEY = "ciphertext"
+
+
+def _encrypt_secret(secret):
+    """Return a tagged encrypted secret value for JSON persistence."""
+    if not secret:
+        return secret
+    if (
+        isinstance(secret, dict)
+        and secret.get(PASSWORD_SCHEME_KEY) == PASSWORD_SCHEME
+        and secret.get(PASSWORD_CIPHERTEXT_KEY)
+    ):
+        return secret
+    ciphertext = token_encryption.encrypt_token(str(secret))
+    return {
+        PASSWORD_SCHEME_KEY: PASSWORD_SCHEME,
+        PASSWORD_CIPHERTEXT_KEY: ciphertext,
+    }
+
+
+def _decrypt_secret(secret):
+    """Decrypt one tagged secret while accepting legacy plaintext values."""
+    if not secret:
+        return secret
+    if not isinstance(secret, dict):
+        return secret
+    if secret.get(PASSWORD_SCHEME_KEY) != PASSWORD_SCHEME:
+        return ""
+    ciphertext = str(secret.get(PASSWORD_CIPHERTEXT_KEY) or "")
+    plaintext = token_encryption.decrypt_token(ciphertext)
+    if not plaintext or plaintext == ciphertext:
+        return ""
+    return plaintext
+
+
+def _settings_for_storage(settings, secret_fields=()):
+    """Copy settings and encrypt schema-declared secret fields."""
+    protected = dict(settings or {})
+    for field_name in set(secret_fields) | {"password"}:
+        if protected.get(field_name):
+            protected[field_name] = _encrypt_secret(protected[field_name])
+    return protected
+
+
+def _settings_for_use(settings):
+    """Copy settings and decrypt tagged secrets for backend-only use."""
+    usable = dict(settings or {})
+    for field_name, value in tuple(usable.items()):
+        if (
+            isinstance(value, dict)
+            and value.get(PASSWORD_SCHEME_KEY) == PASSWORD_SCHEME
+        ):
+            usable[field_name] = _decrypt_secret(value)
+    return usable
+
 
 class McpSettingsStore(SQLiteStore):
     """Keep MCP preferences isolated and migrate the legacy main-DB table."""
@@ -41,6 +99,7 @@ class McpSettingsStore(SQLiteStore):
         super().configure(app, create=create)
         if create:
             self._migrate_legacy_table(app.config)
+            self._encrypt_legacy_secrets(app)
 
     def _migrate_legacy_table(self, config):
         target_path = self.path(config)
@@ -75,6 +134,75 @@ class McpSettingsStore(SQLiteStore):
                 )
             legacy_connection.execute("DROP TABLE mcp_settings")
 
+    @staticmethod
+    def _schema_secret_fields(static_folder):
+        """Map MCP service names to fields declared as password inputs."""
+        fields_by_service = {}
+        for setup_path in Path(static_folder).glob("tool-setup-*.json"):
+            try:
+                definitions = json.loads(setup_path.read_text(encoding="utf-8-sig"))
+            except (OSError, ValueError):
+                continue
+            if not isinstance(definitions, dict):
+                continue
+            service_name = setup_path.stem.removeprefix("tool-setup-")
+            fields_by_service[service_name] = {
+                key
+                for key, definition in definitions.items()
+                if isinstance(definition, dict)
+                and str(definition.get("type") or "").lower() == "password"
+            }
+        return fields_by_service
+
+    def _encrypt_legacy_secrets(self, app):
+        """Encrypt plaintext fields declared as password inputs by schemas."""
+        target_path = self.path(app.config)
+        fields_by_service = self._schema_secret_fields(app.static_folder)
+        with sqlite3.connect(target_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT source, service_name, tool_name, settings
+                FROM mcp_settings
+                """
+            ).fetchall()
+            updates = []
+            for source, service_name, tool_name, settings_text in rows:
+                try:
+                    settings = json.loads(settings_text)
+                except (TypeError, ValueError):
+                    continue
+                if not isinstance(settings, dict):
+                    continue
+                changed = False
+                secret_fields = fields_by_service.get(service_name, set()) | {
+                    "password"
+                }
+                for field_name in secret_fields:
+                    secret = settings.get(field_name)
+                    if not secret or isinstance(secret, dict):
+                        continue
+                    settings[field_name] = _encrypt_secret(secret)
+                    changed = True
+                if not changed:
+                    continue
+                updates.append(
+                    (
+                        json.dumps(settings, ensure_ascii=False),
+                        source,
+                        service_name,
+                        tool_name,
+                    )
+                )
+            if updates:
+                connection.executemany(
+                    """
+                    UPDATE mcp_settings
+                    SET settings = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE source = ? AND service_name = ? AND tool_name = ?
+                    """,
+                    updates,
+                )
+
 
 STORE = McpSettingsStore(
     "TOOLS_DATABASE_PATH",
@@ -104,6 +232,8 @@ class McpSettingsRepository:
                 settings = json.loads(settings_text)
             except (TypeError, ValueError):
                 settings = {}
+            if isinstance(settings, dict):
+                settings = _settings_for_use(settings)
             records.append(
                 {
                     "source": source,
@@ -125,7 +255,13 @@ class McpSettingsRepository:
                 record["service"],
                 record.get("tool", ""),
                 int(record["enabled"]),
-                json.dumps(record.get("settings", {}), ensure_ascii=False),
+                json.dumps(
+                    _settings_for_storage(
+                        record.get("settings", {}),
+                        record.get("secret_fields", ()),
+                    ),
+                    ensure_ascii=False,
+                ),
             )
             for record in records
         ]
