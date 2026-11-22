@@ -290,6 +290,25 @@ body.modal-open {
     padding-inline: 7px;
 }
 
+/* Connection state affects only the numbered provider badge. */
+.provider-tab[data-provider-tab].provider-tab--offline > span {
+    color: #71837b;
+    border-color: rgba(238, 243, 233, 0.14);
+    background: transparent;
+}
+
+.provider-tab[data-provider-tab].provider-tab--online-off > span {
+    color: #71837b;
+    border-color: var(--lichen);
+    background: transparent;
+}
+
+.provider-tab[data-provider-tab].provider-tab--online-on > span {
+    color: var(--sidebar);
+    border-color: var(--lichen);
+    background: var(--lichen);
+}
+
 .model-provider-heading {
     margin-bottom: 24px;
 }

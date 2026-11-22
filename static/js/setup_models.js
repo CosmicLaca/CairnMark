@@ -102,6 +102,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const providerTabStatus = document.querySelector(
             `[data-provider-tab="${provider}"] [data-provider-tab-status]`,
         );
+        const providerTab = providerTabStatus?.closest('[data-provider-tab]');
 
         function connectionPayload() {
             if (apiProvider) {
@@ -144,6 +145,18 @@ document.addEventListener('DOMContentLoaded', () => {
             providerAction.classList.toggle('is-online', Boolean(status.online));
             providerAction.classList.toggle('is-enabled', Boolean(status.enabled));
             providerAction.classList.toggle('is-unconfigured', !status.configured);
+            providerTab?.classList.toggle(
+                'provider-tab--online-on',
+                Boolean(status.online && status.enabled),
+            );
+            providerTab?.classList.toggle(
+                'provider-tab--online-off',
+                Boolean(status.online && !status.enabled),
+            );
+            providerTab?.classList.toggle(
+                'provider-tab--offline',
+                !status.online,
+            );
 
             if (!status.configured) {
                 providerStatus.textContent = 'Setup required';

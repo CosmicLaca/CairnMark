@@ -216,7 +216,7 @@
       <strong>Show all providers</strong>
     </button>
     {% for provider in providers %}
-      <button class="category-tab provider-tab{% if selected_provider == 'all' or selected_provider == provider.name %} is-active{% endif %}" type="button" data-provider-tab="{{ provider.name }}" data-provider-filter="{{ provider.name }}" aria-pressed="{{ 'true' if selected_provider == 'all' or selected_provider == provider.name else 'false' }}">
+      <button class="category-tab provider-tab provider-tab--offline{% if selected_provider == 'all' or selected_provider == provider.name %} is-active{% endif %}" type="button" data-provider-tab="{{ provider.name }}" data-provider-filter="{{ provider.name }}" aria-pressed="{{ 'true' if selected_provider == 'all' or selected_provider == provider.name else 'false' }}">
         <span aria-hidden="true">{{ provider.index }}</span><strong>{{ provider.title }}</strong><small data-provider-tab-status>offline</small>
       </button>
     {% endfor %}
