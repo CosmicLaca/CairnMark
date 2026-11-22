@@ -74,7 +74,11 @@
     const safeLink = (
         label,
         href,
-        { previewImage = false, previewAudio = false } = {}
+        {
+            previewImage = false,
+            previewAudio = false,
+            embeddedVideos = null,
+        } = {}
     ) => {
         try {
             const decodedHref = String(href)
@@ -103,6 +107,10 @@
                 ? videoEmbed(url)
                 : null;
             if (embed) {
+                if (embeddedVideos?.has(embed.url)) {
+                    return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+                }
+                embeddedVideos?.add(embed.url);
                 const safeEmbedUrl = escapeHtml(embed.url);
                 return `<span class="chat-markdown-video-preview">`
                     + `<a class="chat-markdown-video-source" href="${safeUrl}" target="_blank" rel="noopener noreferrer">${label}</a>`
@@ -131,7 +139,10 @@
         }
     };
 
-    const renderInline = (value, { audioHint = false } = {}) => {
+    const renderInline = (
+        value,
+        { audioHint = false, embeddedVideos = null } = {}
+    ) => {
         const protectedParts = [];
         const protect = (html) => {
             const index = protectedParts.length;
@@ -139,11 +150,20 @@
             return `@@INLINE${index}@@`;
         };
         let rendered = String(value)
-            .replace(/`([^`]+)`/g, (_match, code) => (
-                protect(`<code>${code}</code>`)
-            ))
+            .replace(/`([^`]+)`/g, (_match, code) => {
+                if (/^https?:\/\/\S+$/i.test(code)) {
+                    return protect(safeLink(`<code>${code}</code>`, code, {
+                        previewImage: true,
+                        embeddedVideos,
+                    }));
+                }
+                return protect(`<code>${code}</code>`);
+            })
             .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label, href) => (
-                protect(safeLink(label, href, { previewAudio: audioHint }))
+                protect(safeLink(label, href, {
+                    previewAudio: audioHint,
+                    embeddedVideos,
+                }))
             ))
             .replace(/\bhttps?:\/\/[^\s<]+/g, (match, offset, input) => {
                 const { href, suffix } = splitLinkSuffix(match);
@@ -152,6 +172,7 @@
                 return protect(`${safeLink(href, href, {
                     previewImage: true,
                     previewAudio,
+                    embeddedVideos,
                 })}${suffix}`);
             })
             .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
@@ -207,14 +228,22 @@
         });
     };
 
-    const tableCell = (tag, value, alignment, { audioHint = false } = {}) => {
+    const tableCell = (
+        tag,
+        value,
+        alignment,
+        { audioHint = false, embeddedVideos = null } = {}
+    ) => {
         const className = alignment === "left"
             ? ""
             : ` class="markdown-table-align-${alignment}"`;
-        return `<${tag}${className}>${renderInline(value, { audioHint })}</${tag}>`;
+        return `<${tag}${className}>${renderInline(value, {
+            audioHint,
+            embeddedVideos,
+        })}</${tag}>`;
     };
 
-    const renderQuoteLines = (lines) => {
+    const renderQuoteLines = (lines, embeddedVideos) => {
         const output = [];
         let paragraph = [];
         const flushParagraph = () => {
@@ -227,14 +256,16 @@
             if (heading) {
                 flushParagraph();
                 const level = heading[1].length;
-                output.push(`<h${level}>${renderInline(heading[2])}</h${level}>`);
+                output.push(`<h${level}>${renderInline(heading[2], {
+                    embeddedVideos,
+                })}</h${level}>`);
                 return;
             }
             if (!line.trim()) {
                 flushParagraph();
                 return;
             }
-            paragraph.push(renderInline(line));
+            paragraph.push(renderInline(line, { embeddedVideos }));
         });
         flushParagraph();
         return output.join("\n");
@@ -243,6 +274,7 @@
     const render = (text) => {
         if (!text) return "";
         const codeBlocks = [];
+        const embeddedVideos = new Set();
         let working = String(text).replace(
             /```(\w*)\n([\s\S]*?)```/g,
             (_match, language, code) => {
@@ -292,7 +324,9 @@
                 flushParagraph();
                 closeList();
                 const level = heading[1].length;
-                output.push(`<h${level}>${renderInline(heading[2])}</h${level}>`);
+                output.push(`<h${level}>${renderInline(heading[2], {
+                    embeddedVideos,
+                })}</h${level}>`);
                 continue;
             }
             const alignments = line.includes("|") && lineIndex + 1 < lines.length
@@ -303,7 +337,7 @@
                 flushParagraph();
                 closeList();
                 const header = headerCells.map((cell, index) => (
-                    tableCell("th", cell, alignments[index])
+                    tableCell("th", cell, alignments[index], { embeddedVideos })
                 )).join("");
                 const rows = [];
                 lineIndex += 2;
@@ -315,6 +349,7 @@
                             audioHint: /\b(?:audio|listen|radio|stream)\b/i.test(
                                 headerCells[index] || ""
                             ),
+                            embeddedVideos,
                         })
                     )).join("")}</tr>`);
                     lineIndex += 1;
@@ -330,14 +365,18 @@
             if (unorderedItem) {
                 flushParagraph();
                 openList("ul");
-                output.push(`<li>${renderInline(unorderedItem[1])}</li>`);
+                output.push(`<li>${renderInline(unorderedItem[1], {
+                    embeddedVideos,
+                })}</li>`);
                 continue;
             }
             const orderedItem = line.match(/^\d+\.\s+(.*)$/);
             if (orderedItem) {
                 flushParagraph();
                 openList("ol");
-                output.push(`<li>${renderInline(orderedItem[1])}</li>`);
+                output.push(`<li>${renderInline(orderedItem[1], {
+                    embeddedVideos,
+                })}</li>`);
                 continue;
             }
             if (!line.trim()) {
@@ -356,11 +395,14 @@
                     quoteLines.push(nextQuote[1]);
                     lineIndex += 1;
                 }
-                output.push(`<blockquote>${renderQuoteLines(quoteLines)}</blockquote>`);
+                output.push(`<blockquote>${renderQuoteLines(
+                    quoteLines,
+                    embeddedVideos
+                )}</blockquote>`);
                 continue;
             }
             closeList();
-            paragraph.push(renderInline(line));
+            paragraph.push(renderInline(line, { embeddedVideos }));
         }
         flushParagraph();
         closeList();

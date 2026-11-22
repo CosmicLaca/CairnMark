@@ -96,6 +96,12 @@ is sent to a provider.
 <img src="media-02a.jpg" width="70%" alt="Analyze video">
 
 ---
+### Audio attachment:
+
+<img src="media-03.jpg" width="70%" alt="Chat video">
+<img src="media-03a.jpg" width="70%" alt="Analyze video">
+
+---
 
 The media preference switches are saved independently. Cancelling a parameter
 modal removes its temporary fields from the following request; saving the modal

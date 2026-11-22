@@ -1,5 +1,7 @@
 # Model provider setup
 
+---
+
 CairnMark uses one provider workspace for local servers, hosted APIs, and
 OpenAI-compatible custom endpoints. A model becomes available to chat and
 benchmark pages only when its provider is reachable and both the provider and
@@ -7,6 +9,8 @@ model are enabled.
 
 <!-- Screenshot placeholder: replace manual/setup-models.jpg when the setup UI changes. -->
 <p align="left"><img src="setup-models.jpg" width="82%" alt="Model provider setup page"></p>
+
+---
 
 ## Supported provider types
 
@@ -24,9 +28,9 @@ changing it.
 
 ---
 
-| Provider setup                                                                                        | Custom provider                                                                                       | Custom provider                                                                                       |
-|-------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|
-| <p align="left"><img src="./setup-models-01.jpg" width="100%" alt="Model setup workspace"></p> | <p align="left"><img src="./setup-models-02.jpg" width="100%" alt="Model setup workspace"></p> | <p align="left"><img src="./setup-models-03.jpg" width="100%" alt="Model setup workspace"></p> |
+| Known provider setup                                                         | Custom setup                                                                 | Custom provider                                                                                       |
+|------------------------------------------------------------------------------|------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|
+| <img src="./setup-models-01.jpg" height="300px" alt="Model setup workspace"> | <img src="./setup-models-02.jpg" height="300px" alt="Model setup workspace"> | <img src="./setup-models-03.jpg" height="300px" alt="Model setup workspace"> |
 
 ---
 
@@ -44,6 +48,8 @@ New provider configurations start disabled. If an enabled provider becomes
 unreachable, CairnMark turns it off so an unavailable model cannot remain
 active accidentally.
 
+<img src="./setup-models-04.jpg" width="600px" alt="Model setup workspace"> 
+
 ### Local endpoint examples
 
 Typical local values are:
@@ -56,6 +62,8 @@ Typical local values are:
 Use the values reported by the running server. CairnMark remains bound to
 localhost even when it contacts another local endpoint.
 
+---
+
 ## Add a custom provider
 
 Use **Add custom provider** when a local application exposes an OpenAI-compatible
@@ -66,10 +74,7 @@ model catalog and chat-completions API.
 3. Add an API key only when that local server requires one.
 4. Read the catalog, select models, and save.
 
-Custom provider names receive a stable internal key. Some servers return model
-IDs with a UUID prefix, for example
-`063b4868-8c66-4015-bd01-7a824323cfa1:BigBang-v1.Q4_K_S`. CairnMark shortens
-only the visible label; it keeps the complete ID for requests and persistence.
+---
 
 ## API key handling
 
@@ -80,6 +85,8 @@ Hosted-provider keys are encrypted before they are written to
 Back up `instance/` and `.secret/` together. Restoring only the databases makes
 encrypted credentials unreadable.
 
+---
+
 ## Model parameters
 
 Local llama.cpp and vLLM models can expose default sampling parameters from a
@@ -89,6 +96,8 @@ Local llama.cpp and vLLM models can expose default sampling parameters from a
 Deleting a cached local row makes the next modal open fetch fresh defaults.
 Extra modal parameters are session-only; **Save setup** stores only the main
 chat fields documented in the **[chat guide](chat.md)**.
+
+--
 
 ## Troubleshooting
 

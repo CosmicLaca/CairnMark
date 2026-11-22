@@ -8,9 +8,9 @@ service switch, and individual subtool switches.
 
 ---
 
-| Main tool setup                                                                                  | Tool setup                                                                                | Endpoint setting                                                                          |
-|--------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------|
-| <p align="left"><img src="./tool-setting-01.jpg" width="100%" alt="MCP tool setting"></p> | <p align="left"><img src="./tool-setting-02.jpg" width="100%" alt="MCP tool setting"></p> | <p align="left"><img src="./tool-setting-03.jpg" width="100%" alt="MCP tool setting"></p> |
+| Main tool setup                                                                             | Tool setup                                                                                | Endpoint setting                                                                          |
+|---------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------|
+| <p align="left"><img src="./tool-setting-01.jpg" height="300px" alt="MCP tool setting"></p> | <p align="left"><img src="./tool-setting-02.jpg" height="300px" alt="MCP tool setting"></p> | <p align="left"><img src="./tool-setting-03.jpg" height="300px" alt="MCP tool setting"></p> |
  
 ---
 
@@ -24,6 +24,8 @@ service switch, and individual subtool switches.
 The same service can exist through both sources. CairnMark displays qualified
 names such as `llama::searxng` and `custom::searxng` so their saved settings do
 not collide.
+
+---
 
 ## First setup
 
@@ -40,6 +42,8 @@ Import from OpenCode is offered only on first setup and is never automatic.
 Private connection declarations remain in `services/mcv.json` rather than the
 main application database.
 
+---
+
 ## Service-specific setup forms
 
 Optional schemas named `static/tool-setup-[service].json` define setup controls
@@ -49,6 +53,8 @@ fields. Current endpoint schemas include SearXNG, PostgreSQL, and ComfyUI.
 Every field declared as `type: password` is encrypted in `instance/tools.db`
 using the Fernet key in `.secret/`. Password values are decrypted only for
 backend service calls and are not returned to browser JavaScript.
+
+---
 
 ## Save, status check, and refresh
 
@@ -75,12 +81,25 @@ One chat request can execute at most six tool calls. After the sixth, CairnMark
 removes tool definitions and requires a final response. The assistant bubble
 shows the source, tool, and call round while execution is in progress.
 
+---
+
 ## SearXNG
 
 For local SearXNG installation, engine configuration, direct API checks, image,
 audio, and video search examples, and troubleshooting, follow the complete
 **[MCP tool and local SearXNG setup guide](./tool-setup.md)**.
 
+---
+
+
+| Search radio station (player on the result)                             | Search actual information                                               |
+|-------------------------------------------------------------------------|-------------------------------------------------------------------------|
+| <img src="./tool-example-01.jpg" height="400px" alt="MCP tool example"> | <img src="./tool-example-02.jpg" height="400px" alt="MCP tool example"> |
+
+
+| Read content from local and from web                                    | Summarize info by web search                                            |
+|-------------------------------------------------------------------------|-------------------------------------------------------------------------|
+| <img src="./tool-example-03.jpg" height="400px" alt="MCP tool example"> | <img src="./tool-example-04.jpg" height="400px" alt="MCP tool example"> |
 ## Troubleshooting
 
 ### The tool button is absent

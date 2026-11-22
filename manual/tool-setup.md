@@ -155,6 +155,8 @@ request is:
 
 > Use the SearXNG image-search tool to find ten Axel Rudi Pell concert photos.
 > Return each source-page URL and direct-image URL.
+> 
+> <img src="./tool-example-05.jpg" height="650px" alt="MCP tool example">
 
 The assistant bubble must show a SearXNG tool-call status. If the model answers
 with phrases such as “simulated results” or produces example URLs without a
@@ -268,18 +270,24 @@ Example video request:
 > video published by Kontroll on its official YouTube channel. Return the exact
 > title, publication date, channel name, and direct YouTube watch URL. Do not
 > invent or simulate results.
+> 
+> <img src="./tool-example-06.jpg" width="600px" alt="MCP tool example">
 
 Example music request:
 
-> Use the SearXNG music-search tool to find official Axel Rudi Pell tracks.
-> Return the track title, provider, source-page URL, and direct playable URL
-> when the search result supplies one. Do not replace missing URLs with examples.
+> Use the SearXNG music-search tool to find latest official Axel Rudi Pell live track. 
+> Return the track title, provider, source-page URL, and direct playable URL when the search result supplies one. 
+> Do not replace missing URLs with examples.
+> 
+> <img src="./tool-example-07.jpg" width="600px" alt="MCP tool example">
 
 Example radio request:
 
 > Use SearXNG and Radio Browser to find five working hard-rock radio stations.
 > Return station name, codec, bitrate, source page, and the direct stream URL in
 > a table whose final column is named Stream URL.
+> 
+> <img src="./tool-example-01.jpg" width="600px" alt="MCP tool example">
 
 CairnMark turns recognized direct stream links into lazy audio controls. A
 plain direct link is recognized by a common audio extension or by an explicit
