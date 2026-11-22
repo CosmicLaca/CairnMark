@@ -77,6 +77,46 @@ class ChatController:
         target["tools"] = [binding.definition for binding in bindings]
         target["messages"] = transcript
 
+    def _record_failed_response(
+        self,
+        error,
+        elapsed,
+        provider,
+        model,
+        chat_request,
+        request_body,
+    ):
+        """Persist a failed model call with normal assistant metadata."""
+        error_message = str(error).strip() or "The model request failed."
+        response_text = f"Request failed: {error_message}"
+        usage = {"prompt_tokens": 0, "completion_tokens": 0}
+        self.history.add(
+            "assistant",
+            response_text,
+            model_name=model,
+            provider=provider,
+            response_time=elapsed,
+            input_tokens=0,
+            output_tokens=0,
+            system_prompt=chat_request.system_prompt,
+            saved_system_prompt_name=chat_request.saved_prompt_name,
+            request_body=json.dumps(request_body),
+            is_error=True,
+        )
+        payload = self.requests.result_payload(
+            response_text,
+            elapsed,
+            usage,
+            provider,
+            model,
+            chat_request,
+            request_body,
+            event_type="error",
+        )
+        payload["error"] = error_message
+        payload["is_error"] = True
+        return payload
+
     def context(self):
         settings = CHAT_SETTINGS.form()
         messages = self.history.messages()
@@ -171,6 +211,7 @@ class ChatController:
                 message
                 for message in self.history.messages()
                 if message["role"] in ("user", "assistant")
+                and not message.get("is_error")
             ]
         )
         history_limit = chat_request.parameters.get("history_limit")
@@ -198,13 +239,25 @@ class ChatController:
             settings=self.mcp_settings,
             registry=self._mcp_registry(),
         )
+        binding_started = time.monotonic()
         try:
             tool_bindings = tool_service.bindings(provider)
         except (OSError, ValueError, json.JSONDecodeError) as error:
             current_app.logger.exception(
                 "Could not load enabled MCP tools for provider=%s", provider
             )
-            return jsonify({"error": str(error)}), 502
+            request_body = {"model": model, "messages": messages}
+            elapsed = round(time.monotonic() - binding_started, 2)
+            payload = self._record_failed_response(
+                error,
+                elapsed,
+                provider,
+                model,
+                chat_request,
+                request_body,
+            )
+            payload["messages"] = self.history.messages()
+            return jsonify(payload), 502
 
         needs_conversion = any(
             isinstance(item, dict) and item.get("type") in ("video", "audio")
@@ -213,6 +266,7 @@ class ChatController:
 
         if not stream_requested:
             started = time.monotonic()
+            request_body = {"model": model, "messages": messages}
             try:
                 plan = self.requests.attachment_plan(
                     chat_request.attachments,
@@ -255,14 +309,34 @@ class ChatController:
                         documents=chat_request.documents,
                     )
             except AttachmentProcessingError as error:
-                return jsonify({"error": str(error)}), 422
+                elapsed = round(time.monotonic() - started, 2)
+                payload = self._record_failed_response(
+                    error,
+                    elapsed,
+                    provider,
+                    model,
+                    chat_request,
+                    request_body,
+                )
+                payload["messages"] = self.history.messages()
+                return jsonify(payload), 422
             except Exception as error:  # noqa: BLE001
                 current_app.logger.exception(
                     "Chat request failed for provider=%s model=%s",
                     provider,
                     model,
                 )
-                return jsonify({"error": str(error)}), 502
+                elapsed = round(time.monotonic() - started, 2)
+                payload = self._record_failed_response(
+                    error,
+                    elapsed,
+                    provider,
+                    model,
+                    chat_request,
+                    request_body,
+                )
+                payload["messages"] = self.history.messages()
+                return jsonify(payload), 502
             elapsed = round(time.monotonic() - started, 2)
             self.history.add(
                 "assistant",
@@ -292,6 +366,7 @@ class ChatController:
             started = time.monotonic()
             usage = {"prompt_tokens": 0, "completion_tokens": 0}
             response_text = ""
+            request_body = {"model": model, "messages": messages}
             try:
                 if needs_conversion:
                     status = {
@@ -394,7 +469,16 @@ class ChatController:
                 current_app.logger.exception(
                     "Chat stream failed for provider=%s model=%s", provider, model
                 )
-                yield f"data: {json.dumps({'type': 'error', 'error': str(error)})}\n\n"
+                elapsed = round(time.monotonic() - started, 2)
+                payload = self._record_failed_response(
+                    error,
+                    elapsed,
+                    provider,
+                    model,
+                    chat_request,
+                    request_body,
+                )
+                yield f"data: {json.dumps(payload)}\n\n"
 
         return Response(
             stream_with_context(generate()),

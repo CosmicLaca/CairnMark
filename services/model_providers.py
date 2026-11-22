@@ -1,6 +1,5 @@
 """Provider catalog access and provider-configuration business rules."""
 
-import base64
 import json
 import re
 import urllib.error
@@ -380,6 +379,62 @@ class ProviderSdkClient:
         return entry
 
     @staticmethod
+    def _google_model_name(model):
+        """Return the model name expected by Google generation methods."""
+        model_name = str(model or "").strip()
+        if model_name.startswith("models/"):
+            return model_name.removeprefix("models/")
+        return model_name
+
+    @classmethod
+    def _google_interaction_request(cls, messages, parameters, attachments=None):
+        """Build Interactions API input while preserving the chat transcript."""
+        system_text, conversation = cls._system_and_messages(messages)
+        input_steps = []
+        for index, message in enumerate(conversation):
+            is_assistant = message.get("role") == "assistant"
+            content = [
+                {
+                    "type": "text",
+                    "text": str(message.get("content", "")),
+                }
+            ]
+            if not is_assistant and index == len(conversation) - 1:
+                for item in attachments or []:
+                    media_type = item.get("type")
+                    if media_type not in ("image", "audio", "video"):
+                        continue
+                    content.append(
+                        {
+                            "type": media_type,
+                            "data": item.get("data", ""),
+                            "mime_type": item.get("mime_type", ""),
+                        }
+                    )
+            input_steps.append(
+                {
+                    "type": "model_output" if is_assistant else "user_input",
+                    "content": content,
+                }
+            )
+
+        generation_config = cls._provided_parameters(
+            parameters,
+            {
+                "temperature": "temperature",
+                "top_p": "top_p",
+                "max_tokens": "max_output_tokens",
+            },
+        )
+        seed = parameters.get("seed") if parameters else None
+        if seed is not None:
+            seed = int(seed)
+            generation_config["seed"] = (
+                (seed + (2 ** 31)) % (2 ** 32)
+            ) - (2 ** 31)
+        return system_text, input_steps, generation_config
+
+    @staticmethod
     def _deduplicate_entries(entries):
         """Collapse provider aliases that share one display name."""
         seen = set()
@@ -475,7 +530,9 @@ class ProviderSdkClient:
                         actions = getattr(model, "supported_actions", None) or ()
                         if "generateContent" not in actions:
                             continue
-                        entries.append(self._model_entry(spec, model))
+                        entry = self._model_entry(spec, model)
+                        entry["id"] = self._google_model_name(entry["id"])
+                        entries.append(entry)
                     return entries
             if spec.sdk_client == "openrouter":
                 with self.openrouter_factory(
@@ -783,72 +840,31 @@ class ProviderSdkClient:
     def _google_completion(
         self, api_key, model, messages, parameters, timeout, attachments=None
     ):
-        system_text, conversation = self._system_and_messages(messages)
-        image_attachments = [
-            item for item in (attachments or []) if item.get("type") == "image"
-        ]
-        contents = []
-        for index, message in enumerate(conversation):
-            is_last_user = (
-                message.get("role") != "assistant"
-                and index == len(conversation) - 1
-            )
-            parts = [
-                google_types.Part.from_text(
-                    text=str(message.get("content", ""))
-                )
-            ]
-            if is_last_user:
-                for item in (attachments or []):
-                    if item.get("type") not in ("image", "audio", "video"):
-                        continue
-                    try:
-                        parts.append(
-                            google_types.Part.from_bytes(
-                                data=base64.b64decode(item["data"], validate=True),
-                                mime_type=item["mime_type"],
-                            )
-                        )
-                    except Exception:  # noqa: BLE001
-                        continue
-            contents.append(
-                google_types.Content(
-                    role=(
-                        "model" if message.get("role") == "assistant" else "user"
-                    ),
-                    parts=parts,
-                )
-            )
-        config_data = {"system_instruction": system_text}
-        config_data.update(
-            self._provided_parameters(
-                parameters,
-                {
-                    "temperature": "temperature",
-                    "top_p": "top_p",
-                    "top_k": "top_k",
-                    "max_tokens": "max_output_tokens",
-                },
-            )
+        system_text, input_steps, generation_config = (
+            self._google_interaction_request(messages, parameters, attachments)
         )
-        config = google_types.GenerateContentConfig(**config_data)
+        model = self._google_model_name(model)
         options = google_types.HttpOptions(
             api_version="v1beta",
             timeout=int(timeout * 1000),
         )
+        kwargs = {
+            "model": model,
+            "input": input_steps,
+            "generation_config": generation_config,
+            "store": False,
+        }
+        if system_text:
+            kwargs["system_instruction"] = system_text
         with self.google_factory(
             api_key=api_key,
             http_options=options,
         ) as client:
-            response = client.models.generate_content(
-                model=model,
-                contents=contents,
-                config=config,
-            )
-        usage = response.usage_metadata
-        return str(response.text or ""), {
-            "prompt_tokens": getattr(usage, "prompt_token_count", 0),
-            "completion_tokens": getattr(usage, "candidates_token_count", 0),
+            response = client.interactions.create(**kwargs)
+        usage = getattr(response, "usage", None)
+        return str(getattr(response, "output_text", "") or ""), {
+            "prompt_tokens": getattr(usage, "total_input_tokens", 0),
+            "completion_tokens": getattr(usage, "total_output_tokens", 0),
         }
 
     def _openrouter_completion(
@@ -2444,71 +2460,52 @@ class ModelProviderService:
         # Google Gemini.
         if spec.sdk_client == "google":
             try:
-                config_data = {"system_instruction": system_text}
-                config_data.update(
-                    self.catalog_client.sdk_client._provided_parameters(
+                sdk = self.catalog_client.sdk_client
+                google_system, google_input, generation_config = (
+                    sdk._google_interaction_request(
+                        messages,
                         parameters,
-                        {
-                            "temperature": "temperature",
-                            "top_p": "top_p",
-                            "top_k": "top_k",
-                            "max_tokens": "max_output_tokens",
-                        },
+                        attachments,
                     )
                 )
-                config = google_types.GenerateContentConfig(**config_data)
                 options = google_types.HttpOptions(
                     api_version="v1beta",
                     timeout=int(timeout * 1000),
                 )
+                kwargs = {
+                    "model": sdk._google_model_name(model),
+                    "input": google_input,
+                    "generation_config": generation_config,
+                    "store": False,
+                    "stream": True,
+                }
+                if google_system:
+                    kwargs["system_instruction"] = google_system
                 usage = {"prompt_tokens": 0, "completion_tokens": 0}
-                with self.catalog_client.sdk_client.google_factory(
+                with sdk.google_factory(
                     api_key=api_key,
                     http_options=options,
                 ) as client:
-                    for chunk in client.models.generate_content_stream(
-                        model=model,
-                        contents=[
-                            google_types.Content(
-                                role=(
-                                    "model"
-                                    if m.get("role") == "assistant"
-                                    else "user"
-                                ),
-                                parts=(
-                                    [google_types.Part.from_text(text=str(m.get("content", "")))]
-                                    + (
-                                        [
-                                            google_types.Part.from_bytes(
-                                                data=base64.b64decode(
-                                                    item["data"], validate=True
-                                                ),
-                                                mime_type=item["mime_type"],
-                                            )
-                                            for item in (attachments or [])
-                                            if item.get("type") in ("image", "audio", "video")
-                                            and m.get("role") != "assistant"
-                                            and m is conversation[-1]
-                                        ]
-                                    )
-                                ),
-                            )
-                            for m in conversation
-                        ],
-                        config=config,
-                    ):
-                        text = getattr(chunk, "text", None)
-                        if text:
-                            accumulated += text
-                            yield {"type": "chunk", "text": text}
-                        usage_meta = getattr(chunk, "usage_metadata", None)
-                        if usage_meta is not None:
+                    for event in client.interactions.create(**kwargs):
+                        event_type = getattr(event, "event_type", "")
+                        delta = getattr(event, "delta", None)
+                        if (
+                            event_type == "step.delta"
+                            and getattr(delta, "type", "") == "text"
+                        ):
+                            text = str(getattr(delta, "text", "") or "")
+                            if text:
+                                accumulated += text
+                                yield {"type": "chunk", "text": text}
+                        elif event_type == "interaction.completed":
+                            interaction = getattr(event, "interaction", None)
+                            usage_meta = getattr(interaction, "usage", None)
                             usage = {
                                 "prompt_tokens": getattr(
-                                    usage_meta, "prompt_token_count", 0
+                                    usage_meta, "total_input_tokens", 0
                                 ),
                                 "completion_tokens": getattr(
-                                    usage_meta, "candidates_token_count", 0
+                                    usage_meta, "total_output_tokens", 0
                                 ),
                             }
                 yield {"type": "done", "usage": finish(usage)}

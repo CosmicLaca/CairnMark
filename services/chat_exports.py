@@ -101,7 +101,11 @@ class ChatExportRepository:
                 raise ValueError(
                     f"Message {index} has an invalid creation date."
                 ) from error
-            validated.append(dict(message))
+            if "is_error" in message and not isinstance(message["is_error"], bool):
+                raise ValueError(f"Message {index} has an invalid error status.")
+            validated_message = dict(message)
+            validated_message.setdefault("is_error", False)
+            validated.append(validated_message)
         return validated
 
     @staticmethod

@@ -232,6 +232,15 @@
     background: rgba(111, 214, 195, 0.1);
 }
 
+.chat-message--error {
+    border-color: rgba(185, 28, 28, 0.42);
+    background: rgba(254, 226, 226, 0.7);
+}
+
+.chat-message--error .chat-role {
+    color: #b91c1c;
+}
+
 .chat-user-body {
     display: flex;
     align-items: flex-start;

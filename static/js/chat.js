@@ -820,6 +820,9 @@
         if (meta && meta.compacted) {
             div.classList.add("chat-message--compacted");
         }
+        if (meta && meta.is_error) {
+            div.classList.add("chat-message--error");
+        }
         const roleSpan = document.createElement("span");
         roleSpan.className = "chat-role";
         if (meta && meta.compacted) {
@@ -1030,10 +1033,34 @@
                 preview_media: m.preview_media || [],
                 request_body: m.request_body,
                 compacted: Boolean(m.compacted),
+                is_error: Boolean(m.is_error),
                 created_at: m.created_at,
             });
         });
         syncEmptyState();
+    };
+
+    const appendAssistantPayload = (payload) => {
+        if (!payload || !payload.response) return false;
+        chatContext.add({
+            input_tokens: payload.input_tokens || 0,
+            output_tokens: payload.output_tokens || 0,
+            compacted: false,
+        });
+        updateTokenUsage();
+        appendMessage("assistant", payload.response, {
+            provider: payload.provider,
+            model: payload.model,
+            time: payload.time,
+            input_tokens: payload.input_tokens,
+            output_tokens: payload.output_tokens,
+            saved_system_prompt_name: payload.saved_system_prompt_name,
+            system_prompt: payload.system_prompt,
+            request_body: payload.request_body,
+            is_error: Boolean(payload.is_error || payload.type === "error"),
+            created_at: payload.created_at,
+        });
+        return true;
     };
 
     const showLoading = (onAbort, meta = {}) => {
@@ -1330,7 +1357,11 @@
                 } catch (error) {
                     payload = {};
                 }
-                throw new Error(payload.error || `HTTP ${response.status}`);
+                const requestError = new Error(
+                    payload.error || `HTTP ${response.status}`
+                );
+                requestError.chatPayload = payload;
+                throw requestError;
             }
             if (!response.body) {
                 throw new Error("Streaming is not supported by this browser.");
@@ -1385,7 +1416,11 @@
                         } else if (data.type === "result") {
                             finalPayload = data;
                         } else if (data.type === "error") {
-                            throw new Error(data.error || "Request failed");
+                            const requestError = new Error(
+                                data.error || "Request failed"
+                            );
+                            requestError.chatPayload = data;
+                            throw requestError;
                         }
                     }
                 }
@@ -1407,23 +1442,7 @@
             cancelStreamingBubble(loadingEl);
             if (loadingEl && loadingEl.element) loadingEl.element.remove();
             if (finalPayload) {
-                chatContext.add({
-                    input_tokens: finalPayload.input_tokens || 0,
-                    output_tokens: finalPayload.output_tokens || 0,
-                    compacted: false,
-                });
-                updateTokenUsage();
-                appendMessage("assistant", finalPayload.response || "", {
-                    provider: finalPayload.provider,
-                    model: finalPayload.model,
-                    time: finalPayload.time,
-                    input_tokens: finalPayload.input_tokens,
-                    output_tokens: finalPayload.output_tokens,
-                    saved_system_prompt_name: finalPayload.saved_system_prompt_name,
-                    system_prompt: finalPayload.system_prompt,
-                    request_body: finalPayload.request_body,
-                });
-                completedResponse = true;
+                completedResponse = appendAssistantPayload(finalPayload);
             } else if (accumulated) {
                 appendMessage("assistant", accumulated, {});
             }
@@ -1455,7 +1474,9 @@
                 }
                 return;
             }
-            window.alert(`Request failed: ${error}`);
+            appendAssistantPayload(error && error.chatPayload);
+            const errorMessage = error && error.message ? error.message : String(error);
+            window.alert(`Request failed: ${errorMessage}`);
         } finally {
             updateTokenUsage();
         }

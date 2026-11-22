@@ -55,6 +55,7 @@ MESSAGE_COLUMNS = (
     "has_audio",
     "preview_media",
     "compacted",
+    "is_error",
     "created_at",
 )
 MESSAGE_DEFAULTS = {
@@ -72,6 +73,7 @@ MESSAGE_DEFAULTS = {
     "has_audio": False,
     "preview_media": [],
     "compacted": False,
+    "is_error": False,
 }
 LATER_MESSAGE_COLUMNS = {
     "model_name": "TEXT NOT NULL DEFAULT ''",
@@ -86,6 +88,7 @@ LATER_MESSAGE_COLUMNS = {
     "has_audio": "INTEGER NOT NULL DEFAULT 0",
     "preview_media": "TEXT NOT NULL DEFAULT ''",
     "compacted": "INTEGER NOT NULL DEFAULT 0",
+    "is_error": "INTEGER NOT NULL DEFAULT 0",
 }
 SAVED_RECORDS = {
     "chat": ("saved_chats", "messages", True),
@@ -190,6 +193,7 @@ class ChatRepository:
             message["preview_media"] = _parse_list(message["preview_media"])
             message["has_audio"] = bool(message["has_audio"])
             message["compacted"] = bool(message["compacted"])
+            message["is_error"] = bool(message["is_error"])
             for field, default in MESSAGE_DEFAULTS.items():
                 if message[field] is None:
                     message[field] = default
@@ -288,6 +292,7 @@ class ChatRepository:
         values["preview_media"] = _stored_list(values["preview_media"])
         values["has_audio"] = int(bool(values["has_audio"]))
         values["compacted"] = int(bool(values["compacted"]))
+        values["is_error"] = int(bool(values["is_error"]))
         return tuple(values.get(column) for column in MESSAGE_COLUMNS)
 
     def _replace(self, connection, messages):

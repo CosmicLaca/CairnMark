@@ -70,7 +70,7 @@
         <p>Choose an active model in the setup panel, then write the first message below.</p>
       </div>
       {% for message in chat_messages %}
-        <div class="chat-message chat-message--{{ message.role }}{% if message.compacted %} chat-message--compacted{% endif %}{% if message.role == 'user' and message.has_audio %} chat-message--has-audio{% endif %}">
+        <div class="chat-message chat-message--{{ message.role }}{% if message.compacted %} chat-message--compacted{% endif %}{% if message.is_error %} chat-message--error{% endif %}{% if message.role == 'user' and message.has_audio %} chat-message--has-audio{% endif %}">
           <div class="chat-message-header">
             <span class="chat-role-group">
               <span class="chat-role">
