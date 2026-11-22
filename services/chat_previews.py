@@ -157,6 +157,18 @@ class ChatPreviewStore:
                     for item in media
                     if isinstance(item, dict) and item.get("filename")
                 )
+            webpage_previews = message.get("webpage_previews") or []
+            if isinstance(webpage_previews, str):
+                try:
+                    webpage_previews = json.loads(webpage_previews)
+                except (TypeError, ValueError):
+                    webpage_previews = []
+            if isinstance(webpage_previews, list):
+                names.extend(
+                    str(item["filename"])
+                    for item in webpage_previews
+                    if isinstance(item, dict) and item.get("filename")
+                )
         return [Path(name).name for name in names]
 
     def delete_unreferenced(self, candidates, *referenced_message_groups):

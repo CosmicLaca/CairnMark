@@ -272,20 +272,23 @@
 
 .chat-reverse-image-button {
     position: absolute;
-    top: 4px;
-    right: 4px;
+    top: 3px;
+    right: 3px;
     display: grid;
-    width: 25px;
-    height: 25px;
+    width: 17px;
+    height: 17px;
+    padding: 0;
     place-items: center;
-    border: 1px solid rgba(255, 255, 255, 0.72);
-    border-radius: 50%;
+    border: 0;
+    border-radius: 0;
     color: #fff;
-    background: rgba(13, 27, 24, 0.8);
-    box-shadow: 0 2px 7px rgba(13, 27, 24, 0.28);
+    background: transparent;
+    box-shadow: none;
     cursor: pointer;
+    font-size: 0.72rem;
     line-height: 1;
     opacity: 0;
+    text-shadow: 0 1px 3px rgba(13, 27, 24, 0.9);
     transition: opacity 140ms ease, transform 140ms ease;
 }
 
@@ -295,7 +298,8 @@
 }
 
 .chat-reverse-image-button:hover {
-    transform: scale(1.06);
+    background: transparent;
+    transform: scale(1.04);
 }
 
 .chat-user-preview-frame.is-broken .chat-reverse-image-button {
@@ -524,6 +528,18 @@
     color: var(--ink);
 }
 
+.chat-used-tools-icon {
+    display: inline-flex;
+    color: #3c897c;
+    font-size: 0.86rem;
+    line-height: 1;
+    cursor: help;
+}
+
+.chat-used-tools-icon:hover {
+    color: var(--ink);
+}
+
 .chat-content {
     max-width: 100%;
     color: var(--ink);
@@ -610,7 +626,8 @@
     object-fit: contain;
 }
 
-.chat-message--assistant .chat-markdown-image-download {
+.chat-message--assistant .chat-markdown-image-download,
+.chat-message--assistant .chat-markdown-image-reverse {
     position: absolute;
     top: 6px;
     right: 6px;
@@ -629,14 +646,22 @@
     z-index: 2;
 }
 
+.chat-message--assistant .chat-markdown-image-reverse {
+    right: 40px;
+}
+
 .chat-message--assistant .chat-markdown-image-preview.is-available
-    .chat-markdown-image-download {
+    .chat-markdown-image-download,
+.chat-message--assistant .chat-markdown-image-preview.is-available
+    .chat-markdown-image-reverse {
     display: grid;
     place-items: center;
 }
 
 .chat-message--assistant .chat-markdown-image-download:hover,
-.chat-message--assistant .chat-markdown-image-download:focus-visible {
+.chat-message--assistant .chat-markdown-image-download:focus-visible,
+.chat-message--assistant .chat-markdown-image-reverse:hover,
+.chat-message--assistant .chat-markdown-image-reverse:focus-visible {
     background: rgba(9, 28, 24, 0.95);
 }
 
@@ -656,6 +681,30 @@
     background: rgba(9, 28, 24, 0.96);
     box-shadow: 0 12px 34px rgba(9, 28, 24, 0.38);
     line-height: 0;
+}
+
+.chat-webpage-hover-preview {
+    position: fixed;
+    z-index: 1210;
+    max-width: min(600px, calc(100vw - 24px));
+    padding: 5px;
+    pointer-events: none;
+    border: 1px solid rgba(37, 107, 96, 0.35);
+    border-radius: 7px;
+    background: #ffffff;
+    box-shadow: 0 16px 48px rgba(17, 25, 23, 0.3);
+}
+
+.chat-webpage-hover-preview img {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    height: min(320px, calc(100vh - 34px));
+    object-fit: contain;
+}
+
+.chat-webpage-hover-preview[hidden] {
+    display: none;
 }
 
 .chat-image-hover-preview[hidden] {
@@ -1341,7 +1390,7 @@
 }
 
 .tool-global-settings-modal .modal-content {
-    width: min(430px, calc(100% - 32px));
+    width: min(680px, calc(100% - 32px));
 }
 
 .tool-global-setting-row {
@@ -1362,6 +1411,45 @@
     border: 0;
     border-radius: 999px;
     background: transparent;
+}
+
+.tool-global-settings-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    margin-top: 20px;
+}
+
+.tool-global-policy-field,
+.tool-guidance-setting-row,
+.tool-guidance-template-field {
+    margin-top: 20px;
+}
+
+.tool-global-policy-select-shell {
+    width: 100%;
+}
+
+.tool-guidance-setting-row {
+    padding-top: 18px;
+    border-top: 1px solid var(--line-color, #d8d5c7);
+}
+
+.tool-webpage-preview-setting-row {
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line-color, #d8d5c7);
+}
+
+.tool-guidance-template-field textarea {
+    min-height: 156px;
+    resize: vertical;
+}
+
+@media (max-width: 640px) {
+    .tool-global-settings-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 .more-params-modal.mcp-settings-modal .modal-content {

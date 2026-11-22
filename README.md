@@ -25,7 +25,8 @@ stay available on the local machine.
 
 Connect llama.cpp, vLLM, major hosted APIs, or a custom OpenAI-compatible
 endpoint. Discover catalogs, save individual model switches, check live
-reachability, and keep hosted API keys encrypted at rest.
+reachability, recognize provider state from the numbered selector markers, and
+keep hosted API keys encrypted at rest.
 
 > Details:
 > ### **[Model provider setup and troubleshooting →](manual/model-setup.md)**
@@ -40,7 +41,8 @@ reachability, and keep hosted API keys encrypted at rest.
 Chat with any enabled model using saved system prompts, generation controls,
 streaming Markdown, attachments, context metering, manual or automatic
 compaction, and reusable conversations. Import/export and local media previews
-support longer debugging sessions.
+support longer debugging sessions; failed requests remain visible as durable
+diagnostic responses, and public images and webpage links gain visual tools.
 
 > Details:
 > ### **[Chat, attachments, context, and saved conversations →](manual/chat.md)**
@@ -53,8 +55,9 @@ support longer debugging sessions.
 <img src="manual/tool-setting.jpg" width="50%" alt="MCP tool setting">
 
 Use llama.cpp-managed or CairnMark-managed MCP connections. Global, service,
-and subtool switches limit what a capable model can call; Custom tool metadata
-is cached locally and schema-declared passwords are encrypted.
+and subtool switches limit what a capable model can call. Global execution
+limits, policies, runtime guidance, and webpage-preview controls are saved
+locally; used tools remain identifiable on their response bubbles.
 
 > Details:
 > ### **[MCP tool handling →](manual/mcp-tools.md)** **[Local SearXNG setup and direct tests →](./manual/tool-setup.md)**
@@ -80,9 +83,9 @@ without removing unknown evaluation fields.
 
 | Area | Highlights |
 | --- | --- |
-| Providers | llama.cpp, vLLM, hosted APIs, custom OpenAI-compatible endpoints |
-| Chat | Streaming, multimodal attachments, context controls, saved prompts and chats |
-| Tools | llama.cpp and Custom MCP sources, encrypted settings, cached discovery |
+| Providers | llama.cpp, vLLM, hosted APIs, custom endpoints, live state markers |
+| Chat | Streaming, durable failed responses, multimodal and webpage previews |
+| Tools | Global execution policy, encrypted settings, cached discovery, used-tool markers |
 | Benchmarks | AI-assisted JSON creation, metadata, filtering, preview, atomic result writes |
 | Local data | SQLite settings/history, user-owned JSON, editable prompt templates |
 

@@ -10,7 +10,7 @@ service switch, and individual subtool switches.
 
 | Main tool setup                                                                             | Tool setup                                                                                | Endpoint setting                                                                          |
 |---------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------|
-| <p align="left"><img src="./tool-setting-01.jpg" height="300px" alt="MCP tool setting"></p> | <p align="left"><img src="./tool-setting-02.jpg" height="300px" alt="MCP tool setting"></p> | <p align="left"><img src="./tool-setting-03.jpg" height="300px" alt="MCP tool setting"></p> |
+| <img src="./tool-setting-01.jpg" height="300px" alt="MCP tool setting"> | <img src="./tool-setting-02.jpg" height="300px" alt="MCP tool setting"> | <img src="./tool-setting-03.jpg" height="300px" alt="MCP tool setting"> |
  
 ---
 
@@ -66,8 +66,50 @@ backend service calls and are not returned to browser JavaScript.
   definitions in `instance/tools.db`.
 - **Cancel** closes the modal without persisting edited fields.
 
+<img src="./tool-setup.jpg" height="400px" alt="MCP tool global setting">
+
 Use **Status check** for availability problems. Use **Refresh** only after a
 service adds, removes, or renames tools.
+
+---
+
+## Global tool status and execution policy
+
+Right-click the tool icon below the chat input to open **Tool status**. These
+settings apply to every MCP source and are saved in `instance/tools.db` when
+**Save** is selected:
+
+| Setting | Default | Purpose |
+| --- | ---: | --- |
+| Enable/Disable tools | Off | Pauses or permits all saved tool services without changing their individual switches |
+| Maximum tool-call rounds | 6 | Limits model-to-tool continuation rounds per response; range 1–20 |
+| Maximum total tool calls | 12 | Limits all calls in one response, including parallel calls; range 1–100 |
+| Stop after consecutive failures | 2 | Ends tool execution after repeated failures; range 1–10 |
+| Maximum result characters | 20,000 | Truncates each tool result before returning it to the model; range 1,000–500,000 |
+| Tool-use policy | Automatic | Controls when enabled definitions may be sent to the model |
+| Add tool guidance to system prompt | On | Appends runtime-only instructions and the enabled tool names |
+| Tool guidance template | Built in | Customizes the runtime guidance; `{tools}` is replaced with qualified tool names |
+| Capture webpage preview | On | Creates hover screenshots for ordinary public page links in assistant responses |
+| Webpage preview timeout | 2 seconds | Bounds each page capture; range 1–30 seconds |
+
+<img src="./tool-global.jpg" height="550px" alt="MCP tool global setting">
+
+The global switch does not rewrite service or subtool choices. Turning it off
+temporarily pauses them; turning it on restores the previously selected set.
+
+The tool-use policies behave as follows:
+
+- **Automatic** lets the model choose enabled tools when useful.
+- **Ask before each response** prompts for permission before sending enabled
+  tools with that request.
+- **Manual only** exposes tools only when the user message starts with `/tool`
+  or `/tools`.
+
+Tool guidance is appended to the outgoing system prompt only at request time;
+it does not overwrite the visible or saved system prompt. If a custom template
+omits `{tools}`, CairnMark appends the available-tool list automatically.
+
+---
 
 ## Tool execution
 
@@ -77,9 +119,16 @@ executes it, appends the result to the model transcript, and asks the model to
 continue. Same-named tools from different sources receive distinct internal
 aliases.
 
-One chat request can execute at most six tool calls. After the sixth, CairnMark
-removes tool definitions and requires a final response. The assistant bubble
-shows the source, tool, and call round while execution is in progress.
+Execution stops at the configured round, total-call, or consecutive-failure
+limit. CairnMark then removes tool definitions and asks the model for a final
+response. During execution the loading bubble shows
+`provider::tool call... [n]`; after tool work it returns to the normal thinking
+state.
+
+The completed assistant bubble displays a tool icon next to **Show API request
+body** when at least one tool was called. Its tooltip lists each distinct
+`provider::tool` identity used by that response. This audit marker is stored
+with active history, saved chats, and exported conversations.
 
 ---
 

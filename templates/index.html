@@ -70,7 +70,7 @@
         <p>Choose an active model in the setup panel, then write the first message below.</p>
       </div>
       {% for message in chat_messages %}
-        <div class="chat-message chat-message--{{ message.role }}{% if message.compacted %} chat-message--compacted{% endif %}{% if message.is_error %} chat-message--error{% endif %}{% if message.role == 'user' and message.has_audio %} chat-message--has-audio{% endif %}">
+        <div class="chat-message chat-message--{{ message.role }}{% if message.compacted %} chat-message--compacted{% endif %}{% if message.is_error %} chat-message--error{% endif %}{% if message.role == 'user' and message.has_audio %} chat-message--has-audio{% endif %}"{% if message.role == 'assistant' %} data-message-id="{{ message.id }}" data-webpage-previews='{{ message.webpage_previews|tojson|forceescape }}' data-capture-webpage-previews="{% if not message.is_error and not message.webpage_previews and not message.webpage_preview_checked %}true{% else %}false{% endif %}"{% endif %}>
           <div class="chat-message-header">
             <span class="chat-role-group">
               <span class="chat-role">
@@ -130,6 +130,11 @@
                   <circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
                   <path fill="currentColor" d="M6 9l3 3 3-3"/>
                 </svg>
+              </span>
+              {% endif %}
+              {% if message.used_tools %}
+              <span class="chat-used-tools-icon" title="{{ message.used_tools|join(', ') }}" aria-label="{{ message.used_tools|join(', ') }}">
+                <span aria-hidden="true">🛠</span>
               </span>
               {% endif %}
             </span>
@@ -510,13 +515,13 @@
     <div class="modal-body reverse-image-modal-body">
       <img class="reverse-image-preview" data-reverse-image-preview alt="Image selected for reverse search">
       <div class="reverse-image-copy">
-        <p>Choose a provider. CairnMark saves a local copy, then opens the provider's official upload page in a new tab.</p>
-        <p class="field-hint">The image is not sent automatically. Uploading it on the opened page shares it with that third party.</p>
+        <p data-reverse-image-description>Choose a provider. CairnMark opens the provider's official upload page in a new tab.</p>
+        <p class="field-hint" data-reverse-image-hint>The image is not sent automatically. Uploading it on the opened page shares it with that third party.</p>
       </div>
       <div class="reverse-image-services" aria-label="Reverse image search providers">
-        <button type="button" class="modal-save-button" data-reverse-image-service data-provider-url="https://lens.google.com/">Google Lens</button>
-        <button type="button" class="modal-save-button" data-reverse-image-service data-provider-url="https://tineye.com/">TinEye</button>
-        <button type="button" class="modal-save-button" data-reverse-image-service data-provider-url="https://yandex.com/images/">Yandex Images</button>
+        <button type="button" class="modal-save-button" data-reverse-image-service data-provider-url="https://lens.google.com/" data-provider-url-template="https://lens.google.com/uploadbyurl?url={url}">Google Lens</button>
+        <button type="button" class="modal-save-button" data-reverse-image-service data-provider-url="https://tineye.com/" data-provider-url-template="https://tineye.com/search?url={url}">TinEye</button>
+        <button type="button" class="modal-save-button" data-reverse-image-service data-provider-url="https://yandex.com/images/" data-provider-url-template="https://yandex.com/images/search?rpt=imageview&amp;url={url}">Yandex Images</button>
       </div>
     </div>
     <footer class="modal-footer">
@@ -714,6 +719,85 @@
             <span class="chat-toggle-switch-knob"></span>
           </span>
         </button>
+      </div>
+      <div class="tool-global-setting-row tool-webpage-preview-setting-row">
+        <div>
+          <strong>Capture webpage preview</strong>
+          <p class="field-hint">Save a screenshot for ordinary webpage links in assistant responses.</p>
+        </div>
+        <button
+          type="button"
+          class="chat-toggle-switch tool-global-switch"
+          data-tool-webpage-preview-switch
+          role="switch"
+          aria-checked="false"
+          aria-label="Enable or disable webpage preview capture"
+        >
+          <span class="chat-toggle-switch-track" aria-hidden="true">
+            <span class="chat-toggle-switch-knob"></span>
+          </span>
+        </button>
+      </div>
+      <div class="tool-global-settings-grid">
+        <div class="field-group">
+          <label for="tool-max-rounds">Maximum tool-call rounds</label>
+          <input type="number" id="tool-max-rounds" data-tool-max-rounds min="1" max="20" step="1" value="6">
+          <p class="field-hint">Maximum model/tool exchanges for one response.</p>
+        </div>
+        <div class="field-group">
+          <label for="tool-max-total-calls">Maximum total tool calls</label>
+          <input type="number" id="tool-max-total-calls" data-tool-max-total-calls min="1" max="100" step="1" value="12">
+          <p class="field-hint">Includes parallel calls and automatic retries.</p>
+        </div>
+        <div class="field-group">
+          <label for="tool-max-failures">Stop after consecutive failures</label>
+          <input type="number" id="tool-max-failures" data-tool-max-failures min="1" max="10" step="1" value="2">
+          <p class="field-hint">Prevents repeated calls to unavailable tools.</p>
+        </div>
+        <div class="field-group">
+          <label for="tool-max-result-chars">Maximum result characters</label>
+          <input type="number" id="tool-max-result-chars" data-tool-max-result-chars min="1000" max="500000" step="1000" value="20000">
+          <p class="field-hint">Longer individual tool results are truncated.</p>
+        </div>
+        <div class="field-group">
+          <label for="tool-webpage-preview-timeout">Webpage preview timeout (seconds)</label>
+          <input type="number" id="tool-webpage-preview-timeout" data-tool-webpage-preview-timeout min="1" max="30" step="1" value="2">
+          <p class="field-hint">Maximum page-access time before preview capture is skipped.</p>
+        </div>
+      </div>
+      <div class="field-group tool-global-policy-field">
+        <label for="tool-use-policy">Tool-use policy</label>
+        <div class="select-shell tool-global-policy-select-shell">
+          <select id="tool-use-policy" data-tool-use-policy>
+            <option value="automatic">Automatic</option>
+            <option value="ask">Ask before each response</option>
+            <option value="manual">Manual only (/tool or /tools)</option>
+          </select>
+        </div>
+        <p class="field-hint">Choose when enabled tools may be exposed to the model.</p>
+      </div>
+      <div class="tool-global-setting-row tool-guidance-setting-row">
+        <div>
+          <strong>Tool guidance</strong>
+          <p class="field-hint">Append runtime instructions and enabled tool names to the system prompt.</p>
+        </div>
+        <button
+          type="button"
+          class="chat-toggle-switch tool-global-switch"
+          data-tool-guidance-switch
+          role="switch"
+          aria-checked="false"
+          aria-label="Enable or disable tool guidance"
+        >
+          <span class="chat-toggle-switch-track" aria-hidden="true">
+            <span class="chat-toggle-switch-knob"></span>
+          </span>
+        </button>
+      </div>
+      <div class="field-group tool-guidance-template-field">
+        <label for="tool-guidance-template">Tool guidance template</label>
+        <textarea id="tool-guidance-template" data-tool-guidance-template rows="8" maxlength="8000"></textarea>
+        <p class="field-hint">Use <code>{tools}</code> where the enabled provider::service::tool list should appear.</p>
       </div>
     </div>
     <footer class="modal-footer more-params-footer">

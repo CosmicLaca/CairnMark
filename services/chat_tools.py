@@ -5,12 +5,13 @@ import json
 import re
 from dataclasses import dataclass
 
-from models.mcp_settings import MCP_SETTINGS
+from models.mcp_settings import DEFAULT_TOOL_GLOBAL_SETTINGS, MCP_SETTINGS
 from services.mcp_services import McpServiceRegistry
 
 
-MAX_TOOL_CALLS = 6
-MAX_TOOL_RESULT_CHARS = 100_000
+MAX_TOOL_ROUNDS = DEFAULT_TOOL_GLOBAL_SETTINGS["max_rounds"]
+MAX_TOOL_CALLS = DEFAULT_TOOL_GLOBAL_SETTINGS["max_total_calls"]
+MAX_TOOL_RESULT_CHARS = DEFAULT_TOOL_GLOBAL_SETTINGS["max_result_chars"]
 CONNECTION_SETTING_KEYS = {
     "endpoint",
     "password",
@@ -173,6 +174,52 @@ class ChatToolService:
             )
         return bindings
 
+    def global_settings(self):
+        """Return global execution settings from new or legacy repositories."""
+        getter = getattr(self.settings, "global_settings", None)
+        if callable(getter):
+            return getter()
+        return dict(DEFAULT_TOOL_GLOBAL_SETTINGS)
+
+    def request_allows_tools(self, raw_request, user_message):
+        """Enforce the saved automatic, confirmation, or manual policy."""
+        policy = self.global_settings()["tool_policy"]
+        if policy == "automatic":
+            return True
+        if policy == "ask":
+            return raw_request.get("tools_allowed") is True
+        normalized = str(user_message or "").lstrip().lower()
+        return normalized.startswith(("/tool ", "/tools "))
+
+    def system_prompt(self, system_prompt, bindings):
+        """Append runtime-only tool guidance for the enabled bindings."""
+        settings = self.global_settings()
+        if not bindings or not settings["guidance_enabled"]:
+            return system_prompt
+        names = sorted(
+            {
+                f"{binding.source}::{binding.service}::{binding.tool}"
+                for binding in bindings
+            },
+            key=str.casefold,
+        )
+        tool_list = "\n".join(f"- {name}" for name in names)
+        template = settings["guidance_template"].strip()
+        guidance = template.replace("{tools}", tool_list)
+        if "{tools}" not in template:
+            guidance = f"{guidance}\n\nAvailable tools:\n{tool_list}".strip()
+        policy = settings["tool_policy"]
+        if policy == "ask":
+            guidance += (
+                "\n\nTool use was approved by the user for this response."
+            )
+        elif policy == "manual":
+            guidance += (
+                "\n\nThe user explicitly requested tool use for this response."
+            )
+        base = str(system_prompt or "").rstrip()
+        return f"{base}\n\n{guidance}".strip()
+
     @staticmethod
     def _coerce_setting(value, property_schema):
         """Coerce modal values to the MCP tool's declared JSON type."""
@@ -228,7 +275,7 @@ class ChatToolService:
         return merged
 
     @staticmethod
-    def _result_text(result):
+    def _result_text(result, max_chars=MAX_TOOL_RESULT_CHARS):
         if not isinstance(result, dict):
             text = str(result)
         elif result.get("error"):
@@ -260,11 +307,11 @@ class ChatToolService:
                 raise RuntimeError(text or "MCP tool returned an error")
             if not text:
                 text = json.dumps(result, ensure_ascii=False)
-        if len(text) > MAX_TOOL_RESULT_CHARS:
-            return text[:MAX_TOOL_RESULT_CHARS] + "\n[Tool result truncated]"
+        if len(text) > max_chars:
+            return text[:max_chars] + "\n[Tool result truncated]"
         return text
 
-    def _execute(self, binding, arguments):
+    def _execute(self, binding, arguments, max_result_chars=MAX_TOOL_RESULT_CHARS):
         arguments = self._arguments_with_defaults(binding, arguments)
         if binding.source == "llama":
             timeout = binding.settings.get("timeout_ms", 30_000)
@@ -284,7 +331,7 @@ class ChatToolService:
                 arguments,
                 binding.settings,
             )
-        return self._result_text(result)
+        return self._result_text(result, max_result_chars)
 
     @staticmethod
     def _is_degraded_search_result(result_text):
@@ -329,7 +376,14 @@ class ChatToolService:
         tools = [binding.definition for binding in bindings]
         transcript = [dict(message) for message in messages]
         usage = {"prompt_tokens": 0, "completion_tokens": 0}
+        global_settings = self.global_settings()
+        max_rounds = global_settings["max_rounds"]
+        max_total_calls = global_settings["max_total_calls"]
+        max_failures = global_settings["max_consecutive_failures"]
+        max_result_chars = global_settings["max_result_chars"]
+        tool_round_count = 0
         tool_call_count = 0
+        consecutive_failures = 0
 
         while True:
             assistant, round_usage = (
@@ -356,14 +410,18 @@ class ChatToolService:
                 }
                 return
 
-            remaining_calls = MAX_TOOL_CALLS - tool_call_count
+            tool_round_count += 1
+            remaining_calls = max_total_calls - tool_call_count
             tool_calls = tool_calls[:remaining_calls]
             assistant = dict(assistant)
             assistant["tool_calls"] = tool_calls
             transcript.append(assistant)
             processed_tool_calls = []
             for call in tool_calls:
-                if tool_call_count >= MAX_TOOL_CALLS:
+                if (
+                    tool_call_count >= max_total_calls
+                    or consecutive_failures >= max_failures
+                ):
                     break
                 processed_tool_calls.append(call)
                 function = call.get("function", {})
@@ -385,10 +443,15 @@ class ChatToolService:
                         raise ValueError("Tool arguments must be a JSON object.")
                     if binding is None:
                         raise ValueError("The requested tool is not enabled.")
-                    result_text = self._execute(binding, arguments)
+                    result_text = self._execute(
+                        binding,
+                        arguments,
+                        max_result_chars,
+                    )
+                    consecutive_failures = 0
                     if (
                         self._is_degraded_search_result(result_text)
-                        and tool_call_count < MAX_TOOL_CALLS
+                        and tool_call_count < max_total_calls
                     ):
                         tool_call_count += 1
                         yield {
@@ -404,9 +467,12 @@ class ChatToolService:
                         result_text = self._execute(
                             relaxed_binding,
                             relaxed_arguments,
+                            max_result_chars,
                         )
+                        consecutive_failures = 0
                 except Exception as error:  # noqa: BLE001
                     result_text = f"Tool call failed: {error}"
+                    consecutive_failures += 1
                 transcript.append(
                     {
                         "role": "tool",
@@ -418,7 +484,11 @@ class ChatToolService:
             assistant["tool_calls"] = processed_tool_calls
             yield {"type": "status", "text": "thinking…"}
 
-            if tool_call_count < MAX_TOOL_CALLS:
+            if (
+                tool_round_count < max_rounds
+                and tool_call_count < max_total_calls
+                and consecutive_failures < max_failures
+            ):
                 continue
 
             final_text, final_usage = (

@@ -56,6 +56,9 @@ MESSAGE_COLUMNS = (
     "preview_media",
     "compacted",
     "is_error",
+    "used_tools",
+    "webpage_previews",
+    "webpage_preview_checked",
     "created_at",
 )
 MESSAGE_DEFAULTS = {
@@ -74,6 +77,9 @@ MESSAGE_DEFAULTS = {
     "preview_media": [],
     "compacted": False,
     "is_error": False,
+    "used_tools": [],
+    "webpage_previews": [],
+    "webpage_preview_checked": False,
 }
 LATER_MESSAGE_COLUMNS = {
     "model_name": "TEXT NOT NULL DEFAULT ''",
@@ -89,6 +95,9 @@ LATER_MESSAGE_COLUMNS = {
     "preview_media": "TEXT NOT NULL DEFAULT ''",
     "compacted": "INTEGER NOT NULL DEFAULT 0",
     "is_error": "INTEGER NOT NULL DEFAULT 0",
+    "used_tools": "TEXT NOT NULL DEFAULT ''",
+    "webpage_previews": "TEXT NOT NULL DEFAULT ''",
+    "webpage_preview_checked": "INTEGER NOT NULL DEFAULT 0",
 }
 SAVED_RECORDS = {
     "chat": ("saved_chats", "messages", True),
@@ -191,9 +200,20 @@ class ChatRepository:
                 csv_fallback=True,
             )
             message["preview_media"] = _parse_list(message["preview_media"])
+            message["used_tools"] = [
+                item.strip()
+                for item in _parse_list(message["used_tools"])
+                if isinstance(item, str) and item.strip()
+            ]
+            message["webpage_previews"] = _parse_list(
+                message["webpage_previews"]
+            )
             message["has_audio"] = bool(message["has_audio"])
             message["compacted"] = bool(message["compacted"])
             message["is_error"] = bool(message["is_error"])
+            message["webpage_preview_checked"] = bool(
+                message["webpage_preview_checked"]
+            )
             for field, default in MESSAGE_DEFAULTS.items():
                 if message[field] is None:
                     message[field] = default
@@ -225,6 +245,18 @@ class ChatRepository:
                 return False
             connection.execute("DELETE FROM chat_messages WHERE id = ?", (row[0],))
         return True
+
+    def update_webpage_previews(self, message_id, previews):
+        """Attach captured webpage metadata to one assistant message."""
+        rowcount, _lastrowid = self.store.execute(
+            """
+            UPDATE chat_messages
+            SET webpage_previews = ?, webpage_preview_checked = 1
+            WHERE id = ? AND role = 'assistant'
+            """,
+            (_stored_list(previews), message_id),
+        )
+        return rowcount > 0
 
     def saved(self, operation, record_type, name=None, value=None):
         """List, read, write, or delete a named chat or system prompt."""
@@ -290,9 +322,14 @@ class ChatRepository:
         values = {**MESSAGE_DEFAULTS, **message}
         values["preview_images"] = _stored_list(values["preview_images"])
         values["preview_media"] = _stored_list(values["preview_media"])
+        values["used_tools"] = _stored_list(values["used_tools"])
+        values["webpage_previews"] = _stored_list(values["webpage_previews"])
         values["has_audio"] = int(bool(values["has_audio"]))
         values["compacted"] = int(bool(values["compacted"]))
         values["is_error"] = int(bool(values["is_error"]))
+        values["webpage_preview_checked"] = int(
+            bool(values["webpage_preview_checked"])
+        )
         return tuple(values.get(column) for column in MESSAGE_COLUMNS)
 
     def _replace(self, connection, messages):

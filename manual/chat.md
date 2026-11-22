@@ -26,6 +26,22 @@ assistant bubble selects that response's model again if it is still available.
 
 ---
 
+## Response metadata and failed requests
+
+A failed model request creates an assistant bubble instead of leaving an
+unanswered user message. The bubble contains the error and retains the same
+diagnostic context as a successful response, including provider, model, system
+prompt, request body, and time. Its red error appearance is stored with the
+message and survives page reloads, saved-chat loading, replacement, export, and
+import.
+
+When a response actually used one or more MCP tools, a tool icon appears next
+to **Show API request body**. Hover over it to see the distinct tools in
+`provider::tool` form. The marker records tools that were called, not merely
+tools that were available, and is preserved with the conversation.
+
+---
+
 ## Saved setup
 
 **Save setup** stores one initial-form row in `instance/cairnmark.db`:
@@ -121,8 +137,35 @@ URLs become lazy-loaded video players. Search pages and unsupported hosts remain
 links; CairnMark does not invent a media stream that a tool did not return.
 
 Uploaded image previews offer Google Lens, TinEye, and Yandex reverse-search
-shortcuts. CairnMark saves a local JPEG and opens the provider's official upload
-page; sending the image remains an explicit user action.
+shortcuts. A local upload cannot be submitted to another site automatically,
+so CairnMark opens the provider's official upload page and leaves sending the
+image as an explicit user action.
+
+Public external images rendered in an assistant response have the same search
+action next to their download control. In this case CairnMark supplies the
+public image URL to the selected reverse-search provider automatically. This is
+available only for successfully loaded external images; inaccessible images
+remain ordinary links.
+
+---
+
+## Webpage link screenshots
+
+Ordinary public HTTP or HTTPS page links in an assistant response can display a
+320-pixel-high screenshot when hovered. Image, audio, and video URLs continue to
+use their specialized previews. CairnMark captures at most five distinct pages
+per response, follows only safe public destinations, and ignores a page when it
+does not return HTTP 200 or cannot be captured within the configured timeout.
+
+Preview images use generated identifiers under `instance/preview/`; the remote
+URL is never used as a filename. The URL-to-preview mapping is message metadata,
+so screenshots remain associated with the correct link after reload, saved-chat
+loading, export, and import.
+
+Right-click the chat tool icon to turn **Capture webpage preview** on or off and
+set its timeout from 1 to 30 seconds. The defaults are enabled and 2 seconds.
+See **[Global tool status and execution policy](mcp-tools.md#global-tool-status-and-execution-policy)**
+for the other controls in that dialog.
 
 ---
 
@@ -147,8 +190,8 @@ chat references them.
 
 The tool button appears only for a model whose saved capability data reports
 tool-call support. See **[MCP tool handling](mcp-tools.md)** for switches, service
-status, caching, and execution behavior. The complete local SearXNG procedure is
-in **[tool-setup.md](tool-setup.md)**.
+status, global policy, response markers, caching, and execution behavior. The
+complete local SearXNG procedure is in **[tool-setup.md](tool-setup.md)**.
 
 <img src="tool-connect.jpg" width="35%" alt="Chat control">
 

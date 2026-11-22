@@ -6,6 +6,7 @@ import json
 import time
 import urllib.request
 import zipfile
+from dataclasses import replace
 from functools import partialmethod
 from pathlib import Path
 
@@ -43,6 +44,7 @@ from services.model_providers import (
     ProviderOfflineError,
     ProviderValidationError,
 )
+from services.webpage_previews import WebpagePreviewService
 
 
 class ChatController:
@@ -56,6 +58,7 @@ class ChatController:
         export_repository=None,
         tool_service=None,
         external_image_service=None,
+        webpage_preview_service=None,
         history_repository=None,
     ):
         self.service = service or ModelProviderService()
@@ -69,6 +72,7 @@ class ChatController:
         self.mcp_settings = MCP_SETTINGS
         self.tools = tool_service
         self.external_images = external_image_service or ExternalImageService()
+        self.webpages = webpage_preview_service or WebpagePreviewService(self.previews)
 
     @staticmethod
     def _add_tools_to_request_body(request_body, bindings, transcript):
@@ -76,6 +80,22 @@ class ChatController:
         target = request_body.get("video_request", request_body)
         target["tools"] = [binding.definition for binding in bindings]
         target["messages"] = transcript
+
+    @staticmethod
+    def _used_tools(bindings, transcript):
+        """Return unique source-qualified tools actually called by the model."""
+        by_alias = {binding.alias: binding for binding in bindings}
+        used = []
+        for message in transcript:
+            for call in message.get("tool_calls", []):
+                function = call.get("function", {})
+                binding = by_alias.get(str(function.get("name") or ""))
+                if binding is None:
+                    continue
+                identity = f"{binding.source}::{binding.tool}"
+                if identity not in used:
+                    used.append(identity)
+        return used
 
     def _record_failed_response(
         self,
@@ -259,6 +279,30 @@ class ChatController:
             payload["messages"] = self.history.messages()
             return jsonify(payload), 502
 
+        allows_tools = getattr(tool_service, "request_allows_tools", None)
+        if tool_bindings and callable(allows_tools) and not allows_tools(
+            chat_request.raw,
+            chat_request.user_message,
+        ):
+            tool_bindings = []
+        effective_system_prompt = chat_request.system_prompt
+        prompt_builder = getattr(tool_service, "system_prompt", None)
+        if tool_bindings and callable(prompt_builder):
+            effective_system_prompt = prompt_builder(
+                chat_request.system_prompt,
+                tool_bindings,
+            )
+        if effective_system_prompt != chat_request.system_prompt:
+            chat_request = replace(
+                chat_request,
+                system_prompt=effective_system_prompt,
+            )
+            messages = self.requests.messages(
+                effective_system_prompt,
+                history,
+                history_limit,
+            )
+
         needs_conversion = any(
             isinstance(item, dict) and item.get("type") in ("video", "audio")
             for item in chat_request.attachments
@@ -267,6 +311,7 @@ class ChatController:
         if not stream_requested:
             started = time.monotonic()
             request_body = {"model": model, "messages": messages}
+            used_tools = []
             try:
                 plan = self.requests.attachment_plan(
                     chat_request.attachments,
@@ -299,6 +344,7 @@ class ChatController:
                         tool_bindings,
                         transcript,
                     )
+                    used_tools = self._used_tools(tool_bindings, transcript)
                 else:
                     response_text, usage = self.requests.complete(
                         provider,
@@ -338,7 +384,7 @@ class ChatController:
                 payload["messages"] = self.history.messages()
                 return jsonify(payload), 502
             elapsed = round(time.monotonic() - started, 2)
-            self.history.add(
+            assistant_id = self.history.add(
                 "assistant",
                 response_text,
                 model_name=model,
@@ -349,6 +395,7 @@ class ChatController:
                 system_prompt=chat_request.system_prompt,
                 saved_system_prompt_name=chat_request.saved_prompt_name,
                 request_body=json.dumps(request_body),
+                used_tools=used_tools,
             )
             payload = self.requests.result_payload(
                 response_text,
@@ -359,6 +406,8 @@ class ChatController:
                 chat_request,
                 request_body,
             )
+            payload["used_tools"] = used_tools
+            payload["message_id"] = assistant_id
             payload["messages"] = self.history.messages()
             return jsonify(payload)
 
@@ -367,6 +416,7 @@ class ChatController:
             usage = {"prompt_tokens": 0, "completion_tokens": 0}
             response_text = ""
             request_body = {"model": model, "messages": messages}
+            used_tools = []
             try:
                 if needs_conversion:
                     status = {
@@ -413,6 +463,7 @@ class ChatController:
                         tool_bindings,
                         transcript,
                     )
+                    used_tools = self._used_tools(tool_bindings, transcript)
                     if response_text:
                         yield f"data: {json.dumps({'type': 'chunk', 'text': response_text})}\n\n"
                     yield f"data: {json.dumps({'type': 'done', 'usage': usage})}\n\n"
@@ -442,7 +493,7 @@ class ChatController:
                             usage = event.get("usage", usage) or usage
                             yield f"data: {json.dumps(event)}\n\n"
                 elapsed = round(time.monotonic() - started, 2)
-                self.history.add(
+                assistant_id = self.history.add(
                     "assistant",
                     response_text,
                     model_name=model,
@@ -453,6 +504,7 @@ class ChatController:
                     system_prompt=chat_request.system_prompt,
                     saved_system_prompt_name=chat_request.saved_prompt_name,
                     request_body=json.dumps(request_body),
+                    used_tools=used_tools,
                 )
                 payload = self.requests.result_payload(
                     response_text,
@@ -464,6 +516,8 @@ class ChatController:
                     request_body,
                     event_type="result",
                 )
+                payload["used_tools"] = used_tools
+                payload["message_id"] = assistant_id
                 yield f"data: {json.dumps(payload)}\n\n"
             except Exception as error:  # noqa: BLE001
                 current_app.logger.exception(
@@ -570,7 +624,7 @@ class ChatController:
                 return jsonify({"error": str(error)}), 502
             elapsed = round(time.monotonic() - started, 2)
             request_body = json.dumps({"model": model, "messages": messages})
-            self.history.add(
+            assistant_id = self.history.add(
                 "assistant",
                 response_text,
                 model_name=model,
@@ -592,6 +646,7 @@ class ChatController:
                 "system_prompt": system_prompt,
                 "request_body": request_body,
                 "compacted": True,
+                "message_id": assistant_id,
             }
             return jsonify(payload)
 
@@ -614,7 +669,7 @@ class ChatController:
                         yield f"data: {json.dumps(event)}\n\n"
                 elapsed = round(time.monotonic() - started, 2)
                 request_body = json.dumps({"model": model, "messages": messages})
-                self.history.add(
+                assistant_id = self.history.add(
                     "assistant",
                     response_text,
                     model_name=model,
@@ -637,6 +692,7 @@ class ChatController:
                     "request_body": request_body,
                     "compacted": True,
                     "type": "result",
+                    "message_id": assistant_id,
                 }
                 yield f"data: {json.dumps(payload)}\n\n"
             except Exception as error:  # noqa: BLE001
@@ -673,6 +729,31 @@ class ChatController:
             download_name=image.filename,
             max_age=0,
         )
+
+    def capture_webpage_previews(self):
+        """Capture ordinary webpage links and persist their UUID mappings."""
+        data = request.get_json(silent=True) or {}
+        try:
+            message_id = int(data.get("message_id"))
+        except (TypeError, ValueError):
+            return jsonify({"error": "A valid assistant message ID is required."}), 400
+        urls = data.get("urls")
+        if not isinstance(urls, list):
+            return jsonify({"error": "Webpage preview URLs must be a list."}), 400
+        if not any(
+            message.get("id") == message_id and message.get("role") == "assistant"
+            for message in self.history.messages()
+        ):
+            return jsonify({"error": "Assistant message not found."}), 404
+        settings = self.mcp_settings.global_settings()
+        if not settings["capture_webpage_preview"]:
+            return jsonify({"previews": [], "disabled": True})
+        previews = self.webpages.capture(
+            urls,
+            timeout_seconds=settings["webpage_preview_timeout"],
+        )
+        self.history.update_webpage_previews(message_id, previews)
+        return jsonify({"previews": previews})
 
     def save_settings(self):
         """Persist only the model, system prompt, and generation controls.
@@ -1108,17 +1189,26 @@ class ChatController:
         )
 
     def mcp_global_state(self):
-        """Read or save the global tool switch without probing services."""
+        """Read or save global tool behavior without probing services."""
         if request.method == "POST":
             payload = request.get_json(silent=True) or {}
             enabled = payload.get("enabled")
             if not isinstance(enabled, bool):
                 return jsonify({"error": "Tool state must be a boolean."}), 400
+            try:
+                settings = self.mcp_settings.set_global_settings(
+                    payload.get("settings", self.mcp_settings.global_settings())
+                )
+            except ValueError as error:
+                return jsonify({"error": str(error)}), 400
             self.mcp_settings.set_tools_enabled(enabled)
+        else:
+            settings = self.mcp_settings.global_settings()
         return jsonify(
             {
                 "enabled": self.mcp_settings.tools_enabled(),
                 "enabled_services": self.mcp_settings.enabled_services(),
+                "settings": settings,
             }
         )
 

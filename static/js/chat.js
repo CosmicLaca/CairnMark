@@ -45,6 +45,10 @@
     const saveCloseBtns = document.querySelectorAll("[data-save-chat-close]");
     const reverseImageModal = document.querySelector("[data-reverse-image-modal]");
     const reverseImagePreview = document.querySelector("[data-reverse-image-preview]");
+    const reverseImageDescription = document.querySelector(
+        "[data-reverse-image-description]"
+    );
+    const reverseImageHint = document.querySelector("[data-reverse-image-hint]");
     const reverseImageServiceBtns = document.querySelectorAll(
         "[data-reverse-image-service]"
     );
@@ -90,6 +94,29 @@
         "[data-tool-global-settings-modal]"
     );
     const toolGlobalSwitch = document.querySelector("[data-tool-global-switch]");
+    const toolMaxRoundsInput = document.querySelector("[data-tool-max-rounds]");
+    const toolMaxTotalCallsInput = document.querySelector(
+        "[data-tool-max-total-calls]"
+    );
+    const toolMaxFailuresInput = document.querySelector(
+        "[data-tool-max-failures]"
+    );
+    const toolMaxResultCharsInput = document.querySelector(
+        "[data-tool-max-result-chars]"
+    );
+    const toolUsePolicySelect = document.querySelector("[data-tool-use-policy]");
+    const toolGuidanceSwitch = document.querySelector(
+        "[data-tool-guidance-switch]"
+    );
+    const toolGuidanceTemplate = document.querySelector(
+        "[data-tool-guidance-template]"
+    );
+    const toolWebpagePreviewSwitch = document.querySelector(
+        "[data-tool-webpage-preview-switch]"
+    );
+    const toolWebpagePreviewTimeoutInput = document.querySelector(
+        "[data-tool-webpage-preview-timeout]"
+    );
     const toolGlobalSaveBtn = document.querySelector(
         "[data-tool-global-settings-save]"
     );
@@ -143,6 +170,7 @@
         window.CairnmarkChatCompactSettings?.threshold
     ) || 75;
     let reverseImageSource = "";
+    let reverseImageIsExternal = false;
     const mcpConfigUrl = window.CairnmarkMcpConfigUrl || "/chat/mcp_configuration";
     const mcpImportUrl = window.CairnmarkMcpImportUrl
         || "/chat/mcp_configuration/import_opencode";
@@ -193,6 +221,18 @@
     let toolCapabilityBaseLabel = "";
     let globalToolsEnabled = null;
     let enabledMcpServiceNames = [];
+    let globalToolSettings = {
+        max_rounds: 6,
+        max_total_calls: 12,
+        max_consecutive_failures: 2,
+        max_result_chars: 20000,
+        tool_policy: "automatic",
+        guidance_enabled: true,
+        guidance_template: "",
+        capture_webpage_preview: true,
+        webpage_preview_timeout: 2,
+    };
+    let globalToolSettingsLoaded = false;
     let pendingDocumentPicker = false;
     const pendingAttachments = [];
     const renderMarkdown = window.CairnmarkMarkdown.render;
@@ -403,6 +443,23 @@
             if (!button || !reverseImageModal || !reverseImagePreview) return;
             reverseImageSource = button.dataset.reverseImageSrc || "";
             if (!reverseImageSource) return;
+            try {
+                const sourceUrl = new URL(reverseImageSource, window.location.href);
+                reverseImageIsExternal = ["http:", "https:"].includes(sourceUrl.protocol)
+                    && sourceUrl.origin !== window.location.origin;
+            } catch (error) {
+                reverseImageIsExternal = false;
+            }
+            if (reverseImageDescription) {
+                reverseImageDescription.textContent = reverseImageIsExternal
+                    ? "Choose a provider. CairnMark sends the public image URL directly to the selected reverse-image service."
+                    : "Choose a provider. CairnMark opens the provider's official upload page in a new tab.";
+            }
+            if (reverseImageHint) {
+                reverseImageHint.textContent = reverseImageIsExternal
+                    ? "The selected provider receives the external image URL when its search page opens."
+                    : "The image is not sent automatically. Uploading it on the opened page shares it with that third party.";
+            }
             hideHoverPreview();
             reverseImagePreview.src = reverseImageSource;
             reverseImageModal.hidden = false;
@@ -413,62 +470,26 @@
         if (reverseImageModal) reverseImageModal.hidden = true;
         if (reverseImagePreview) reverseImagePreview.removeAttribute("src");
         reverseImageSource = "";
+        reverseImageIsExternal = false;
     };
 
-    const saveReverseImageAndOpenProvider = async (button) => {
+    const openReverseImageProvider = (button) => {
         const providerUrl = button.dataset.providerUrl || "";
         if (!reverseImageSource || !providerUrl) return;
 
+        const providerUrlTemplate = button.dataset.providerUrlTemplate || "";
+        const targetUrl = reverseImageIsExternal && providerUrlTemplate
+            ? providerUrlTemplate.replace("{url}", encodeURIComponent(reverseImageSource))
+            : providerUrl;
+
         const providerTab = window.open("about:blank", "_blank");
-        if (providerTab) providerTab.opener = null;
-        button.disabled = true;
-        try {
-            let fileHandle = null;
-            if (typeof window.showSaveFilePicker === "function") {
-                fileHandle = await window.showSaveFilePicker({
-                    suggestedName: "reverse-image.jpg",
-                    types: [{
-                        description: "JPEG image",
-                        accept: { "image/jpeg": [".jpg", ".jpeg"] },
-                    }],
-                });
-            }
-
-            const response = await fetch(reverseImageSource, { cache: "no-store" });
-            if (!response.ok) throw new Error(`Image read failed (${response.status}).`);
-            const blob = await response.blob();
-            if (fileHandle) {
-                const writable = await fileHandle.createWritable();
-                await writable.write(blob);
-                await writable.close();
-            } else {
-                const objectUrl = URL.createObjectURL(blob);
-                const anchor = document.createElement("a");
-                anchor.href = objectUrl;
-                anchor.download = "reverse-image.jpg";
-                document.body.appendChild(anchor);
-                anchor.click();
-                anchor.remove();
-                window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-            }
-
-            if (providerTab) {
-                providerTab.location.replace(providerUrl);
-            } else {
-                window.alert(
-                    "The image was saved, but the provider tab was blocked. "
-                    + "Allow pop-ups and try again."
-                );
-            }
-            closeReverseImageModal();
-        } catch (error) {
-            if (providerTab) providerTab.close();
-            if (error?.name !== "AbortError") {
-                window.alert(`Reverse image search could not start: ${error}`);
-            }
-        } finally {
-            button.disabled = false;
+        if (!providerTab) {
+            window.alert("The provider page was blocked. Allow pop-ups and try again.");
+            return;
         }
+        providerTab.opener = null;
+        providerTab.location.replace(targetUrl);
+        closeReverseImageModal();
     };
 
     const createUserImagePreview = (source) => {
@@ -731,9 +752,114 @@
             });
     };
 
+    let webpagePreviewHover = null;
+
+    const ensureWebpagePreviewHover = () => {
+        if (webpagePreviewHover) return webpagePreviewHover;
+        const preview = document.createElement("div");
+        preview.className = "chat-webpage-hover-preview";
+        preview.hidden = true;
+        const image = document.createElement("img");
+        image.alt = "Webpage screenshot preview";
+        preview.appendChild(image);
+        document.body.appendChild(preview);
+        webpagePreviewHover = preview;
+        return preview;
+    };
+
+    const positionWebpagePreview = (preview, link) => {
+        const linkRect = link.getBoundingClientRect();
+        const previewRect = preview.getBoundingClientRect();
+        const margin = 12;
+        const gap = 8;
+        let left = linkRect.right + gap;
+        if (left + previewRect.width > window.innerWidth - margin) {
+            left = linkRect.left - previewRect.width - gap;
+        }
+        left = Math.max(
+            margin,
+            Math.min(left, window.innerWidth - previewRect.width - margin)
+        );
+        const top = Math.max(
+            margin,
+            Math.min(linkRect.top, window.innerHeight - previewRect.height - margin)
+        );
+        preview.style.left = `${Math.round(left)}px`;
+        preview.style.top = `${Math.round(top)}px`;
+        preview.style.visibility = "visible";
+    };
+
+    const showWebpagePreview = (link, record) => {
+        const preview = ensureWebpagePreviewHover();
+        const image = preview.querySelector("img");
+        image.src = `/chat/preview/${encodeURIComponent(record.filename)}`;
+        preview.style.visibility = "hidden";
+        preview.hidden = false;
+        image.onload = () => positionWebpagePreview(preview, link);
+        window.requestAnimationFrame(() => positionWebpagePreview(preview, link));
+    };
+
+    const hideWebpagePreview = () => {
+        if (webpagePreviewHover) webpagePreviewHover.hidden = true;
+    };
+
+    const bindWebpagePreviews = (root, records) => {
+        const byUrl = new Map(
+            (records || [])
+                .filter((record) => record?.url && record?.filename)
+                .map((record) => [record.url, record])
+        );
+        root.querySelectorAll("[data-webpage-preview-url]").forEach((link) => {
+            const record = byUrl.get(link.dataset.webpagePreviewUrl || "");
+            if (!record || link.dataset.webpagePreviewBound === record.id) return;
+            link.dataset.webpagePreviewBound = record.id;
+            link.addEventListener("mouseenter", () => showWebpagePreview(link, record));
+            link.addEventListener("mouseleave", hideWebpagePreview);
+            link.addEventListener("focus", () => showWebpagePreview(link, record));
+            link.addEventListener("blur", hideWebpagePreview);
+        });
+    };
+
+    const hydrateWebpagePreviews = (root) => {
+        const message = root.closest(".chat-message--assistant");
+        if (!message) return;
+        let records = [];
+        try {
+            records = JSON.parse(message.dataset.webpagePreviews || "[]");
+        } catch (error) {
+            records = [];
+        }
+        bindWebpagePreviews(root, records);
+        if (message.dataset.captureWebpagePreviews !== "true") return;
+        if (!globalToolSettingsLoaded) return;
+        if (globalToolSettings.capture_webpage_preview !== true) return;
+
+        const urls = [...new Set(
+            [...root.querySelectorAll("[data-webpage-preview-url]")]
+                .map((link) => link.dataset.webpagePreviewUrl)
+                .filter(Boolean)
+        )];
+        const messageId = Number(message.dataset.messageId);
+        message.dataset.captureWebpagePreviews = "pending";
+        if (!messageId || urls.length === 0) return;
+        api.json("/chat/webpage_previews", {
+            method: "POST",
+            body: { message_id: messageId, urls },
+        }).then((payload) => {
+            const captured = Array.isArray(payload?.previews) ? payload.previews : [];
+            message.dataset.webpagePreviews = JSON.stringify(captured);
+            message.dataset.captureWebpagePreviews = "done";
+            bindWebpagePreviews(root, captured);
+        }).catch(() => {
+            // Screenshot failures intentionally leave ordinary links unchanged.
+            message.dataset.captureWebpagePreviews = "done";
+        });
+    };
+
     const hydrateAssistantMedia = (root) => {
         hydrateAssistantImages(root);
         hydrateAssistantAudio(root);
+        hydrateWebpagePreviews(root);
     };
 
     const attachAssistantActions = (contentEl, raw) => {
@@ -823,6 +949,13 @@
         if (meta && meta.is_error) {
             div.classList.add("chat-message--error");
         }
+        if (role === "assistant") {
+            div.dataset.messageId = String(meta?.message_id || "");
+            div.dataset.webpagePreviews = JSON.stringify(meta?.webpage_previews || []);
+            div.dataset.captureWebpagePreviews = meta?.capture_webpage_previews
+                ? "true"
+                : "false";
+        }
         const roleSpan = document.createElement("span");
         roleSpan.className = "chat-role";
         if (meta && meta.compacted) {
@@ -908,6 +1041,17 @@
                 bodySvg.appendChild(bodyPath);
                 bodyIcon.appendChild(bodySvg);
                 metaRow.appendChild(bodyIcon);
+            }
+            const usedTools = Array.isArray(meta.used_tools)
+                ? [...new Set(meta.used_tools.map(String).filter(Boolean))]
+                : [];
+            if (usedTools.length > 0) {
+                const toolIcon = document.createElement("span");
+                toolIcon.className = "chat-used-tools-icon";
+                toolIcon.setAttribute("aria-label", usedTools.join(", "));
+                toolIcon.title = usedTools.join(", ");
+                toolIcon.textContent = "🛠";
+                metaRow.appendChild(toolIcon);
             }
             div.appendChild(metaRow);
         }
@@ -1032,6 +1176,12 @@
                 has_audio: Boolean(m.has_audio),
                 preview_media: m.preview_media || [],
                 request_body: m.request_body,
+                used_tools: m.used_tools || [],
+                message_id: m.id,
+                webpage_previews: m.webpage_previews || [],
+                capture_webpage_previews: !m.is_error
+                    && !(m.webpage_previews || []).length
+                    && !m.webpage_preview_checked,
                 compacted: Boolean(m.compacted),
                 is_error: Boolean(m.is_error),
                 created_at: m.created_at,
@@ -1057,6 +1207,10 @@
             saved_system_prompt_name: payload.saved_system_prompt_name,
             system_prompt: payload.system_prompt,
             request_body: payload.request_body,
+            used_tools: payload.used_tools || [],
+            message_id: payload.message_id,
+            webpage_previews: payload.webpage_previews || [],
+            capture_webpage_previews: !payload.is_error && payload.type !== "error",
             is_error: Boolean(payload.is_error || payload.type === "error"),
             created_at: payload.created_at,
         });
@@ -1206,6 +1360,19 @@
             window.alert("Model is required.");
             return;
         }
+        if (globalToolsEnabled === null) {
+            await loadToolGlobalState();
+        }
+        let toolsAllowed;
+        if (
+            globalToolsEnabled === true
+            && enabledMcpServiceNames.length > 0
+            && globalToolSettings.tool_policy === "ask"
+        ) {
+            toolsAllowed = window.confirm(
+                "Allow the enabled tools for this response?"
+            );
+        }
         const saveOriginalMedia = attachmentPreferences.get("save_original_media");
         const userPreviewImages = pendingAttachments
             .filter((attachment) => attachment.previewUrl && (
@@ -1305,6 +1472,9 @@
                 compactSwitch && compactSwitch.getAttribute("aria-checked") === "true"
             ),
         };
+        if (typeof toolsAllowed === "boolean") {
+            requestBody.tools_allowed = toolsAllowed;
+        }
 
         const binaryAttachments = pendingAttachments.filter(
             (attachment) => attachment.type !== "document"
@@ -2143,7 +2313,49 @@
         enabledMcpServiceNames = Array.isArray(payload?.enabled_services)
             ? [...new Set(payload.enabled_services.map(String).filter(Boolean))]
             : [];
+        const settings = payload?.settings && typeof payload.settings === "object"
+            ? payload.settings
+            : {};
+        globalToolSettings = {...globalToolSettings, ...settings};
+        globalToolSettingsLoaded = true;
         setMcpSwitch(toolGlobalSwitch, globalToolsEnabled === true);
+        setMcpSwitch(toolGuidanceSwitch, globalToolSettings.guidance_enabled === true);
+        setMcpSwitch(
+            toolWebpagePreviewSwitch,
+            globalToolSettings.capture_webpage_preview === true
+        );
+        if (toolMaxRoundsInput) {
+            toolMaxRoundsInput.value = String(globalToolSettings.max_rounds);
+        }
+        if (toolMaxTotalCallsInput) {
+            toolMaxTotalCallsInput.value = String(globalToolSettings.max_total_calls);
+        }
+        if (toolMaxFailuresInput) {
+            toolMaxFailuresInput.value = String(
+                globalToolSettings.max_consecutive_failures
+            );
+        }
+        if (toolMaxResultCharsInput) {
+            toolMaxResultCharsInput.value = String(
+                globalToolSettings.max_result_chars
+            );
+        }
+        if (toolUsePolicySelect) {
+            toolUsePolicySelect.value = globalToolSettings.tool_policy;
+        }
+        if (toolGuidanceTemplate) {
+            toolGuidanceTemplate.value = globalToolSettings.guidance_template;
+        }
+        if (toolWebpagePreviewTimeoutInput) {
+            toolWebpagePreviewTimeoutInput.value = String(
+                globalToolSettings.webpage_preview_timeout
+            );
+            toolWebpagePreviewTimeoutInput.disabled = (
+                globalToolSettings.capture_webpage_preview !== true
+            );
+        }
+        historyEl?.querySelectorAll(".chat-message--assistant .chat-content")
+            .forEach(hydrateWebpagePreviews);
         updateToolCapabilityStatus();
     };
 
@@ -2169,10 +2381,36 @@
         if (!toolGlobalSaveBtn || !toolGlobalSwitch) return;
         toolGlobalSaveBtn.disabled = true;
         try {
+            const settings = {
+                max_rounds: Number.parseInt(toolMaxRoundsInput?.value || "", 10),
+                max_total_calls: Number.parseInt(
+                    toolMaxTotalCallsInput?.value || "",
+                    10
+                ),
+                max_consecutive_failures: Number.parseInt(
+                    toolMaxFailuresInput?.value || "",
+                    10
+                ),
+                max_result_chars: Number.parseInt(
+                    toolMaxResultCharsInput?.value || "",
+                    10
+                ),
+                tool_policy: toolUsePolicySelect?.value || "automatic",
+                guidance_enabled: toolGuidanceSwitch?.getAttribute("aria-checked") === "true",
+                guidance_template: toolGuidanceTemplate?.value || "",
+                capture_webpage_preview: toolWebpagePreviewSwitch?.getAttribute(
+                    "aria-checked"
+                ) === "true",
+                webpage_preview_timeout: Number.parseInt(
+                    toolWebpagePreviewTimeoutInput?.value || "",
+                    10
+                ),
+            };
             const payload = await api.json(mcpGlobalStateUrl, {
                 method: "POST",
                 body: {
                     enabled: toolGlobalSwitch.getAttribute("aria-checked") === "true",
+                    settings,
                 },
             });
             applyToolGlobalState(payload);
@@ -4797,6 +5035,9 @@
                     output_tokens: finalPayload.output_tokens,
                     system_prompt: finalPayload.system_prompt,
                     request_body: finalPayload.request_body,
+                    message_id: finalPayload.message_id,
+                    webpage_previews: finalPayload.webpage_previews || [],
+                    capture_webpage_previews: true,
                     compacted: true,
                 });
                 updateTokenUsage();
@@ -4831,6 +5072,19 @@
             toolGlobalSwitch,
             toolGlobalSwitch.getAttribute("aria-checked") !== "true"
         );
+    });
+    toolGuidanceSwitch?.addEventListener("click", () => {
+        setMcpSwitch(
+            toolGuidanceSwitch,
+            toolGuidanceSwitch.getAttribute("aria-checked") !== "true"
+        );
+    });
+    toolWebpagePreviewSwitch?.addEventListener("click", () => {
+        const enabled = toolWebpagePreviewSwitch.getAttribute("aria-checked") !== "true";
+        setMcpSwitch(toolWebpagePreviewSwitch, enabled);
+        if (toolWebpagePreviewTimeoutInput) {
+            toolWebpagePreviewTimeoutInput.disabled = !enabled;
+        }
     });
     toolGlobalCloseBtns.forEach((button) => {
         button.addEventListener("click", closeToolGlobalSettings);
@@ -4881,7 +5135,7 @@
         button.addEventListener("click", closeReverseImageModal);
     });
     reverseImageServiceBtns.forEach((button) => {
-        button.addEventListener("click", () => saveReverseImageAndOpenProvider(button));
+        button.addEventListener("click", () => openReverseImageProvider(button));
     });
     reverseImageModal?.addEventListener("click", (event) => {
         if (event.target === reverseImageModal) closeReverseImageModal();

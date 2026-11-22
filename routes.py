@@ -148,6 +148,12 @@ APPLICATION_ROUTES = (
         ("GET",),
     ),
     (
+        "/chat/webpage_previews",
+        "chat_webpage_previews",
+        chat_controller.capture_webpage_previews,
+        ("POST",),
+    ),
+    (
         "/chat/saved",
         "chat_saved_list",
         partial(chat_controller.saved_chat, "list"),

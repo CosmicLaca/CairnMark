@@ -99,6 +99,7 @@
                     + `<a class="chat-markdown-image-fallback" href="${safeUrl}" target="_blank" rel="noopener noreferrer">${safeUrl}</a>`
                     + `<a class="chat-markdown-image-link" href="${safeUrl}" target="_blank" rel="noopener noreferrer">`
                     + `<img class="chat-markdown-image" alt="External image preview"></a>`
+                    + `<button class="chat-markdown-image-reverse" type="button" data-reverse-image-src="${safeUrl}" title="Reverse image search" aria-label="Reverse image search">⌕</button>`
                     + `<button class="chat-markdown-image-download" type="button" title="Download image" aria-label="Download image">⇩</button>`
                     + `</span>`;
             }
@@ -133,7 +134,11 @@
                     + `<span class="chat-markdown-audio-player" data-chat-audio-player></span>`
                     + `</span>`;
             }
-            return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+            const previewAttribute = ["http:", "https:"].includes(url.protocol)
+                && !IMAGE_PATH_PATTERN.test(url.pathname)
+                ? ` data-webpage-preview-url="${safeUrl}"`
+                : "";
+            return `<a href="${safeUrl}"${previewAttribute} target="_blank" rel="noopener noreferrer">${label}</a>`;
         } catch (error) {
             return label;
         }
@@ -166,8 +171,15 @@
                 }))
             ))
             .replace(/\bhttps?:\/\/[^\s<]+/g, (match, offset, input) => {
-                const { href, suffix } = splitLinkSuffix(match);
+                let { href, suffix } = splitLinkSuffix(match);
                 const prefix = input.slice(Math.max(0, offset - 48), offset);
+                for (const marker of ["**", "__", "*", "_"]) {
+                    if (prefix.endsWith(marker) && href.endsWith(marker)) {
+                        href = href.slice(0, -marker.length);
+                        suffix = marker + suffix;
+                        break;
+                    }
+                }
                 const previewAudio = audioHint || AUDIO_CONTEXT_PATTERN.test(prefix);
                 return protect(`${safeLink(href, href, {
                     previewImage: true,

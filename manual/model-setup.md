@@ -8,7 +8,7 @@ benchmark pages only when its provider is reachable and both the provider and
 model are enabled.
 
 <!-- Screenshot placeholder: replace manual/setup-models.jpg when the setup UI changes. -->
-<p align="left"><img src="setup-models.jpg" width="82%" alt="Model provider setup page"></p>
+<img src="setup-models.jpg" width="82%" alt="Model provider setup page">
 
 ---
 
@@ -25,6 +25,22 @@ The **Model providers** selector filters the setup cards. The selected filter is
 saved immediately and restored on the next visit. **Show all providers** clears
 the filter; **Add custom provider** opens the custom-provider dialog without
 changing it.
+
+### Provider state marker
+
+The numbered circle in each provider filter gives a compact status summary
+without changing the filter button itself:
+
+<img src="setup-models-top.jpg" width="95%" alt="Model provider setup page">
+
+| Provider state | Numbered circle |
+| --- | --- |
+| Offline | Inactive appearance |
+| Online, provider off | Inactive center with a thin yellow border |
+| Online, provider on | Yellow-filled active appearance |
+
+The marker reflects provider reachability and its provider-level switch. Model
+switches remain independent and are managed inside the provider setup.
 
 ---
 
@@ -97,7 +113,7 @@ Deleting a cached local row makes the next modal open fetch fresh defaults.
 Extra modal parameters are session-only; **Save setup** stores only the main
 chat fields documented in the **[chat guide](chat.md)**.
 
---
+---
 
 ## Troubleshooting
 

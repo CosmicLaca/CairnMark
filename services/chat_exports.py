@@ -103,8 +103,37 @@ class ChatExportRepository:
                 ) from error
             if "is_error" in message and not isinstance(message["is_error"], bool):
                 raise ValueError(f"Message {index} has an invalid error status.")
+            used_tools = message.get("used_tools", [])
+            if not isinstance(used_tools, list) or not all(
+                isinstance(item, str) for item in used_tools
+            ):
+                raise ValueError(f"Message {index} has invalid tool metadata.")
+            webpage_previews = message.get("webpage_previews", [])
+            if not isinstance(webpage_previews, list) or not all(
+                isinstance(item, dict)
+                and all(
+                    isinstance(item.get(key), str) and item.get(key)
+                    for key in ("id", "url", "filename")
+                )
+                for item in webpage_previews
+            ):
+                raise ValueError(
+                    f"Message {index} has invalid webpage preview metadata."
+                )
+            if "webpage_preview_checked" in message and not isinstance(
+                message["webpage_preview_checked"], bool
+            ):
+                raise ValueError(
+                    f"Message {index} has invalid webpage preview status."
+                )
             validated_message = dict(message)
             validated_message.setdefault("is_error", False)
+            validated_message.setdefault("used_tools", [])
+            validated_message.setdefault("webpage_previews", [])
+            validated_message.setdefault(
+                "webpage_preview_checked",
+                bool(webpage_previews),
+            )
             validated.append(validated_message)
         return validated
 
