@@ -17,12 +17,14 @@ class SQLiteStore:
         config_key,
         *,
         schema="",
+        columns=None,
         migrate=None,
         default_path=None,
         row_factory=None,
     ):
         self.config_key = config_key
         self.schema = schema
+        self.columns = columns or {}
         self.migrate = migrate
         self.default_path = default_path
         self.row_factory = row_factory
@@ -85,6 +87,17 @@ class SQLiteStore:
         try:
             if self.schema:
                 connection.executescript(self.schema)
+            for table, columns in self.columns.items():
+                existing = {
+                    row[1]
+                    for row in connection.execute(f"PRAGMA table_info({table})")
+                }
+                for column, definition in columns.items():
+                    if column not in existing:
+                        connection.execute(
+                            f"ALTER TABLE {table} "
+                            f"ADD COLUMN {column} {definition}"
+                        )
             if self.migrate is not None:
                 self.migrate(connection)
             connection.commit()

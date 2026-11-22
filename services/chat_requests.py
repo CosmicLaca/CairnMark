@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 
 from models.chat_settings import CHAT_SETTINGS, VIDEO_FPS_VALUES
-from models.chat_storage import get_saved, save_saved
+from models.chat_storage import CHAT_HISTORY
 from services.chat_attachments import (
     convert_audio_attachment,
     convert_video_attachment,
@@ -84,21 +84,27 @@ class AttachmentRequestPlan:
 class ChatRequestWorkflow:
     """Validate chat input and build provider-neutral model requests."""
 
-    def __init__(self, service, settings=CHAT_SETTINGS):
+    def __init__(self, service, settings=CHAT_SETTINGS, history=CHAT_HISTORY):
         self.service = service
         self.settings = settings
+        self.history = history
 
     def parse(self, data):
         """Normalize one browser payload without depending on Flask request state."""
         data = data if isinstance(data, dict) else {}
-        attachment_settings = self.settings.attachments()
+        attachment_settings = self.settings.group("attachments")
         system_prompt = data.get("system_prompt") or ""
         saved_name_raw = (data.get("saved_system_prompt_name") or "").strip()
         saved_name = ""
         if saved_name_raw:
-            stored = get_saved("system_prompt", saved_name_raw)
+            stored = self.history.saved("get", "system_prompt", saved_name_raw)
             if stored is None and system_prompt.strip():
-                save_saved("system_prompt", saved_name_raw, system_prompt)
+                self.history.saved(
+                    "save",
+                    "system_prompt",
+                    saved_name_raw,
+                    system_prompt,
+                )
                 stored = system_prompt
             if stored == system_prompt:
                 saved_name = saved_name_raw

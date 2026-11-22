@@ -37,30 +37,19 @@ CREATE TABLE IF NOT EXISTS provider_setup_preferences (
 """
 
 
-def _migrate(connection):
-    """Add provider columns introduced after the initial schema."""
-    tables = {
-        "provider_configurations": {
-            "api_key": "TEXT",
-            "display_name": "TEXT",
-            "is_custom": "BOOLEAN NOT NULL DEFAULT 0",
-        },
-        "model_configurations": {
-            "size_gb": "INTEGER",
-        },
-    }
-    for table, columns in tables.items():
-        existing = {
-            row[1] for row in connection.execute(f"PRAGMA table_info({table})")
-        }
-        for column, definition in columns.items():
-            if column not in existing:
-                connection.execute(
-                    f"ALTER TABLE {table} ADD COLUMN {column} {definition}"
-                )
+LATER_COLUMNS = {
+    "provider_configurations": {
+        "api_key": "TEXT",
+        "display_name": "TEXT",
+        "is_custom": "BOOLEAN NOT NULL DEFAULT 0",
+    },
+    "model_configurations": {
+        "size_gb": "INTEGER",
+    },
+}
 
 
-STORE = SQLiteStore("DATABASE_PATH", schema=SCHEMA, migrate=_migrate)
+STORE = SQLiteStore("DATABASE_PATH", schema=SCHEMA, columns=LATER_COLUMNS)
 _UNSET = object()
 
 

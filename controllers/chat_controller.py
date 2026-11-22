@@ -6,6 +6,7 @@ import json
 import time
 import urllib.request
 import zipfile
+from functools import partialmethod
 from pathlib import Path
 
 from flask import (
@@ -28,18 +29,7 @@ from models.chat_settings import (
     MINERU_TIMEOUT_MIN,
     VIDEO_FPS_VALUES,
 )
-from models.chat_storage import (
-    add_chat_message,
-    clear_chat_messages,
-    delete_last_chat_message,
-    delete_saved,
-    get_saved,
-    list_chat_messages,
-    list_saved,
-    load_saved_chat,
-    replace_chat_messages,
-    save_saved,
-)
+from models.chat_storage import CHAT_HISTORY
 from models.mcp_settings import MCP_SETTINGS
 from services.chat_attachments import AttachmentProcessingError
 from services.chat_exports import ChatExportRepository
@@ -66,10 +56,15 @@ class ChatController:
         export_repository=None,
         tool_service=None,
         external_image_service=None,
+        history_repository=None,
     ):
         self.service = service or ModelProviderService()
+        self.history = history_repository or CHAT_HISTORY
         self.previews = preview_store or ChatPreviewStore()
-        self.requests = request_workflow or ChatRequestWorkflow(self.service)
+        self.requests = request_workflow or ChatRequestWorkflow(
+            self.service,
+            history=self.history,
+        )
         self.exports = export_repository or ChatExportRepository()
         self.mcp_settings = MCP_SETTINGS
         self.tools = tool_service
@@ -84,8 +79,8 @@ class ChatController:
 
     def context(self):
         settings = CHAT_SETTINGS.form()
-        messages = list_chat_messages()
-        attachment_settings = CHAT_SETTINGS.attachments()
+        messages = self.history.messages()
+        attachment_settings = CHAT_SETTINGS.group("attachments")
         return {
             "chat_settings": settings,
             "chat_attachment_settings": attachment_settings,
@@ -98,12 +93,12 @@ class ChatController:
             "chat_history_settings": {
                 "send_all_previous": CHAT_SETTINGS.switch("send_all_previous")
             },
-            "chat_compact_settings": CHAT_SETTINGS.compact(),
-            "mineru_settings": CHAT_SETTINGS.mineru(),
+            "chat_compact_settings": CHAT_SETTINGS.group("compact"),
+            "mineru_settings": CHAT_SETTINGS.group("mineru"),
             "chat_messages": messages,
             "active_models": self.service.active_models(),
-            "saved_chats": list_saved("chat"),
-            "saved_system_prompts": list_saved("system_prompt"),
+            "saved_chats": self.history.saved("list", "chat"),
+            "saved_system_prompts": self.history.saved("list", "system_prompt"),
         }
 
     def _parse_request(self):
@@ -122,7 +117,7 @@ class ChatController:
             if not isinstance(auto_compact, bool):
                 return jsonify({"error": "auto_compact must be a boolean."}), 400
             CHAT_SETTINGS.switch("auto_compact", auto_compact)
-        attachment_settings = CHAT_SETTINGS.attachments()
+        attachment_settings = CHAT_SETTINGS.group("attachments")
         if "stream_responses" in chat_request.raw:
             stream_responses = chat_request.raw["stream_responses"]
             if not isinstance(stream_responses, bool):
@@ -131,7 +126,7 @@ class ChatController:
                 ), 400
             attachment_settings["stream_responses"] = stream_responses
         attachment_settings["video_fps"] = chat_request.video_fps
-        CHAT_SETTINGS.attachments(attachment_settings)
+        CHAT_SETTINGS.group("attachments", attachment_settings)
         try:
             provider, model = self.service.resolve_online_model(chat_request.model_spec)
         except ProviderValidationError as error:
@@ -160,7 +155,7 @@ class ChatController:
             preview_data.setdefault("preview_media", []).extend(
                 document_preview_media
             )
-        add_chat_message(
+        self.history.add(
             "user",
             chat_request.user_message,
             **preview_data,
@@ -174,7 +169,7 @@ class ChatController:
         history = self.requests.active_history(
             [
                 message
-                for message in list_chat_messages()
+                for message in self.history.messages()
                 if message["role"] in ("user", "assistant")
             ]
         )
@@ -269,7 +264,7 @@ class ChatController:
                 )
                 return jsonify({"error": str(error)}), 502
             elapsed = round(time.monotonic() - started, 2)
-            add_chat_message(
+            self.history.add(
                 "assistant",
                 response_text,
                 model_name=model,
@@ -290,7 +285,7 @@ class ChatController:
                 chat_request,
                 request_body,
             )
-            payload["messages"] = list_chat_messages()
+            payload["messages"] = self.history.messages()
             return jsonify(payload)
 
         def generate():
@@ -372,7 +367,7 @@ class ChatController:
                             usage = event.get("usage", usage) or usage
                             yield f"data: {json.dumps(event)}\n\n"
                 elapsed = round(time.monotonic() - started, 2)
-                add_chat_message(
+                self.history.add(
                     "assistant",
                     response_text,
                     model_name=model,
@@ -444,7 +439,7 @@ class ChatController:
         history = self.requests.active_history(
             [
                 message
-                for message in list_chat_messages()
+                for message in self.history.messages()
                 if message["role"] in ("user", "assistant")
             ]
         )
@@ -491,7 +486,7 @@ class ChatController:
                 return jsonify({"error": str(error)}), 502
             elapsed = round(time.monotonic() - started, 2)
             request_body = json.dumps({"model": model, "messages": messages})
-            add_chat_message(
+            self.history.add(
                 "assistant",
                 response_text,
                 model_name=model,
@@ -535,7 +530,7 @@ class ChatController:
                         yield f"data: {json.dumps(event)}\n\n"
                 elapsed = round(time.monotonic() - started, 2)
                 request_body = json.dumps({"model": model, "messages": messages})
-                add_chat_message(
+                self.history.add(
                     "assistant",
                     response_text,
                     model_name=model,
@@ -614,13 +609,13 @@ class ChatController:
                     settings[key] = self.requests.number(data[key], label, converter)
         except ValueError as error:
             return jsonify({"error": str(error)}), 400
-        CHAT_SETTINGS.save_form(settings)
+        CHAT_SETTINGS.form(settings)
         return jsonify({"message": "Settings saved."})
 
     def save_attachment_settings(self):
         """Persist last-used media attachment switch values."""
         data = request.get_json(silent=True) or {}
-        settings = CHAT_SETTINGS.attachments()
+        settings = CHAT_SETTINGS.group("attachments")
         for key in ("save_original_media", "attach_audio", "stream_responses"):
             if key in data:
                 if not isinstance(data[key], bool):
@@ -650,7 +645,7 @@ class ChatController:
         )
         if seed_value is not None:
             settings["randomize_seed"] = seed_value
-        CHAT_SETTINGS.attachments(settings)
+        CHAT_SETTINGS.group("attachments", settings)
         return jsonify({"message": "Attachment settings saved."})
 
     def save_compact_settings(self):
@@ -667,7 +662,7 @@ class ChatController:
             return jsonify({
                 "error": "Auto compact threshold must be an integer from 5 to 100."
             }), 400
-        return jsonify(CHAT_SETTINGS.compact({"threshold": threshold}))
+        return jsonify(CHAT_SETTINGS.group("compact", {"threshold": threshold}))
 
     @staticmethod
     def _switch_value(data, *names):
@@ -685,44 +680,40 @@ class ChatController:
                     return value.strip().lower() in {"true", "1", "yes", "on"}
         return None
 
-    def save_seed_settings(self):
-        """Persist the seed randomizer switch state."""
+    def save_switch_setting(self, name, aliases=()):
+        """Persist one compatible boolean chat-switch payload."""
         data = request.get_json(silent=True) or {}
-        value = self._switch_value(
-            data,
-            "randomize_seed",
-            "seed_randomize",
-            "randomize",
-        )
+        value = self._switch_value(data, name, *aliases)
         if value is None:
-            return jsonify({"error": "randomize_seed must be a boolean."}), 400
-        CHAT_SETTINGS.attachments({"randomize_seed": value})
+            return jsonify({"error": f"{name} must be a boolean."}), 400
+        CHAT_SETTINGS.group("attachments", {name: value})
         return jsonify({"message": "Settings saved."})
 
-    def save_history_settings(self):
-        """Persist the history "send all previous" switch state."""
-        data = request.get_json(silent=True) or {}
-        value = self._switch_value(
-            data,
-            "send_all_previous",
+    save_seed_settings = partialmethod(
+        save_switch_setting,
+        "randomize_seed",
+        ("seed_randomize", "randomize"),
+    )
+    save_history_settings = partialmethod(
+        save_switch_setting,
+        "send_all_previous",
+        (
             "send_all_previous_messages",
             "all_previous",
             "all_previous_messages",
             "history_all",
             "all_history",
-        )
-        if value is None:
-            return jsonify({"error": "send_all_previous must be a boolean."}), 400
-        CHAT_SETTINGS.attachments({"send_all_previous": value})
-        return jsonify({"message": "Settings saved."})
+        ),
+    )
 
     def clear(self):
-        current_messages = list_chat_messages()
+        current_messages = self.history.messages()
         filenames = self.previews.filenames(current_messages)
         saved_messages = [
-            get_saved("chat", name) or [] for name in list_saved("chat")
+            self.history.saved("get", "chat", name) or []
+            for name in self.history.saved("list", "chat")
         ]
-        clear_chat_messages()
+        self.history.messages([])
         self.previews.delete_unreferenced(filenames, *saved_messages)
         return jsonify({"message": "Chat cleared."})
 
@@ -730,7 +721,11 @@ class ChatController:
         """Export the complete active chat or one selected saved chat."""
         data = request.get_json(silent=True) or {}
         name = str(data.get("name") or "").strip()
-        messages = get_saved("chat", name) if name else list_chat_messages()
+        messages = (
+            self.history.saved("get", "chat", name)
+            if name
+            else self.history.messages()
+        )
         if name and messages is None:
             return jsonify({"error": "Saved chat not found."}), 404
         if not messages:
@@ -753,17 +748,18 @@ class ChatController:
         except ValueError as error:
             return jsonify({"error": str(error)}), 400
 
-        current_messages = list_chat_messages()
+        current_messages = self.history.messages()
         replaced_filenames = self.previews.filenames(current_messages)
         try:
-            replace_chat_messages(messages)
+            self.history.messages(messages)
         except Exception:  # noqa: BLE001
             current_app.logger.exception("Could not import chat")
             return jsonify({"error": "Chat import failed."}), 500
 
-        restored = list_chat_messages()
+        restored = self.history.messages()
         saved_messages = [
-            get_saved("chat", name) or [] for name in list_saved("chat")
+            self.history.saved("get", "chat", name) or []
+            for name in self.history.saved("list", "chat")
         ]
         self.previews.delete_unreferenced(
             replaced_filenames,
@@ -800,7 +796,7 @@ class ChatController:
 
     def mineru_available(self):
         """Report whether the local MinerU document service is reachable."""
-        settings = CHAT_SETTINGS.mineru()
+        settings = CHAT_SETTINGS.group("mineru")
         endpoint = settings.get("endpoint", "http://127.0.0.1:8100")
         api_key = settings.get("api_key", "")
         timeout = settings.get("timeout", DEFAULT_MINERU_TIMEOUT)
@@ -810,7 +806,7 @@ class ChatController:
 
     def mineru_settings_get(self):
         """Return the saved MinerU endpoint settings."""
-        return jsonify(CHAT_SETTINGS.mineru())
+        return jsonify(CHAT_SETTINGS.group("mineru"))
 
     def mcp_status(self):
         """Return the live status of one registered local MCP service."""
@@ -1316,7 +1312,8 @@ class ChatController:
             ), 400
         if not self._mineru_check(endpoint, api_key, timeout):
             return jsonify({"error": "MinerU endpoint is not reachable."}), 400
-        saved = CHAT_SETTINGS.mineru(
+        saved = CHAT_SETTINGS.group(
+            "mineru",
             {"endpoint": endpoint, "api_key": api_key, "timeout": timeout}
         )
         return jsonify({"message": "MinerU settings saved.", **saved})
@@ -1335,7 +1332,7 @@ class ChatController:
         if not file_bytes:
             return jsonify({"error": "Document data is empty."}), 400
 
-        settings = CHAT_SETTINGS.mineru()
+        settings = CHAT_SETTINGS.group("mineru")
         endpoint = str(settings.get("endpoint") or "").strip().rstrip("/")
         api_key = str(settings.get("api_key") or "").strip()
         if not endpoint:
@@ -1452,7 +1449,7 @@ class ChatController:
         return jsonify({"content": extracted})
 
     def abort(self):
-        messages = list_chat_messages()
+        messages = self.history.messages()
         filenames = []
         if (
             messages
@@ -1461,9 +1458,10 @@ class ChatController:
         ):
             filenames = self.previews.filenames([messages[-1]])
         referenced = [messages[:-1]] + [
-            get_saved("chat", name) or [] for name in list_saved("chat")
+            self.history.saved("get", "chat", name) or []
+            for name in self.history.saved("list", "chat")
         ]
-        deleted = delete_last_chat_message()
+        deleted = self.history.delete_last()
         if deleted:
             self.previews.delete_unreferenced(filenames, *referenced)
         return jsonify({"message": "Request aborted.", "deleted": deleted})
@@ -1471,70 +1469,77 @@ class ChatController:
     def saved_chat(self, action):
         """List, save, load, replace, or delete a named chat."""
         if action == "list":
-            return jsonify({"names": list_saved("chat")})
+            return jsonify({"names": self.history.saved("list", "chat")})
         data = request.get_json(silent=True) or {}
         name = (data.get("name") or "").strip()
         if not name:
             return jsonify({"error": "Chat name is required."}), 400
         if action == "save":
-            save_saved("chat", name, list_chat_messages())
+            self.history.saved("save", "chat", name, self.history.messages())
             return jsonify({"message": "Chat saved.", "name": name})
         if action == "load":
-            if not load_saved_chat(name):
+            if not self.history.load(name):
                 return jsonify({"error": "Saved chat not found."}), 404
             return jsonify(
                 {
                     "message": "Chat loaded.",
                     "name": name,
-                    "messages": list_chat_messages(),
+                    "messages": self.history.messages(),
                 }
             )
         if action == "replace":
-            saved = get_saved("chat", name)
+            saved = self.history.saved("get", "chat", name)
             if saved is None:
                 return jsonify({"error": "Saved chat not found."}), 404
-            current_messages = list_chat_messages()
+            current_messages = self.history.messages()
             replaced_filenames = self.previews.filenames(saved)
-            save_saved("chat", name, current_messages)
+            self.history.saved("save", "chat", name, current_messages)
             referenced = [current_messages] + [
-                get_saved("chat", other) or []
-                for other in list_saved("chat")
+                self.history.saved("get", "chat", other) or []
+                for other in self.history.saved("list", "chat")
                 if other != name
             ]
             self.previews.delete_unreferenced(replaced_filenames, *referenced)
             return jsonify({"message": "Chat replaced.", "name": name})
 
-        saved = get_saved("chat", name)
+        saved = self.history.saved("get", "chat", name)
         if saved is None:
             return jsonify({"error": "Saved chat not found."}), 404
-        current_messages = list_chat_messages()
+        current_messages = self.history.messages()
         filenames = self.previews.filenames(saved) + self.previews.filenames(
             current_messages
         )
         referenced = [
-            get_saved("chat", other) or []
-            for other in list_saved("chat")
+            self.history.saved("get", "chat", other) or []
+            for other in self.history.saved("list", "chat")
             if other != name
         ]
-        if not delete_saved("chat", name):
+        if not self.history.saved("delete", "chat", name):
             return jsonify({"error": "Saved chat not found."}), 404
-        clear_chat_messages()
+        self.history.messages([])
         self.previews.delete_unreferenced(filenames, *referenced)
         return jsonify({"message": "Chat deleted.", "name": name})
 
     def saved_system_prompt(self, action):
         """List, save, load, or delete a named system prompt."""
         if action == "list":
-            return jsonify({"names": list_saved("system_prompt")})
+            return jsonify({
+                "names": self.history.saved("list", "system_prompt")
+            })
         data = request.get_json(silent=True) or {}
         name = (data.get("name") or "").strip()
         if not name:
             return jsonify({"error": "Name is required."}), 400
         if action == "save":
-            save_saved("system_prompt", name, data.get("content", ""))
+            self.history.saved(
+                "save",
+                "system_prompt",
+                name,
+                data.get("content", ""),
+            )
             return jsonify({"message": "System prompt saved.", "name": name})
         if action == "load":
-            content = get_saved("system_prompt", name)
+            content = self.history.saved("get", "system_prompt", name)
             if content is None:
                 return jsonify({"error": "Saved system prompt not found."}), 404
             return jsonify(
@@ -1544,7 +1549,7 @@ class ChatController:
                     "content": content,
                 }
             )
-        if not delete_saved("system_prompt", name):
+        if not self.history.saved("delete", "system_prompt", name):
             return jsonify({"error": "Saved system prompt not found."}), 404
         return jsonify({"message": "System prompt deleted.", "name": name})
 

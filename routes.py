@@ -9,6 +9,7 @@ from controllers.chat_controller import chat_controller
 from controllers.create_benchmark_controller import create_benchmark_controller
 from controllers.index_controller import (
     PAGES,
+    TOOL_SETUP_PATH,
     available_pages,
     index_controller,
 )
@@ -20,6 +21,12 @@ CREATE_BENCHMARK_PAGE = next(
 )
 
 APPLICATION_ROUTES = (
+    (
+        "/tool-setup.md",
+        "tool_setup_manual",
+        partial(index_controller.markdown_manual, TOOL_SETUP_PATH),
+        ("GET",),
+    ),
     (
         "/manual/<path:filename>",
         "manual_asset",

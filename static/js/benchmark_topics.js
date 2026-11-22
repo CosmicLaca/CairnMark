@@ -1,108 +1,85 @@
 (() => {
     "use strict";
 
-    const topics = document.querySelector("[data-topics]");
-    const topicList = topics?.querySelector("[data-topic-list]");
-    const addButton = topics?.querySelector("[data-topic-add]");
-    const topicCountLabel = topics?.querySelector("[data-topic-count-label]");
-    let topicIndex = 1;
-
-    if (!topics || !topicList) {
-        return;
-    }
-
-    const initialTopicListHTML = topicList.innerHTML;
-
-    const updateTopicCount = () => {
-        const rows = topicList.querySelectorAll("[data-topic-row]");
-        const count = rows.length;
-        const countEl = topics.querySelector("[data-topic-count]");
-        if (countEl) {
-            countEl.textContent = count;
+    class BenchmarkTopicEditor {
+        constructor(root) {
+            this.root = root;
+            this.list = root.querySelector("[data-topic-list]");
+            this.addButton = root.querySelector("[data-topic-add]");
+            this.countLabel = root.querySelector("[data-topic-count-label]");
+            this.initialHTML = this.list.innerHTML;
+            this.bind();
+            this.update();
         }
-        topicCountLabel.textContent = count === 1 ? "topic" : "topics";
-    };
 
-    const renderTopicTemplate = () => {
-        const template = topics.querySelector("[data-topic-template]");
-        if (!template) return null;
-        return document.importNode(template.content, true);
-    };
-
-    const addTopicRow = () => {
-        if (!topicList) return;
-        const fragment = renderTopicTemplate();
-        if (fragment) {
-            const row = fragment.querySelector("[data-topic-row]");
-            if (row) {
-                row.setAttribute("data-topic-row", "");
-                const orderEl = row.querySelector("[data-topic-order]");
-                if (orderEl) {
-                    orderEl.textContent = String(topicIndex + 1).padStart(2, "0");
+        bind() {
+            this.addButton?.addEventListener("click", () => this.add());
+            this.list.addEventListener("click", (event) => {
+                const button = event.target.closest("[data-topic-remove]");
+                if (button) this.remove(button);
+            });
+            this.list.addEventListener("keydown", (event) => {
+                if (
+                    event.target.matches("[data-topic-name]")
+                    && event.key === "Enter"
+                    && !event.shiftKey
+                ) {
+                    event.preventDefault();
+                    this.addButton?.focus();
                 }
-                const removeBtn = row.querySelector("[data-topic-remove]");
-                if (removeBtn) {
-                    removeBtn.disabled = false;
-                }
-                const nameInput = row.querySelector("[data-topic-name]");
-                const pairsInput = row.querySelector("[data-topic-pairs]");
-                const orderInput = row.querySelector("[data-topic-order]");
+            });
+        }
 
-                row.setAttribute("tabindex", "0");
-                if (nameInput) nameInput.focus();
-                topicList.appendChild(fragment);
+        rows() {
+            return [...this.list.querySelectorAll("[data-topic-row]")];
+        }
 
-                topicIndex++;
-                updateTopicCount();
+        update() {
+            const rows = this.rows();
+            rows.forEach((row, index) => {
+                const order = row.querySelector("[data-topic-order]");
+                if (order) order.textContent = String(index + 1).padStart(2, "0");
+            });
+            const count = rows.length;
+            const countElement = this.root.querySelector("[data-topic-count]");
+            if (countElement) countElement.textContent = count;
+            if (this.countLabel) {
+                this.countLabel.textContent = count === 1 ? "topic" : "topics";
             }
         }
-    };
 
-    const removeTopicRow = (button) => {
-        const row = button.closest("[data-topic-row]");
-        if (!row || topicList.querySelectorAll("[data-topic-row]").length <= 1) return;
-
-        const nextRow = row.nextElementSibling || row.previousElementSibling;
-        if (nextRow && nextRow.querySelector("[data-topic-remove]")) {
-            nextRow.querySelector("[data-topic-remove]").disabled = false;
+        add() {
+            const template = this.root.querySelector("[data-topic-template]");
+            if (!template) return;
+            const fragment = document.importNode(template.content, true);
+            const row = fragment.querySelector("[data-topic-row]");
+            if (!row) return;
+            row.tabIndex = 0;
+            const removeButton = row.querySelector("[data-topic-remove]");
+            if (removeButton) removeButton.disabled = false;
+            this.list.appendChild(fragment);
+            this.update();
+            row.querySelector("[data-topic-name]")?.focus();
         }
 
-        row.remove();
+        remove(button) {
+            const row = button.closest("[data-topic-row]");
+            if (!row || this.rows().length <= 1) return;
+            const focusTarget = row.nextElementSibling || row.previousElementSibling;
+            row.remove();
+            this.update();
+            focusTarget?.querySelector("[data-topic-name]")?.focus();
+        }
 
-        const orderEls = topicList.querySelectorAll("[data-topic-order]");
-        orderEls.forEach((el, i) => {
-            el.textContent = String(i + 1).padStart(2, "0");
-        });
-
-        topicIndex = Math.max(1, topicList.querySelectorAll("[data-topic-row]").length);
-        updateTopicCount();
-    };
-
-    const resetTopics = () => {
-        topicList.innerHTML = initialTopicListHTML;
-        topicIndex = 1;
-        updateTopicCount();
-    };
-
-    window.resetBenchmarkTopics = resetTopics;
-
-    if (addButton) {
-        addButton.addEventListener("click", addTopicRow);
+        reset() {
+            this.list.innerHTML = this.initialHTML;
+            this.update();
+        }
     }
 
-    topicList.addEventListener("click", (event) => {
-        const removeButton = event.target.closest("[data-topic-remove]");
-        if (removeButton) removeTopicRow(removeButton);
-    });
-    topicList.addEventListener("keydown", (event) => {
-        if (
-            event.target.matches("[data-topic-name]")
-            && event.key === "Enter"
-            && !event.shiftKey
-        ) {
-            event.preventDefault();
-            addButton?.focus();
-        }
-    });
-    updateTopicCount();
+    const root = document.querySelector("[data-topics]");
+    if (!root?.querySelector("[data-topic-list]")) return;
+    const editor = new BenchmarkTopicEditor(root);
+    window.CairnmarkBenchmarkTopics = editor;
+    window.resetBenchmarkTopics = () => editor.reset();
 })();

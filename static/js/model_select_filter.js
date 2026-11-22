@@ -1,124 +1,137 @@
 (() => {
     "use strict";
 
-    const closeAll = () => {
-        document.querySelectorAll(".searchable-select.is-open").forEach((widget) => {
-            widget.classList.remove("is-open");
-            const panel = widget.querySelector(".searchable-select-panel");
-            if (panel) panel.hidden = true;
-            widget.querySelector(".searchable-select-toggle")
-                ?.setAttribute("aria-expanded", "false");
-        });
-    };
+    class SearchableModelSelect {
+        static instances = [];
 
-    const buildWidget = (select) => {
-        if (select.dataset.searchableReady === "true") return;
-        select.dataset.searchableReady = "true";
-        select.classList.add("searchable-select-source");
+        constructor(select) {
+            this.select = select;
+            this.wrapper = document.createElement("div");
+            this.toggle = document.createElement("button");
+            this.panel = document.createElement("div");
+            this.search = document.createElement("input");
+            this.list = document.createElement("div");
+            this.build();
+            this.bind();
+            this.sync();
+            this.render();
+        }
 
-        const wrapper = document.createElement("div");
-        wrapper.className = "searchable-select";
+        build() {
+            this.select.dataset.searchableReady = "true";
+            this.select.classList.add("searchable-select-source");
+            this.wrapper.className = "searchable-select";
 
-        const toggle = document.createElement("button");
-        toggle.type = "button";
-        toggle.className = "searchable-select-toggle";
-        toggle.setAttribute("aria-haspopup", "listbox");
-        toggle.setAttribute("aria-expanded", "false");
+            this.toggle.type = "button";
+            this.toggle.className = "searchable-select-toggle";
+            this.toggle.setAttribute("aria-haspopup", "listbox");
+            this.toggle.setAttribute("aria-expanded", "false");
 
-        const panel = document.createElement("div");
-        panel.className = "searchable-select-panel";
-        panel.hidden = true;
+            this.panel.className = "searchable-select-panel";
+            this.panel.hidden = true;
+            this.search.type = "search";
+            this.search.className = "searchable-select-search";
+            this.search.placeholder = "Filter model names…";
+            this.search.setAttribute("aria-label", "Filter model names");
+            this.list.className = "searchable-select-list";
+            this.list.setAttribute("role", "listbox");
 
-        const search = document.createElement("input");
-        search.type = "search";
-        search.className = "searchable-select-search";
-        search.placeholder = "Filter model names…";
-        search.setAttribute("aria-label", "Filter model names");
+            this.panel.append(this.search, this.list);
+            this.wrapper.append(this.toggle, this.panel);
+            this.select.insertAdjacentElement("afterend", this.wrapper);
+        }
 
-        const list = document.createElement("div");
-        list.className = "searchable-select-list";
-        list.setAttribute("role", "listbox");
+        bind() {
+            this.toggle.addEventListener("click", (event) => {
+                event.stopPropagation();
+                const shouldOpen = !this.wrapper.classList.contains("is-open");
+                SearchableModelSelect.closeAll();
+                if (shouldOpen) this.open();
+            });
+            this.search.addEventListener("input", () => this.render(this.search.value));
+            this.search.addEventListener("click", (event) => event.stopPropagation());
+            this.panel.addEventListener("click", (event) => event.stopPropagation());
+            this.select.addEventListener("change", () => this.sync());
+        }
 
-        panel.append(search, list);
-        wrapper.append(toggle, panel);
-        select.insertAdjacentElement("afterend", wrapper);
+        open() {
+            this.wrapper.classList.add("is-open");
+            this.panel.hidden = false;
+            this.toggle.setAttribute("aria-expanded", "true");
+            this.search.value = "";
+            this.render();
+            window.setTimeout(() => this.search.focus(), 0);
+        }
 
-        const syncToggle = () => {
-            const selected = select.selectedOptions && select.selectedOptions[0];
-            toggle.textContent = selected ? selected.textContent.trim() : "Select a model";
-        };
+        close() {
+            this.wrapper.classList.remove("is-open");
+            this.panel.hidden = true;
+            this.toggle.setAttribute("aria-expanded", "false");
+        }
 
-        const renderList = (query) => {
-            const needle = String(query || "").trim().toLowerCase();
-            list.replaceChildren();
-            Array.from(select.options).forEach((option) => {
+        sync() {
+            const selected = this.select.selectedOptions?.[0];
+            this.toggle.textContent = selected
+                ? selected.textContent.trim()
+                : "Select a model";
+        }
+
+        render(query = "") {
+            const needle = String(query).trim().toLocaleLowerCase();
+            this.list.replaceChildren();
+            Array.from(this.select.options).forEach((option) => {
                 if (option.disabled) return;
                 const text = (option.textContent || "").trim();
                 const value = option.value || "";
-                if (needle && !text.toLowerCase().includes(needle) && !value.toLowerCase().includes(needle)) {
-                    return;
-                }
+                const matches = text.toLocaleLowerCase().includes(needle)
+                    || value.toLocaleLowerCase().includes(needle);
+                if (needle && !matches) return;
+
                 const item = document.createElement("button");
                 item.type = "button";
                 item.className = "searchable-select-option";
                 item.textContent = text;
                 item.dataset.value = value;
-                if (value === select.value) item.classList.add("is-selected");
-                item.addEventListener("click", () => {
-                    select.value = value;
-                    select.dispatchEvent(new Event("change", { bubbles: true }));
-                    syncToggle();
-                    closeAll();
-                });
-                list.appendChild(item);
+                item.classList.toggle("is-selected", value === this.select.value);
+                item.addEventListener("click", () => this.selectValue(value));
+                this.list.appendChild(item);
             });
-            if (!list.children.length) {
+            if (!this.list.children.length) {
                 const empty = document.createElement("div");
                 empty.className = "searchable-select-empty";
                 empty.textContent = "No matching models.";
-                list.appendChild(empty);
+                this.list.appendChild(empty);
             }
-        };
+        }
 
-        toggle.addEventListener("click", (event) => {
-            event.stopPropagation();
-            const isOpen = wrapper.classList.contains("is-open");
-            closeAll();
-            if (!isOpen) {
-                wrapper.classList.add("is-open");
-                panel.hidden = false;
-                toggle.setAttribute("aria-expanded", "true");
-                search.value = "";
-                renderList("");
-                setTimeout(() => search.focus(), 0);
-            } else {
-                toggle.setAttribute("aria-expanded", "false");
-            }
-        });
+        selectValue(value) {
+            this.select.value = value;
+            this.select.dispatchEvent(new Event("change", {bubbles: true}));
+            this.sync();
+            SearchableModelSelect.closeAll();
+        }
 
-        search.addEventListener("input", () => renderList(search.value));
-        search.addEventListener("click", (event) => event.stopPropagation());
+        static closeAll() {
+            this.instances.forEach((instance) => instance.close());
+        }
 
-        select.addEventListener("change", syncToggle);
-
-        // Keep panel clicks from closing immediately.
-        panel.addEventListener("click", (event) => event.stopPropagation());
-
-        syncToggle();
-        renderList("");
-    };
-
-    const init = () => {
-        document.querySelectorAll("select[data-model-filter]").forEach(buildWidget);
-        document.addEventListener("click", closeAll);
-        document.addEventListener("keydown", (event) => {
-            if (event.key === "Escape") closeAll();
-        });
-    };
+        static init() {
+            document.querySelectorAll("select[data-model-filter]").forEach((select) => {
+                if (select.dataset.searchableReady !== "true") {
+                    this.instances.push(new SearchableModelSelect(select));
+                }
+            });
+            document.addEventListener("click", () => this.closeAll());
+            document.addEventListener("keydown", (event) => {
+                if (event.key === "Escape") this.closeAll();
+            });
+            window.CairnmarkModelSelects = this.instances;
+        }
+    }
 
     if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", init);
+        document.addEventListener("DOMContentLoaded", () => SearchableModelSelect.init());
     } else {
-        init();
+        SearchableModelSelect.init();
     }
 })();

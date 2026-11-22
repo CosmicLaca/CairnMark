@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block styles %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/about.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('index') }}">Home</a> <span>/</span>
+  <a href="{{ url_for('about') }}">Manual</a> <span>/</span>
+  {{ manual_title }}
+</div>
+
+<article class="content markdown-content">
+  {{ manual_html }}
+</article>
+{% endblock %}

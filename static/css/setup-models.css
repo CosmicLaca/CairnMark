@@ -251,26 +251,24 @@ body.modal-open {
     grid-template-columns: auto;
 }
 
-.provider-tab[data-provider-filter],
-.provider-tab[data-provider-setup] {
+.provider-tab:is([data-provider-filter], [data-provider-setup]) {
     cursor: pointer;
 }
 
-.provider-tab[data-provider-filter]:focus-visible,
-.provider-tab[data-provider-setup]:focus-visible {
+.provider-tab:is([data-provider-filter], [data-provider-setup]):focus-visible {
     outline: 2px solid var(--lichen);
     outline-offset: 2px;
 }
 
 .category-tab.is-active.provider-tab--add-custom {
     color: #f7fbed;
-    border-color: rgba(232, 96, 82, 0.72);
+    border-color: rgba(237, 164, 160, 0.68);
     background: linear-gradient(
         100deg,
-        rgba(232, 96, 82, 0.24),
+        rgb(232 96 82 / 17%),
         rgba(232, 96, 82, 0.055)
     );
-    box-shadow: inset 0 -2px 0 #e86052;
+    box-shadow: inset 0 -2px 0 rgba(231, 144, 116, 0.87);
 }
 
 .category-tab.is-active.provider-tab--add-custom > span {
@@ -473,9 +471,7 @@ body.modal-open {
     letter-spacing: 0.11em;
 }
 
-.provider-state i,
-.modal-provider-chip i,
-.modal-save-note i {
+:is(.provider-state, .modal-provider-chip, .modal-save-note) i {
     display: inline-block;
     width: 7px;
     height: 7px;
@@ -598,8 +594,7 @@ body.modal-open {
     font-size: 0.9rem;
 }
 
-.provider-setup-button small,
-.provider-setup-button strong {
+.provider-setup-button :is(small, strong) {
     display: block;
 }
 
@@ -681,8 +676,7 @@ body.modal-open {
     cursor: pointer;
 }
 
-.provider-toggle-control small,
-.provider-toggle-control strong {
+.provider-toggle-control :is(small, strong) {
     display: block;
 }
 
@@ -879,8 +873,7 @@ body.modal-open {
     line-height: 1;
 }
 
-.model-modal-content .close-modal-button:hover,
-.model-modal-content .close-modal-button:focus-visible {
+.model-modal-content .close-modal-button:is(:hover, :focus-visible) {
     color: var(--sidebar);
     border-color: var(--lichen);
     background: var(--lichen);

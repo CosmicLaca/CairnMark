@@ -13,21 +13,22 @@ from controllers.provider_controller import provider_controller
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 README_PATH = PROJECT_ROOT / "README.md"
+TOOL_SETUP_PATH = PROJECT_ROOT / "tool-setup.md"
 MARKDOWN_EXTENSIONS = ("fenced_code", "tables", "sane_lists")
 
 
-def render_readme():
-    """Load the project README and convert its Markdown to trusted HTML."""
+def render_markdown_document(path):
+    """Load one repository-owned Markdown document as trusted HTML."""
     try:
-        readme_text = README_PATH.read_text(encoding="utf-8")
+        markdown_text = path.read_text(encoding="utf-8")
     except OSError:
-        current_app.logger.exception("Could not read %s", README_PATH)
-        return Markup("<p>The project README is currently unavailable.</p>")
+        current_app.logger.exception("Could not read %s", path)
+        return Markup("<p>This manual page is currently unavailable.</p>")
 
-    # README.md is maintained inside this repository and is trusted content.
+    # Manual Markdown is maintained inside this repository and is trusted.
     return Markup(
         markdown.markdown(
-            readme_text,
+            markdown_text,
             extensions=MARKDOWN_EXTENSIONS,
         )
     )
@@ -35,7 +36,7 @@ def render_readme():
 
 def get_about_context():
     """Build the additional template context required by the About page."""
-    return {"readme_html": render_readme()}
+    return {"readme_html": render_markdown_document(README_PATH)}
 
 
 PAGES = (
@@ -129,10 +130,28 @@ class IndexController:
         return render_template(template, **context)
 
     def manual_asset(self, filename):
-        """Serve an image referenced by the repository README."""
+        """Render a manual page or serve one of its local assets."""
+        manual_directory = Path(current_app.config["MANUAL_DIRECTORY"]).resolve()
+        document = (manual_directory / filename).resolve()
+        if (
+            document.suffix.casefold() == ".md"
+            and document.is_relative_to(manual_directory)
+            and document.is_file()
+        ):
+            return self.markdown_manual(document)
         return send_from_directory(
-            current_app.config["MANUAL_DIRECTORY"],
+            manual_directory,
             filename,
+        )
+
+    @staticmethod
+    def markdown_manual(path=TOOL_SETUP_PATH):
+        """Render one explicitly routed repository manual document."""
+        title = path.stem.replace("-", " ").title()
+        return render_template(
+            "manual.html",
+            manual_html=render_markdown_document(path),
+            manual_title=title,
         )
 
 

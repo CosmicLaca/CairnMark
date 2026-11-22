@@ -1,5 +1,7 @@
 """SQLite persistence for chat form, switches, and attachment defaults."""
 
+from functools import partialmethod
+
 from config import PROJECT_ROOT
 from models.sqlite_store import SQLiteStore
 
@@ -99,15 +101,6 @@ CREATE TABLE IF NOT EXISTS mineru_settings (
 """
 
 
-def _add_column_if_missing(connection, table, column, definition):
-    """Add one legacy column without hiding migration failures."""
-    columns = {
-        row[1] for row in connection.execute(f"PRAGMA table_info({table})")
-    }
-    if columns and column not in columns:
-        connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
-
-
 def _migrate_chat_settings(connection):
     """Keep older singleton setting tables compatible with the current schema."""
     existing = {
@@ -141,37 +134,6 @@ def _migrate_chat_settings(connection):
         connection.execute("DROP TABLE chat_settings")
         connection.execute("ALTER TABLE chat_settings_new RENAME TO chat_settings")
 
-    _add_column_if_missing(connection, "mineru_settings", "api_key", "TEXT")
-    _add_column_if_missing(
-        connection,
-        "mineru_settings",
-        "timeout",
-        "INTEGER NOT NULL DEFAULT 3",
-    )
-    _add_column_if_missing(
-        connection,
-        "chat_attachment_settings",
-        "video_fps",
-        "REAL NOT NULL DEFAULT 2",
-    )
-    _add_column_if_missing(
-        connection,
-        "chat_attachment_settings",
-        "send_all_previous",
-        "INTEGER NOT NULL DEFAULT 0",
-    )
-    _add_column_if_missing(
-        connection,
-        "chat_attachment_settings",
-        "stream_responses",
-        "INTEGER NOT NULL DEFAULT 0",
-    )
-    _add_column_if_missing(
-        connection,
-        "chat_compact_settings",
-        "threshold",
-        "INTEGER NOT NULL DEFAULT 75",
-    )
     # Preserve the pre-history-table value when upgrading an older database.
     connection.execute(
         """
@@ -188,6 +150,20 @@ SETTINGS_STORE = SQLiteStore(
     "DATABASE_PATH",
     default_path=PROJECT_ROOT / "instance" / "cairnmark.db",
     schema=SETTINGS_SCHEMA,
+    columns={
+        "mineru_settings": {
+            "api_key": "TEXT",
+            "timeout": "INTEGER NOT NULL DEFAULT 3",
+        },
+        "chat_attachment_settings": {
+            "video_fps": "REAL NOT NULL DEFAULT 2",
+            "send_all_previous": "INTEGER NOT NULL DEFAULT 0",
+            "stream_responses": "INTEGER NOT NULL DEFAULT 0",
+        },
+        "chat_compact_settings": {
+            "threshold": "INTEGER NOT NULL DEFAULT 75",
+        },
+    },
     migrate=_migrate_chat_settings,
 )
 
@@ -197,6 +173,64 @@ _SWITCH_TABLES = {
     "send_all_previous": "chat_history_settings",
     "auto_compact": "chat_compact_settings",
 }
+_SETTING_GROUPS = {
+    "attachments": {
+        "table": "chat_attachment_settings",
+        "columns": (
+            "save_original_media",
+            "attach_audio",
+            "video_fps",
+            "send_all_previous",
+            "stream_responses",
+        ),
+        "defaults": {
+            "save_original_media": False,
+            "attach_audio": False,
+            "video_fps": DEFAULT_VIDEO_FPS,
+            "send_all_previous": False,
+            "stream_responses": False,
+            "randomize_seed": False,
+        },
+        "booleans": {
+            "save_original_media",
+            "attach_audio",
+            "send_all_previous",
+            "stream_responses",
+            "randomize_seed",
+        },
+        "choices": {"video_fps": VIDEO_FPS_VALUES},
+        "switches": ("randomize_seed", "send_all_previous"),
+    },
+    "compact": {
+        "table": "chat_compact_settings",
+        "columns": ("auto_compact", "threshold"),
+        "defaults": {
+            "auto_compact": False,
+            "threshold": DEFAULT_AUTO_COMPACT_THRESHOLD,
+        },
+        "booleans": {"auto_compact"},
+        "ranges": {
+            "threshold": (
+                AUTO_COMPACT_THRESHOLD_MIN,
+                AUTO_COMPACT_THRESHOLD_MAX,
+            ),
+        },
+    },
+    "mineru": {
+        "table": "mineru_settings",
+        "columns": ("endpoint", "api_key", "timeout"),
+        "defaults": {
+            "endpoint": "http://127.0.0.1:8100",
+            "api_key": "",
+            "timeout": DEFAULT_MINERU_TIMEOUT,
+        },
+        "text": {"endpoint", "api_key"},
+        "ranges": {
+            "timeout": (MINERU_TIMEOUT_MIN, MINERU_TIMEOUT_MAX),
+        },
+        "reports_configured": True,
+    },
+}
 
 
 class ChatSettingsRepository:
@@ -205,8 +239,35 @@ class ChatSettingsRepository:
     def __init__(self, store=SETTINGS_STORE):
         self.store = store
 
-    def form(self):
-        """Return the saved chat form values or first-run defaults."""
+    def form(self, values=_UNSET):
+        """Read the saved chat form, or replace it when values are supplied."""
+        if values is not _UNSET:
+            writable_columns = (
+                "model_name",
+                "system_prompt",
+                *CHAT_PARAMETER_DEFAULTS,
+            )
+            saved = [values.get("model_name", ""), values.get("system_prompt", "")]
+            for key, converter in CHAT_PARAMETER_CONVERTERS.items():
+                value = values.get(key, CHAT_PARAMETER_DEFAULTS[key])
+                if isinstance(value, str):
+                    value = value.strip() or None
+                saved.append(None if value is None else converter(value))
+            assignments = ",\n                ".join(
+                f"{column} = excluded.{column}" for column in writable_columns
+            )
+            self.store.execute(
+                f"""
+                INSERT INTO chat_settings (id, {', '.join(writable_columns)})
+                VALUES (1, {', '.join('?' for _column in writable_columns)})
+                ON CONFLICT(id) DO UPDATE SET
+                    {assignments},
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                saved,
+            )
+            return values
+
         defaults = {"model_name": "", "system_prompt": "", **CHAT_PARAMETER_DEFAULTS}
         if not self.store.path().exists():
             return defaults
@@ -230,29 +291,6 @@ class ChatSettingsRepository:
         if result["min_p"] is None:
             result["min_p"] = CHAT_PARAMETER_DEFAULTS["min_p"]
         return result
-
-    def save_form(self, settings):
-        """Persist only fields supported by the chat setup form."""
-        writable_columns = ("model_name", "system_prompt", *CHAT_PARAMETER_DEFAULTS)
-        values = [settings.get("model_name", ""), settings.get("system_prompt", "")]
-        for key, converter in CHAT_PARAMETER_CONVERTERS.items():
-            value = settings.get(key, CHAT_PARAMETER_DEFAULTS[key])
-            if isinstance(value, str):
-                value = value.strip() or None
-            values.append(None if value is None else converter(value))
-        assignments = ",\n                ".join(
-            f"{column} = excluded.{column}" for column in writable_columns
-        )
-        self.store.execute(
-            f"""
-            INSERT INTO chat_settings (id, {', '.join(writable_columns)})
-            VALUES (1, {', '.join('?' for _column in writable_columns)})
-            ON CONFLICT(id) DO UPDATE SET
-                {assignments},
-                updated_at = CURRENT_TIMESTAMP
-            """,
-            values,
-        )
 
     def switch(self, name, value=_UNSET):
         """Read or update a named boolean chat switch."""
@@ -280,192 +318,99 @@ class ChatSettingsRepository:
         )
         return saved
 
-    def compact(self, updates=None):
-        """Read or partially update automatic compaction settings."""
-        defaults = {
-            "auto_compact": False,
-            "threshold": DEFAULT_AUTO_COMPACT_THRESHOLD,
-        }
+    def group(self, name, updates=_UNSET):
+        """Read or partially update a declared singleton settings group."""
+        try:
+            spec = _SETTING_GROUPS[name]
+        except KeyError as error:
+            raise KeyError(f"Unsupported chat settings group: {name}") from error
+
+        columns = spec["columns"]
         row = None
         if self.store.path().exists():
             row = self.store.fetch(
-                "SELECT auto_compact, threshold "
-                "FROM chat_compact_settings WHERE id = 1",
+                f"SELECT {', '.join(columns)} FROM {spec['table']} WHERE id = 1",
                 one=True,
             )
-        current = defaults if not row else {
-            "auto_compact": bool(row[0]),
-            "threshold": self._auto_compact_threshold(row[1]),
-        }
-        if updates is None:
-            return current
+        values = dict(spec["defaults"])
+        if row:
+            values.update(zip(columns, row))
+        for switch in spec.get("switches", ()):
+            values[switch] = self.switch(switch)
+        if updates is not _UNSET:
+            values.update(updates)
+            for switch in spec.get("switches", ()):
+                if switch in updates:
+                    values[switch] = self.switch(switch, updates[switch])
 
-        values = {**current, **updates}
-        threshold = self._auto_compact_threshold(values.get("threshold"))
+        values = self._normalize_group(spec, values, configured=bool(row))
+        if updates is _UNSET:
+            return values
+
+        assignments = ",\n                ".join(
+            f"{column} = excluded.{column}" for column in columns
+        )
+        saved = [
+            int(values[column])
+            if column in spec.get("booleans", ())
+            else values[column] or None
+            if name == "mineru" and column == "api_key"
+            else values[column]
+            for column in columns
+        ]
         self.store.execute(
-            """
-            INSERT INTO chat_compact_settings (id, auto_compact, threshold)
-            VALUES (1, ?, ?)
+            f"""
+            INSERT INTO {spec['table']} (id, {', '.join(columns)})
+            VALUES (1, {', '.join('?' for _column in columns)})
             ON CONFLICT(id) DO UPDATE SET
-                auto_compact = excluded.auto_compact,
-                threshold = excluded.threshold,
+                {assignments},
                 updated_at = CURRENT_TIMESTAMP
             """,
-            (int(bool(values["auto_compact"])), threshold),
+            saved,
         )
-        return {
-            "auto_compact": bool(values["auto_compact"]),
-            "threshold": threshold,
-        }
+        if spec.get("reports_configured"):
+            values["configured"] = True
+        return values
 
-    def attachments(self, updates=None):
-        """Read or partially update attachment preferences."""
-        defaults = {
-            "save_original_media": False,
-            "attach_audio": False,
-            "video_fps": DEFAULT_VIDEO_FPS,
-            "randomize_seed": self.switch("randomize_seed"),
-            "send_all_previous": self.switch("send_all_previous"),
-            "stream_responses": False,
-        }
-        row = None
-        if self.store.path().exists():
-            row = self.store.fetch(
-                "SELECT save_original_media, attach_audio, video_fps, "
-                "send_all_previous, stream_responses "
-                "FROM chat_attachment_settings WHERE id = 1",
-                one=True,
+    @staticmethod
+    def _normalize_group(spec, values, *, configured):
+        """Normalize corrupt or partially supplied values from one group."""
+        normalized = dict(values)
+        defaults = spec["defaults"]
+        for field in spec.get("booleans", ()):
+            normalized[field] = bool(normalized.get(field))
+        for field, choices in spec.get("choices", {}).items():
+            try:
+                value = float(normalized.get(field))
+            except (TypeError, ValueError):
+                value = defaults[field]
+            normalized[field] = value if value in choices else defaults[field]
+        for field, (minimum, maximum) in spec.get("ranges", {}).items():
+            value = normalized.get(field)
+            try:
+                value = int(value) if not isinstance(value, bool) else None
+            except (TypeError, ValueError):
+                value = None
+            normalized[field] = (
+                value if value is not None and minimum <= value <= maximum
+                else defaults[field]
             )
-        current = defaults if not row else {
-            "save_original_media": bool(row[0]),
-            "attach_audio": bool(row[1]),
-            "video_fps": self._video_fps(row[2]),
-            "randomize_seed": defaults["randomize_seed"],
-            "send_all_previous": defaults["send_all_previous"],
-            "stream_responses": bool(row[4]),
-        }
-        if updates is None:
-            return current
-
-        values = {**current, **updates}
-        for name in ("randomize_seed", "send_all_previous"):
-            if name in updates:
-                values[name] = self.switch(name, updates[name])
-        values["video_fps"] = self._video_fps(values["video_fps"])
-        self.store.execute(
-            """
-            INSERT INTO chat_attachment_settings
-                (id, save_original_media, attach_audio, video_fps,
-                 send_all_previous, stream_responses)
-            VALUES (1, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                save_original_media = excluded.save_original_media,
-                attach_audio = excluded.attach_audio,
-                video_fps = excluded.video_fps,
-                send_all_previous = excluded.send_all_previous,
-                stream_responses = excluded.stream_responses,
-                updated_at = CURRENT_TIMESTAMP
-            """,
-            (
-                int(bool(values["save_original_media"])),
-                int(bool(values["attach_audio"])),
-                values["video_fps"],
-                int(bool(values["send_all_previous"])),
-                int(bool(values["stream_responses"])),
-            ),
-        )
-        return {
-            "save_original_media": bool(values["save_original_media"]),
-            "attach_audio": bool(values["attach_audio"]),
-            "video_fps": values["video_fps"],
-            "randomize_seed": bool(values["randomize_seed"]),
-            "send_all_previous": bool(values["send_all_previous"]),
-            "stream_responses": bool(values["stream_responses"]),
-        }
-
-    def mineru(self, updates=None):
-        """Read or update the saved MinerU API endpoint."""
-        defaults = {
-            "endpoint": "http://127.0.0.1:8100",
-            "api_key": "",
-            "timeout": DEFAULT_MINERU_TIMEOUT,
-            "configured": False,
-        }
-        if updates is None:
-            if not self.store.path().exists():
-                return defaults
-            row = self.store.fetch(
-                "SELECT endpoint, api_key, timeout FROM mineru_settings WHERE id = 1",
-                one=True,
+        for field in spec.get("text", ()):
+            normalized[field] = str(normalized.get(field) or "").strip()
+        if "endpoint" in normalized:
+            normalized["endpoint"] = (
+                normalized["endpoint"].rstrip("/") or defaults["endpoint"]
             )
-            if not row:
-                return defaults
-            return {
-                "endpoint": str(row[0] or defaults["endpoint"]).strip()
-                or defaults["endpoint"],
-                "api_key": str(row[1] or "").strip(),
-                "timeout": self._mineru_timeout(row[2]),
-                "configured": True,
-            }
+        if spec.get("reports_configured"):
+            normalized["configured"] = configured
+        return normalized
 
-        values = {**defaults, **updates}
-        endpoint = str(values.get("endpoint") or "").strip().rstrip("/")
-        endpoint = endpoint or defaults["endpoint"]
-        api_key = str(values.get("api_key") or "").strip()
-        timeout = self._mineru_timeout(values.get("timeout"))
-        self.store.execute(
-            """
-            INSERT INTO mineru_settings (id, endpoint, api_key, timeout)
-            VALUES (1, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                endpoint = excluded.endpoint,
-                api_key = excluded.api_key,
-                timeout = excluded.timeout,
-                updated_at = CURRENT_TIMESTAMP
-            """,
-            (endpoint, api_key or None, timeout),
-        )
-        return {
-            "endpoint": endpoint,
-            "api_key": api_key,
-            "timeout": timeout,
-            "configured": True,
-        }
-
-    @staticmethod
-    def _mineru_timeout(value):
-        """Return a valid saved reachability timeout or the default."""
-        if isinstance(value, bool):
-            return DEFAULT_MINERU_TIMEOUT
-        try:
-            timeout = int(value)
-        except (TypeError, ValueError):
-            return DEFAULT_MINERU_TIMEOUT
-        if MINERU_TIMEOUT_MIN <= timeout <= MINERU_TIMEOUT_MAX:
-            return timeout
-        return DEFAULT_MINERU_TIMEOUT
-
-    @staticmethod
-    def _auto_compact_threshold(value):
-        """Return a valid compaction percentage or the default."""
-        if isinstance(value, bool):
-            return DEFAULT_AUTO_COMPACT_THRESHOLD
-        try:
-            threshold = int(value)
-        except (TypeError, ValueError):
-            return DEFAULT_AUTO_COMPACT_THRESHOLD
-        if AUTO_COMPACT_THRESHOLD_MIN <= threshold <= AUTO_COMPACT_THRESHOLD_MAX:
-            return threshold
-        return DEFAULT_AUTO_COMPACT_THRESHOLD
-
-    @staticmethod
-    def _video_fps(value):
-        """Return a supported FPS value, falling back for corrupt saved data."""
-        try:
-            fps = float(value)
-        except (TypeError, ValueError):
-            return DEFAULT_VIDEO_FPS
-        return fps if fps in VIDEO_FPS_VALUES else DEFAULT_VIDEO_FPS
+    # Keep the former focused repository API without maintaining duplicate
+    # implementations. New code can use ``form`` and ``group`` directly.
+    save_form = form
+    attachments = partialmethod(group, "attachments")
+    compact = partialmethod(group, "compact")
+    mineru = partialmethod(group, "mineru")
 
 
 CHAT_SETTINGS = ChatSettingsRepository()

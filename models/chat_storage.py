@@ -1,4 +1,4 @@
-"""SQLite persistence for messages, saved chats, and saved prompts."""
+"""SQLite repository for messages, saved chats, and saved prompts."""
 
 import json
 from datetime import datetime, timedelta, timezone
@@ -39,6 +39,60 @@ CREATE TABLE IF NOT EXISTS saved_system_prompts (
 );
 """
 
+SQL_TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
+MESSAGE_COLUMNS = (
+    "role",
+    "content",
+    "model_name",
+    "provider",
+    "response_time",
+    "input_tokens",
+    "output_tokens",
+    "system_prompt",
+    "saved_system_prompt_name",
+    "request_body",
+    "preview_images",
+    "has_audio",
+    "preview_media",
+    "compacted",
+    "created_at",
+)
+MESSAGE_DEFAULTS = {
+    "role": "user",
+    "content": "",
+    "model_name": "",
+    "provider": "",
+    "response_time": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "system_prompt": "",
+    "saved_system_prompt_name": "",
+    "request_body": "",
+    "preview_images": [],
+    "has_audio": False,
+    "preview_media": [],
+    "compacted": False,
+}
+LATER_MESSAGE_COLUMNS = {
+    "model_name": "TEXT NOT NULL DEFAULT ''",
+    "provider": "TEXT NOT NULL DEFAULT ''",
+    "response_time": "REAL NOT NULL DEFAULT 0",
+    "input_tokens": "INTEGER NOT NULL DEFAULT 0",
+    "output_tokens": "INTEGER NOT NULL DEFAULT 0",
+    "system_prompt": "TEXT NOT NULL DEFAULT ''",
+    "saved_system_prompt_name": "TEXT NOT NULL DEFAULT ''",
+    "request_body": "TEXT NOT NULL DEFAULT ''",
+    "preview_images": "TEXT NOT NULL DEFAULT ''",
+    "has_audio": "INTEGER NOT NULL DEFAULT 0",
+    "preview_media": "TEXT NOT NULL DEFAULT ''",
+    "compacted": "INTEGER NOT NULL DEFAULT 0",
+}
+SAVED_RECORDS = {
+    "chat": ("saved_chats", "messages", True),
+    "system_prompt": ("saved_system_prompts", "content", False),
+}
+_UNSET = object()
+
 
 def _parse_list(value, *, csv_fallback=False):
     """Decode a stored JSON list, optionally accepting legacy CSV text."""
@@ -66,9 +120,6 @@ def _stored_list(value):
     return "" if value in (None, "") else str(value)
 
 
-SQL_TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
-
-
 def _sql_timestamp(value=None):
     """Return a UTC timestamp in SQLite's standard text representation."""
     moment = value or datetime.now(timezone.utc)
@@ -90,277 +141,202 @@ def _timestamp_saved_messages(messages):
             except ValueError:
                 previous = None
         else:
-            moment = previous + timedelta(seconds=1) if previous else (
-                fallback + timedelta(seconds=index)
+            moment = (
+                previous + timedelta(seconds=1)
+                if previous
+                else fallback + timedelta(seconds=index)
             )
-            created_at = _sql_timestamp(moment)
-            item["created_at"] = created_at
+            item["created_at"] = _sql_timestamp(moment)
             previous = moment
             changed = True
         normalized.append(item)
     return normalized, changed
 
 
-CHAT_MESSAGE_COLUMNS = {
-    "model_name": "TEXT NOT NULL DEFAULT ''",
-    "provider": "TEXT NOT NULL DEFAULT ''",
-    "response_time": "REAL NOT NULL DEFAULT 0",
-    "input_tokens": "INTEGER NOT NULL DEFAULT 0",
-    "output_tokens": "INTEGER NOT NULL DEFAULT 0",
-    "system_prompt": "TEXT NOT NULL DEFAULT ''",
-    "saved_system_prompt_name": "TEXT NOT NULL DEFAULT ''",
-    "request_body": "TEXT NOT NULL DEFAULT ''",
-    "preview_images": "TEXT NOT NULL DEFAULT ''",
-    "has_audio": "INTEGER NOT NULL DEFAULT 0",
-    "preview_media": "TEXT NOT NULL DEFAULT ''",
-    "compacted": "INTEGER NOT NULL DEFAULT 0",
-}
-
-
-def _migrate_chat_messages(connection):
-    existing = {
-        row[1] for row in connection.execute("PRAGMA table_info(chat_messages)")
-    }
-    for column, definition in CHAT_MESSAGE_COLUMNS.items():
-        if column not in existing:
-            connection.execute(
-                f"ALTER TABLE chat_messages ADD COLUMN {column} {definition}"
-            )
-
-
 CHAT_STORE = SQLiteStore(
     "CHAT_DATABASE_PATH",
     default_path=PROJECT_ROOT / "instance" / "chathistory.db",
     schema=CHAT_SCHEMA,
-    migrate=_migrate_chat_messages,
+    columns={"chat_messages": LATER_MESSAGE_COLUMNS},
 )
 
-def list_chat_messages():
-    if not CHAT_STORE.path().exists():
-        return []
-    rows = CHAT_STORE.fetch(
-        "SELECT id, role, content, model_name, provider, response_time, "
-        "input_tokens, output_tokens, system_prompt, saved_system_prompt_name, "
-        "request_body, preview_images, has_audio, preview_media, compacted, created_at "
-        "FROM chat_messages ORDER BY id"
-    )
-    return [
-        {
-            "id": row[0],
-            "role": row[1],
-            "content": row[2],
-            "model_name": row[3] or "",
-            "provider": row[4] or "",
-            "response_time": row[5] or 0,
-            "input_tokens": row[6] or 0,
-            "output_tokens": row[7] or 0,
-            "system_prompt": row[8] or "",
-            "saved_system_prompt_name": row[9] or "",
-            "request_body": row[10] or "",
-            "preview_images": _parse_list(row[11] or "", csv_fallback=True),
-            "has_audio": bool(row[12]),
-            "preview_media": _parse_list(row[13] or ""),
-            "compacted": bool(row[14]),
-            "created_at": row[15],
-        }
-        for row in rows
-    ]
 
+class ChatRepository:
+    """Persist the active conversation and reusable named chat records."""
 
-def add_chat_message(
-    role,
-    content,
-    model_name="",
-    provider="",
-    response_time=0,
-    input_tokens=0,
-    output_tokens=0,
-    system_prompt="",
-    saved_system_prompt_name="",
-    request_body="",
-    preview_images=None,
-    has_audio=0,
-    preview_media=None,
-    compacted=0,
-    created_at=None,
-):
-    _rowcount, lastrowid = CHAT_STORE.execute(
-        "INSERT INTO chat_messages "
-        "(role, content, model_name, provider, response_time, input_tokens, "
-        "output_tokens, system_prompt, saved_system_prompt_name, request_body, "
-        "preview_images, has_audio, preview_media, compacted, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            role,
-            content,
-            model_name,
-            provider,
-            response_time,
-            input_tokens,
-            output_tokens,
-            system_prompt,
-            saved_system_prompt_name,
-            request_body,
-            _stored_list(preview_images),
-            1 if has_audio else 0,
-            _stored_list(preview_media),
-            1 if compacted else 0,
-            str(created_at).strip() if created_at else _sql_timestamp(),
-        ),
-    )
-    return lastrowid
+    def __init__(self, store=CHAT_STORE):
+        self.store = store
 
+    def messages(self, values=_UNSET):
+        """Read the active conversation, or atomically replace it."""
+        if values is not _UNSET:
+            normalized, _timestamps_added = _timestamp_saved_messages(values)
+            with self.store.transaction() as connection:
+                self._replace(connection, normalized)
+            return normalized
+        if not self.store.path().exists():
+            return []
+        rows = self.store.fetch(
+            "SELECT id, " + ", ".join(MESSAGE_COLUMNS)
+            + " FROM chat_messages ORDER BY id"
+        )
+        messages = []
+        for row in rows:
+            message = dict(zip(("id", *MESSAGE_COLUMNS), row))
+            message["preview_images"] = _parse_list(
+                message["preview_images"],
+                csv_fallback=True,
+            )
+            message["preview_media"] = _parse_list(message["preview_media"])
+            message["has_audio"] = bool(message["has_audio"])
+            message["compacted"] = bool(message["compacted"])
+            for field, default in MESSAGE_DEFAULTS.items():
+                if message[field] is None:
+                    message[field] = default
+            messages.append(message)
+        return messages
 
-def _insert_stored_message(connection, message):
-    """Insert one previously stored message through the shared column mapping."""
-    preview_images = message.get("preview_images", [])
-    if isinstance(preview_images, str):
-        preview_images = _parse_list(preview_images, csv_fallback=True)
-    return connection.execute(
-        "INSERT INTO chat_messages "
-        "(role, content, model_name, provider, response_time, input_tokens, "
-        "output_tokens, system_prompt, saved_system_prompt_name, request_body, "
-        "preview_images, has_audio, preview_media, compacted, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            message.get("role", "user"),
-            message.get("content", ""),
-            message.get("model_name", ""),
-            message.get("provider", ""),
-            message.get("response_time", 0) or 0,
-            message.get("input_tokens", 0) or 0,
-            message.get("output_tokens", 0) or 0,
-            message.get("system_prompt", "") or "",
-            message.get("saved_system_prompt_name", "") or "",
-            message.get("request_body", "") or "",
-            _stored_list(preview_images),
-            1 if message.get("has_audio") else 0,
-            _stored_list(message.get("preview_media", [])),
-            1 if message.get("compacted") else 0,
-            message.get("created_at"),
-        ),
-    )
+    def add(self, role, content, **metadata):
+        """Append one message and return its database identifier."""
+        message = {**MESSAGE_DEFAULTS, **metadata, "role": role, "content": content}
+        message["created_at"] = (
+            str(message.get("created_at") or "").strip() or _sql_timestamp()
+        )
+        _rowcount, lastrowid = self.store.execute(
+            f"INSERT INTO chat_messages ({', '.join(MESSAGE_COLUMNS)}) "
+            f"VALUES ({', '.join('?' for _column in MESSAGE_COLUMNS)})",
+            self._stored_values(message),
+        )
+        return lastrowid
 
-
-def _replace_chat_messages(connection, messages):
-    """Replace active messages using an existing transaction."""
-    connection.execute("DELETE FROM chat_messages")
-    for message in messages:
-        _insert_stored_message(connection, message)
-
-
-def replace_chat_messages(messages):
-    """Transactionally replace the active conversation with stored messages."""
-    normalized, _timestamps_added = _timestamp_saved_messages(messages)
-    with CHAT_STORE.transaction() as connection:
-        _replace_chat_messages(connection, normalized)
-
-
-def clear_chat_messages():
-    if not CHAT_STORE.path().exists():
-        return
-    CHAT_STORE.execute("DELETE FROM chat_messages")
-
-
-def delete_last_chat_message():
-    """Remove the most recent chat message when it is an unanswered user request."""
-    if not CHAT_STORE.path().exists():
-        return False
-    with CHAT_STORE.transaction() as connection:
-        row = connection.execute(
-            "SELECT id, role FROM chat_messages ORDER BY id DESC LIMIT 1"
-        ).fetchone()
-        if not row or row[1] != "user":
+    def delete_last(self):
+        """Remove the most recent message only when it is an unanswered request."""
+        if not self.store.path().exists():
             return False
-        connection.execute("DELETE FROM chat_messages WHERE id = ?", (row[0],))
+        with self.store.transaction() as connection:
+            row = connection.execute(
+                "SELECT id, role FROM chat_messages ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            if not row or row[1] != "user":
+                return False
+            connection.execute("DELETE FROM chat_messages WHERE id = ?", (row[0],))
         return True
 
-
-SAVED_RECORDS = {
-    "chat": ("saved_chats", "messages", True),
-    "system_prompt": ("saved_system_prompts", "content", False),
-}
-
-
-def list_saved(record_type):
-    """List saved chat or system-prompt names in display order."""
-    if not CHAT_STORE.path().exists():
-        return []
-    table, _value_column, _uses_json = SAVED_RECORDS[record_type]
-    rows = CHAT_STORE.fetch(
-        f"SELECT name FROM {table} ORDER BY name COLLATE NOCASE"
-    )
-    return [row[0] for row in rows]
-
-
-def save_saved(record_type, name, value):
-    """Create or replace one named chat or system prompt."""
-    table, value_column, uses_json = SAVED_RECORDS[record_type]
-    payload = json.dumps(value, ensure_ascii=False) if uses_json else value
-    CHAT_STORE.execute(
-        f"""
-        INSERT INTO {table} (name, {value_column})
-        VALUES (?, ?)
-        ON CONFLICT(name) DO UPDATE SET
-            {value_column} = excluded.{value_column},
-            updated_at = CURRENT_TIMESTAMP
-        """,
-        (name, payload),
-    )
-
-
-def get_saved(record_type, name):
-    """Return one saved chat or system prompt, or ``None`` when absent."""
-    if not CHAT_STORE.path().exists():
-        return None
-    table, value_column, uses_json = SAVED_RECORDS[record_type]
-    row = CHAT_STORE.fetch(
-        f"SELECT {value_column} FROM {table} WHERE name = ?",
-        (name,),
-        one=True,
-    )
-    if not row:
-        return None
-    if not uses_json:
-        return row[0]
-    try:
-        return json.loads(row[0])
-    except (ValueError, TypeError):
-        return None
-
-
-def delete_saved(record_type, name):
-    """Delete one named chat or system prompt and report whether it existed."""
-    if not CHAT_STORE.path().exists():
-        return False
-    table, _value_column, _uses_json = SAVED_RECORDS[record_type]
-    rowcount, _lastrowid = CHAT_STORE.execute(
-        f"DELETE FROM {table} WHERE name = ?",
-        (name,),
-    )
-    return rowcount > 0
-
-
-list_saved_chats = partial(list_saved, "chat")
-save_saved_chat = partial(save_saved, "chat")
-get_saved_chat = partial(get_saved, "chat")
-delete_saved_chat = partial(delete_saved, "chat")
-list_saved_system_prompts = partial(list_saved, "system_prompt")
-save_saved_system_prompt = partial(save_saved, "system_prompt")
-get_saved_system_prompt = partial(get_saved, "system_prompt")
-delete_saved_system_prompt = partial(delete_saved, "system_prompt")
-
-
-def load_saved_chat(name):
-    messages = get_saved_chat(name)
-    if messages is None:
-        return False
-    messages, timestamps_added = _timestamp_saved_messages(messages)
-    with CHAT_STORE.transaction() as connection:
-        if timestamps_added:
-            connection.execute(
-                "UPDATE saved_chats SET messages = ? WHERE name = ?",
-                (json.dumps(messages, ensure_ascii=False), name),
+    def saved(self, operation, record_type, name=None, value=None):
+        """List, read, write, or delete a named chat or system prompt."""
+        table, value_column, uses_json = SAVED_RECORDS[record_type]
+        if operation == "list":
+            if not self.store.path().exists():
+                return []
+            rows = self.store.fetch(
+                f"SELECT name FROM {table} ORDER BY name COLLATE NOCASE"
             )
-        _replace_chat_messages(connection, messages)
-    return True
+            return [row[0] for row in rows]
+        if operation == "save":
+            payload = json.dumps(value, ensure_ascii=False) if uses_json else value
+            self.store.execute(
+                f"""
+                INSERT INTO {table} (name, {value_column}) VALUES (?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    {value_column} = excluded.{value_column},
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (name, payload),
+            )
+            return value
+        if not self.store.path().exists():
+            return False if operation == "delete" else None
+        if operation == "delete":
+            rowcount, _lastrowid = self.store.execute(
+                f"DELETE FROM {table} WHERE name = ?",
+                (name,),
+            )
+            return rowcount > 0
+        row = self.store.fetch(
+            f"SELECT {value_column} FROM {table} WHERE name = ?",
+            (name,),
+            one=True,
+        )
+        if not row:
+            return None
+        if not uses_json:
+            return row[0]
+        try:
+            return json.loads(row[0])
+        except (ValueError, TypeError):
+            return None
+
+    def load(self, name):
+        """Load a saved chat and upgrade any missing message timestamps."""
+        messages = self.saved("get", "chat", name)
+        if messages is None:
+            return False
+        messages, timestamps_added = _timestamp_saved_messages(messages)
+        with self.store.transaction() as connection:
+            if timestamps_added:
+                connection.execute(
+                    "UPDATE saved_chats SET messages = ? WHERE name = ?",
+                    (json.dumps(messages, ensure_ascii=False), name),
+                )
+            self._replace(connection, messages)
+        return True
+
+    @staticmethod
+    def _stored_values(message):
+        values = {**MESSAGE_DEFAULTS, **message}
+        values["preview_images"] = _stored_list(values["preview_images"])
+        values["preview_media"] = _stored_list(values["preview_media"])
+        values["has_audio"] = int(bool(values["has_audio"]))
+        values["compacted"] = int(bool(values["compacted"]))
+        return tuple(values.get(column) for column in MESSAGE_COLUMNS)
+
+    def _replace(self, connection, messages):
+        connection.execute("DELETE FROM chat_messages")
+        statement = (
+            f"INSERT INTO chat_messages ({', '.join(MESSAGE_COLUMNS)}) "
+            f"VALUES ({', '.join('?' for _column in MESSAGE_COLUMNS)})"
+        )
+        connection.executemany(
+            statement,
+            (self._stored_values(message) for message in messages),
+        )
+
+
+CHAT_HISTORY = ChatRepository()
+
+# Stable aliases keep existing integrations working while application code can
+# depend on the repository object directly.
+list_chat_messages = CHAT_HISTORY.messages
+replace_chat_messages = CHAT_HISTORY.messages
+clear_chat_messages = partial(CHAT_HISTORY.messages, [])
+add_chat_message = CHAT_HISTORY.add
+delete_last_chat_message = CHAT_HISTORY.delete_last
+list_saved = partial(CHAT_HISTORY.saved, "list")
+save_saved = partial(CHAT_HISTORY.saved, "save")
+get_saved = partial(CHAT_HISTORY.saved, "get")
+delete_saved = partial(CHAT_HISTORY.saved, "delete")
+load_saved_chat = CHAT_HISTORY.load
+list_saved_chats = partial(CHAT_HISTORY.saved, "list", "chat")
+save_saved_chat = partial(CHAT_HISTORY.saved, "save", "chat")
+get_saved_chat = partial(CHAT_HISTORY.saved, "get", "chat")
+delete_saved_chat = partial(CHAT_HISTORY.saved, "delete", "chat")
+list_saved_system_prompts = partial(
+    CHAT_HISTORY.saved,
+    "list",
+    "system_prompt",
+)
+save_saved_system_prompt = partial(
+    CHAT_HISTORY.saved,
+    "save",
+    "system_prompt",
+)
+get_saved_system_prompt = partial(
+    CHAT_HISTORY.saved,
+    "get",
+    "system_prompt",
+)
+delete_saved_system_prompt = partial(
+    CHAT_HISTORY.saved,
+    "delete",
+    "system_prompt",
+)

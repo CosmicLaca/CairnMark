@@ -27,23 +27,10 @@ LATER_COLUMNS = {
 }
 
 
-def _add_missing_columns(connection):
-    """Add metadata columns introduced after the original schema."""
-    existing_columns = {
-        row["name"]
-        for row in connection.execute("PRAGMA table_info(benchmark_metadata)")
-    }
-    for column, definition in LATER_COLUMNS.items():
-        if column not in existing_columns:
-            connection.execute(
-                f"ALTER TABLE benchmark_metadata " f"ADD COLUMN {column} {definition}"
-            )
-
-
 STORE = SQLiteStore(
     "DATABASE_PATH",
     schema=SCHEMA,
-    migrate=_add_missing_columns,
+    columns={"benchmark_metadata": LATER_COLUMNS},
     row_factory=sqlite3.Row,
 )
 
