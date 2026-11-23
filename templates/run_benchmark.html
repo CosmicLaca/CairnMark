@@ -186,8 +186,15 @@
         <label for="create-benchmark-model">Model</label>
         <span class="field-hint">Selected model will process all requests.</span>
         {% if active_models %}
-          <div class="select-shell">
-            <select id="create-benchmark-model" name="model" data-model-filter>
+        <div class="model-provider-filter" data-model-provider-filter>
+          <button type="button" class="model-provider-filter-button is-active" data-provider-filter="all">All</button>
+          {% for provider in active_models|map(attribute='provider')|unique %}
+            {% set provider_model = active_models|selectattr('provider', 'equalto', provider)|first %}
+            <button type="button" class="model-provider-filter-button" data-provider-filter="{{ provider }}">{{ provider_model.provider_label }}</button>
+          {% endfor %}
+        </div>
+        <div class="select-shell">
+          <select id="create-benchmark-model" name="model" data-model-filter>
               {% for model in active_models %}
                 <option value="{{ model.provider }}::{{ model.model }}">{{ model.label }}{% if model.modalities and model.modalities.vision %} 📷{% endif %}{% if model.modalities and model.modalities.video %} 🎥{% endif %}{% if model.modalities and model.modalities.audio %} 🎤{% endif %}{% if model.chat_template_caps and (model.chat_template_caps.supports_tools or model.chat_template_caps.supports_tool_calls) %} 🔧{% endif %}</option>
               {% endfor %}

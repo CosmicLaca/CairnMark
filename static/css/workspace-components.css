@@ -526,3 +526,27 @@
 .searchable-select-source {
     display: none;
 }
+
+.model-provider-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.model-provider-filter-button {
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.52);
+    color: var(--ink);
+    font-size: 12px;
+    line-height: 1;
+    padding: 4px 8px;
+    border-radius: 999px;
+    cursor: pointer;
+}
+
+.model-provider-filter-button.is-active {
+    background: #398376;
+    border-color: #398376;
+    color: #fff;
+}

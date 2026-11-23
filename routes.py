@@ -399,6 +399,18 @@ APPLICATION_ROUTES = (
         provider_controller.save_selection,
         ("POST",),
     ),
+    (
+        "/model_selector/filter",
+        "get_model_selector_filter",
+        provider_controller.model_selector_filter,
+        ("GET",),
+    ),
+    (
+        "/model_selector/filter",
+        "save_model_selector_filter",
+        provider_controller.save_model_selector_filter,
+        ("POST",),
+    ),
 )
 
 

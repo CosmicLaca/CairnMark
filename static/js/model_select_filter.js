@@ -11,6 +11,7 @@
             this.panel = document.createElement("div");
             this.search = document.createElement("input");
             this.list = document.createElement("div");
+            this.providerFilter = "all";
             this.build();
             this.bind();
             this.sync();
@@ -76,6 +77,11 @@
                 : "Select a model";
         }
 
+        setProviderFilter(provider) {
+            this.providerFilter = provider || "all";
+            this.render(this.search.value);
+        }
+
         render(query = "") {
             const needle = String(query).trim().toLocaleLowerCase();
             this.list.replaceChildren();
@@ -83,6 +89,10 @@
                 if (option.disabled) return;
                 const text = (option.textContent || "").trim();
                 const value = option.value || "";
+                if (this.providerFilter && this.providerFilter !== "all"
+                    && !value.startsWith(`${this.providerFilter}::`)) {
+                    return;
+                }
                 const matches = text.toLocaleLowerCase().includes(needle)
                     || value.toLocaleLowerCase().includes(needle);
                 if (needle && !matches) return;
@@ -126,6 +136,65 @@
                 if (event.key === "Escape") this.closeAll();
             });
             window.CairnmarkModelSelects = this.instances;
+            this.initProviderFilters();
+        }
+
+        static async initProviderFilters() {
+            const api = window.CairnmarkApi;
+            let saved = "all";
+            try {
+                const response = await (api
+                    ? api.request("/model_selector/filter")
+                    : fetch("/model_selector/filter").then((r) => r.json()));
+                saved = (response && response.provider) || "all";
+            } catch (error) {
+                saved = "all";
+            }
+            document.querySelectorAll("[data-model-provider-filter]").forEach((bar) => {
+                const group = bar.closest(".field-group") || bar.parentElement;
+                const select = group
+                    ? group.querySelector("select[data-model-filter]")
+                    : null;
+                const instance = this.instances.find((item) => item.select === select);
+                const buttons = [...bar.querySelectorAll("[data-provider-filter]")];
+                const apply = (provider) => {
+                    if (instance) instance.setProviderFilter(provider);
+                    buttons.forEach((button) => {
+                        button.classList.toggle(
+                            "is-active",
+                            button.dataset.providerFilter === provider,
+                        );
+                    });
+                };
+                buttons.forEach((button) => {
+                    button.addEventListener("click", async () => {
+                        const provider = button.dataset.providerFilter;
+                        apply(provider);
+                        try {
+                            if (api) {
+                                await api.json("/model_selector/filter", {
+                                    method: "POST",
+                                    body: {provider},
+                                });
+                            } else {
+                                await fetch("/model_selector/filter", {
+                                    method: "POST",
+                                    headers: {"Content-Type": "application/json"},
+                                    body: JSON.stringify({provider}),
+                                });
+                            }
+                        } catch (error) {
+                            console.error("Could not save model selector filter:", error);
+                        }
+                    });
+                });
+                const initial = buttons.some(
+                    (button) => button.dataset.providerFilter === saved,
+                )
+                    ? saved
+                    : "all";
+                apply(initial);
+            });
         }
     }
 

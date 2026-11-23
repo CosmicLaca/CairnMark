@@ -1155,6 +1155,26 @@ class ModelProviderService:
         self.models.setup_selection(provider)
         return provider
 
+    def model_selector_filter(self):
+        """Return the saved model-selector provider filter when valid."""
+        provider = self.models.model_selector_filter()
+        active = {entry["provider"] for entry in self.active_models()}
+        if provider != "all" and provider not in active:
+            return "all"
+        return provider
+
+    def save_model_selector_filter(self, provider):
+        """Validate and persist the model-selector provider filter."""
+        provider = str(provider or "all").strip()
+        if provider != "all":
+            active = {entry["provider"] for entry in self.active_models()}
+            if provider not in active:
+                raise ProviderValidationError(
+                    "A valid online provider is required"
+                )
+        self.models.model_selector_filter(provider)
+        return provider
+
     def saved_provider_overview(self, provider):
         """Return persisted connection and model counts for setup-page views."""
         self.spec(provider)

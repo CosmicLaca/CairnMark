@@ -353,8 +353,15 @@
       <label for="chat-model">Model <span class="chat-model-nctx" data-chat-model-nctx></span></label>
       <span class="field-hint">Active model for the chat.</span>
       {% if active_models %}
-        <div class="select-shell">
-          <select id="chat-model" name="model" data-chat-model data-saved-model="{{ chat_settings.model_name }}" data-model-filter>
+      <div class="model-provider-filter" data-model-provider-filter>
+        <button type="button" class="model-provider-filter-button is-active" data-provider-filter="all">All</button>
+        {% for provider in active_models|map(attribute='provider')|unique %}
+          {% set provider_model = active_models|selectattr('provider', 'equalto', provider)|first %}
+          <button type="button" class="model-provider-filter-button" data-provider-filter="{{ provider }}">{{ provider_model.provider_label }}</button>
+        {% endfor %}
+      </div>
+      <div class="select-shell">
+        <select id="chat-model" name="model" data-chat-model data-saved-model="{{ chat_settings.model_name }}" data-model-filter>
             {% for model in active_models %}
               <option value="{{ model.provider }}::{{ model.model }}"
                 {% if chat_settings.model_name|trim == (model.provider ~ "::" ~ model.model)|trim %}selected{% endif %}>
