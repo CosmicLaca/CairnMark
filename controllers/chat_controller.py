@@ -1161,7 +1161,21 @@ class ChatController:
             return jsonify({"error": "MCP settings must be an object."}), 400
         try:
             service_name = str(data.get("name") or "").strip()
-            declaration = self._mcp_registry().save_local_server(
+            registry = self._mcp_registry()
+            availability = registry.probe_local_server(
+                service_name,
+                data.get("command"),
+                data.get("args"),
+                data.get("timeout_ms"),
+                settings.get("endpoint"),
+                settings.get("user", ""),
+                settings.get("password", ""),
+            )
+            if not availability.get("online"):
+                return jsonify(
+                    {"error": "MCP service is not accessible."}
+                ), 400
+            declaration = registry.save_local_server(
                 service_name,
                 data.get("command"),
                 data.get("args"),
@@ -1199,7 +1213,13 @@ class ChatController:
                     }
                 ]
             )
-            return jsonify({"saved": True, "server": declaration})
+            return jsonify(
+                {
+                    "saved": True,
+                    "server": declaration,
+                    "availability": availability,
+                }
+            )
         except OSError:
             current_app.logger.exception("Could not save MCP configuration")
             return jsonify({"error": "Could not save MCP configuration."}), 500

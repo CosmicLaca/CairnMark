@@ -189,8 +189,15 @@ class McpServiceRegistry:
         self._write_services(merged)
         return new_servers
 
-    def save_local_server(self, name, command, args, timeout_ms=None):
-        """Create or update one local MCP server declaration."""
+    @staticmethod
+    def _local_server_declaration(
+        name,
+        command,
+        args,
+        timeout_ms=None,
+        existing=None,
+    ):
+        """Validate and build one local MCP server declaration."""
         name = str(name or "").strip()
         command = str(command or "").strip()
         if not name or not MCP_NAME_PATTERN.fullmatch(name):
@@ -202,8 +209,7 @@ class McpServiceRegistry:
         if not isinstance(args, list) or any(not isinstance(value, str) for value in args):
             raise ValueError("MCP args must be a JSON array of strings.")
 
-        services = self.services()
-        declaration = dict(services.get(name, {}))
+        declaration = dict(existing or {})
         declaration.update({"type": "local", "command": command, "args": args})
         if timeout_ms in (None, ""):
             declaration.pop("timeout_ms", None)
@@ -217,9 +223,48 @@ class McpServiceRegistry:
             if parsed_timeout < 1:
                 raise ValueError("MCP timeout must be a positive integer.")
             declaration["timeout_ms"] = parsed_timeout
+        return name, declaration
+
+    def save_local_server(self, name, command, args, timeout_ms=None):
+        """Create or update one local MCP server declaration."""
+        services = self.services()
+        normalized_name = str(name or "").strip()
+        name, declaration = self._local_server_declaration(
+            normalized_name,
+            command,
+            args,
+            timeout_ms,
+            services.get(normalized_name),
+        )
         services[name] = declaration
         self._write_services(services)
         return declaration
+
+    def probe_local_server(
+        self,
+        name,
+        command,
+        args,
+        timeout_ms=None,
+        endpoint=None,
+        user="",
+        password="",
+    ):
+        """Check a proposed local MCP service without persisting it."""
+        name, declaration = self._local_server_declaration(
+            name,
+            command,
+            args,
+            timeout_ms,
+        )
+        return self._check_details(
+            name,
+            declaration,
+            endpoint,
+            timeout_ms,
+            user,
+            password,
+        )
 
     @staticmethod
     def _timeout_ms(details, override=None):
@@ -627,19 +672,16 @@ class McpServiceRegistry:
                 f"MCP tool {name}::{tool_name} failed: {error}"
             ) from error
 
-    def check(
+    def _check_details(
         self,
         name,
+        details,
         endpoint=None,
         timeout_ms=None,
         user="",
         password="",
     ):
-        """Check one registered service and any required local endpoint."""
-        services = self.services()
-        if name not in services:
-            raise ValueError("Unknown MCP service.")
-        details = services[name]
+        """Check one MCP declaration and any required local endpoint."""
         if details.get("disabled") is True:
             return {"name": name, "online": False, "status_code": None}
         timeout_ms = self._timeout_ms(details, timeout_ms)
@@ -679,6 +721,27 @@ class McpServiceRegistry:
             "status_code": status_code,
             "tools_count": tools_count,
         }
+
+    def check(
+        self,
+        name,
+        endpoint=None,
+        timeout_ms=None,
+        user="",
+        password="",
+    ):
+        """Check one registered service and any required local endpoint."""
+        services = self.services()
+        if name not in services:
+            raise ValueError("Unknown MCP service.")
+        return self._check_details(
+            name,
+            services[name],
+            endpoint,
+            timeout_ms,
+            user,
+            password,
+        )
 
     def discover_tools(
         self,

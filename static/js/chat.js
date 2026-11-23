@@ -3095,7 +3095,12 @@
         }
     };
 
-    const createMcpEmptyField = (key, labelText, type = "text") => {
+    const createMcpEmptyField = (
+        key,
+        labelText,
+        type = "text",
+        required = false
+    ) => {
         const field = document.createElement("div");
         field.className = `field-group mcp-empty-field mcp-empty-field--${key}`;
         const inputId = `mcp-empty-${key}`;
@@ -3105,7 +3110,12 @@
         const input = document.createElement("input");
         input.id = inputId;
         input.type = type;
+        input.required = required;
         input.setAttribute("data-mcp-custom-setting", key);
+        if (key === "name") {
+            input.pattern = "[A-Za-z0-9_.-]+";
+            input.title = "Use letters, numbers, dots, underscores, or hyphens.";
+        }
         if (type === "number") {
             input.min = "1";
             input.step = "1";
@@ -3662,10 +3672,10 @@
         const grid = document.createElement("div");
         grid.className = "mcp-custom-server-grid";
         grid.append(
-            createMcpEmptyField("name", "Name"),
+            createMcpEmptyField("name", "Name", "text", true),
             createMcpEmptyField("timeout_ms", "Timeout (ms)", "number"),
-            createMcpEmptyField("command", "Command"),
-            createMcpEmptyField("args", "Args (JSON array)")
+            createMcpEmptyField("command", "Command", "text", true),
+            createMcpEmptyField("args", "Args (JSON array)", "text", true)
         );
 
         const setup = document.createElement("div");
@@ -3704,14 +3714,38 @@
         addButton.textContent = "Add tool";
         addButton.addEventListener("click", async () => {
             addButton.disabled = true;
+            addButton.textContent = "Checking…";
             try {
-                await saveFirstCustomMcpService();
-                if (requestSequence === mcpSettingsSequence) {
-                    await openMcpSettings();
-                }
+                const saved = await saveFirstCustomMcpService(form, true);
+                if (!saved) return;
+                if (requestSequence !== mcpSettingsSequence) return;
+                savedMcpStates.set(saved.name, false);
+                savedMcpToolSettings.set(saved.name, saved.settings);
+                const row = createMcpServiceRow(saved.name, saved.server);
+                row.classList.remove(
+                    "mcp-service-row--checking",
+                    "mcp-service-row--offline"
+                );
+                row.classList.add("mcp-service-row--online");
+                const status = row.querySelector("[data-mcp-service-status]");
+                if (status) status.textContent = "Online";
+                const spinner = row.querySelector(".mcp-service-spinner");
+                if (spinner) spinner.hidden = true;
+                const offlineTooltip = row.querySelector(
+                    ".mcp-service-offline-tooltip"
+                );
+                if (offlineTooltip) offlineTooltip.hidden = true;
+                applyCustomMcpServiceState(row, true);
+                form.before(row);
+                form.remove();
+                renderMcpCustomForm(definitions, requestSequence);
             } catch (error) {
                 window.alert(String(error));
-                addButton.disabled = false;
+            } finally {
+                if (addButton.isConnected) {
+                    addButton.disabled = false;
+                    addButton.textContent = "Add tool";
+                }
             }
         });
         form.append(heading, grid, setup, addButton);
@@ -3826,9 +3860,22 @@
         return settings;
     };
 
-    const saveFirstCustomMcpService = async () => {
-        const form = mcpServiceList?.querySelector(".mcp-custom-server");
+    const saveFirstCustomMcpService = async (
+        customForm = null,
+        requireEntry = false
+    ) => {
+        const form = customForm
+            || mcpServiceList?.querySelector(".mcp-custom-server");
         if (!form) return;
+        if (requireEntry) {
+            const invalidInput = Array.from(
+                form.querySelectorAll("input, select")
+            ).find((input) => !input.checkValidity());
+            if (invalidInput) {
+                invalidInput.reportValidity();
+                return null;
+            }
+        }
         const value = (key) => form.querySelector(
             `[data-mcp-custom-setting="${key}"]`
         )?.value?.trim() || "";
@@ -3856,7 +3903,7 @@
             form.querySelector("[data-mcp-custom-tool-setup]"),
             {}
         );
-        await api.json(mcpServerSaveUrl, {
+        const response = await api.json(mcpServerSaveUrl, {
             method: "POST",
             body: {
                 name: fields.name,
@@ -3866,6 +3913,12 @@
                 settings,
             },
         });
+        return {
+            name: fields.name,
+            server: response.server,
+            availability: response.availability,
+            settings,
+        };
     };
 
     const collectMcpSettingsRecords = () => {
