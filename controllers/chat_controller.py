@@ -1018,7 +1018,12 @@ class ChatController:
         if not isinstance(submitted, dict):
             return jsonify({"error": "MCP settings must be an object."}), 400
 
-        definitions, test_definition = self._mcp_endpoint_test_setup(name)
+        definitions, test_definition = self._mcp_endpoint_test_setup(
+            name,
+            allow_default=source != "llama_service",
+        )
+        if source == "llama_service" and definitions is None:
+            return jsonify({"name": name, "online": True, "status_code": None})
         if definitions is None:
             return jsonify({"error": "Endpoint test setup is unavailable."}), 400
         if (
@@ -1066,8 +1071,12 @@ class ChatController:
             return jsonify({"error": str(error)}), 400
 
     @staticmethod
-    def _mcp_setup_definitions(name):
-        setup_names = (name,) if name == "default" else (name, "default")
+    def _mcp_setup_definitions(name, *, allow_default=True):
+        setup_names = (
+            (name,)
+            if name == "default" or not allow_default
+            else (name, "default")
+        )
         for setup_name in setup_names:
             setup_path = (
                 Path(current_app.static_folder)
@@ -1094,8 +1103,11 @@ class ChatController:
         }
 
     @classmethod
-    def _mcp_endpoint_test_setup(cls, name):
-        definitions = cls._mcp_setup_definitions(name)
+    def _mcp_endpoint_test_setup(cls, name, *, allow_default=True):
+        definitions = cls._mcp_setup_definitions(
+            name,
+            allow_default=allow_default,
+        )
         if definitions is None:
             return None, None
         test_definition = definitions.get("test")
@@ -1482,7 +1494,8 @@ class ChatController:
             for service_name in live_services:
                 settings = service_settings.get(service_name, {})
                 definitions, test_definition = self._mcp_endpoint_test_setup(
-                    service_name
+                    service_name,
+                    allow_default=False,
                 )
                 if test_definition is None:
                     managed_status[service_name] = True
