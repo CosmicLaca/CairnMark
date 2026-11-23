@@ -3,7 +3,7 @@ AGENTS.md
 .playwright-mcp
 embedding
 *.bak
-services/mcv.json
+services/mcp.json
 tests
 Exported-chat
 debug_model.py

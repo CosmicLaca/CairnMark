@@ -303,7 +303,7 @@ CairnMark can show the same MCP service through two independent providers:
 - **llama.cpp** tools are discovered from the active llama.cpp provider. The
   llama.cpp server must already have been started with its MCP configuration,
   such as `--mcp-servers-config <path-to-mcp.json>`.
-- **Custom** tools are declared in `services/mcv.json` and are started or
+- **Custom** tools are declared in `services/mcp.json` and are started or
   contacted by CairnMark.
 
 The two entries can coexist and have separate saved settings. The main-page

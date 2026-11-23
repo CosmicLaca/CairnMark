@@ -19,7 +19,7 @@ class Config:
     SYSTEM_PROMPT_DIRECTORY = PROJECT_ROOT / "System-prompts"
     CHAT_EXPORT_DIRECTORY = PROJECT_ROOT / "Exported-chat"
     MANUAL_DIRECTORY = PROJECT_ROOT / "manual"
-    MCP_CONFIG_PATH = PROJECT_ROOT / "services" / "mcv.json"
+    MCP_CONFIG_PATH = PROJECT_ROOT / "services" / "mcp.json"
     OPENCODE_CONFIG_PATH = Path.home() / ".config" / "opencode" / "opencode.json"
     LOG_LEVEL = os.environ.get("CAIRNMARK_LOG_LEVEL", "INFO").upper()
     # Enabled by the --dev launcher flag; public launches hide unfinished pages.

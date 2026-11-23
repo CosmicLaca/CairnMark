@@ -66,11 +66,11 @@ multi-user service.
 | `Benchmark-prompts/` | User benchmark JSON files and optional logs |
 | `System-prompts/` | Editable generation, run, evaluation, and compaction prompts |
 | `Exported-chat/` | Import-ready conversation exports |
-| `services/mcv.json` | Private Custom MCP declarations |
+| `services/mcp.json` | Private Custom MCP declarations |
 
 Stop CairnMark before a complete backup. Copy `instance/`, `.secret/`,
 `Benchmark-prompts/`, `System-prompts/`, `Exported-chat/`, and
-`services/mcv.json` together. Do not publish them; they can contain credentials,
+`services/mcp.json` together. Do not publish them; they can contain credentials,
 private prompts, attachments, and model responses.
 
 ## Troubleshooting

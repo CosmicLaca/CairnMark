@@ -3644,7 +3644,7 @@
         const title = document.createElement("strong");
         title.textContent = "Add the first custom MCP service";
         const hint = document.createElement("span");
-        hint.textContent = "Saved privately to services/mcv.json.";
+        hint.textContent = "Saved privately to services/mcp.json.";
         heading.append(title, hint);
         const grid = document.createElement("div");
         grid.className = "mcp-custom-server-grid";

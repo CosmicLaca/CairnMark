@@ -19,7 +19,7 @@ service switch, and individual subtool switches.
 | Source | Ownership | Discovery |
 | --- | --- | --- |
 | llama.cpp | The active llama.cpp server | The server must start with its own MCP configuration |
-| Custom | CairnMark | Declarations live in `services/mcv.json` and use stdio or streamable HTTP |
+| Custom | CairnMark | Declarations live in `services/mcp.json` and use stdio or streamable HTTP |
 
 The same service can exist through both sources. CairnMark displays qualified
 names such as `llama::searxng` and `custom::searxng` so their saved settings do
@@ -39,7 +39,7 @@ not collide.
 7. Right-click the tool button, enable global tool use, and save again.
 
 Import from OpenCode is offered only on first setup and is never automatic.
-Private connection declarations remain in `services/mcv.json` rather than the
+Private connection declarations remain in `services/mcp.json` rather than the
 main application database.
 
 ---
@@ -159,7 +159,7 @@ a capable model.
 
 ### A service is offline
 
-- Verify its command, arguments, URL, and timeout in `services/mcv.json`.
+- Verify its command, arguments, URL, and timeout in `services/mcp.json`.
 - For an endpoint schema, check unsaved values with **Test access**.
 - For llama.cpp tools, confirm the server started with the intended MCP config.
 - Use **Status check** after correcting the endpoint.

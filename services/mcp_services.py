@@ -20,7 +20,7 @@ from config import PROJECT_ROOT
 
 
 DEFAULT_MCP_TIMEOUT_MS = 10000
-MCP_CONFIG_PATH = PROJECT_ROOT / "services" / "mcv.json"
+MCP_CONFIG_PATH = PROJECT_ROOT / "services" / "mcp.json"
 OPENCODE_CONFIG_PATH = Path.home() / ".config" / "opencode" / "opencode.json"
 MCP_DEFAULT_ENDPOINTS = {
     "searxng": "http://127.0.0.1:8888",
@@ -54,13 +54,13 @@ class McpServiceRegistry:
             return json.load(config_file)
 
     def services(self):
-        """Return validated declarations from ``services/mcv.json``."""
+        """Return validated declarations from ``services/mcp.json``."""
         if not self.configured():
             return {}
         document = self._read_json(self.config_path)
         servers = document.get("mcpServers") if isinstance(document, dict) else None
         if not isinstance(servers, dict):
-            raise ValueError("mcv.json must contain an mcpServers object.")
+            raise ValueError("mcp.json must contain an mcpServers object.")
         return {
             str(name): details
             for name, details in servers.items()
@@ -178,7 +178,7 @@ class McpServiceRegistry:
     def import_opencode(self):
         """Explicitly import usable OpenCode MCP declarations once."""
         if self.configured():
-            raise ValueError("services/mcv.json already exists.")
+            raise ValueError("services/mcp.json already exists.")
         servers = self.opencode_services()
         if not servers:
             raise ValueError("No usable OpenCode MCP services were found.")
