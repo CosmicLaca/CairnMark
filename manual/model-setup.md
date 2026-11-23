@@ -121,6 +121,8 @@ Each model row in a provider setup has a **Model setup** button. It opens a
 **Model settings** modal where context size and capability flags can be defined
 when the provider does not expose them through an API (hosted providers).
 
+<img src="./model-setup.jpg" width="400px" alt="Model setup workspace">
+
 - **n_ctx** – context size in tokens. For llama.cpp this follows the detected
   starting mode (`n_ctx`, `fit_off`, or `fit_on`); for hosted providers it is
   stored under the selected API tier (default `Free`).
@@ -137,6 +139,19 @@ Defaults are `4096` tokens for `n_ctx`, all modality/tool switches off, and the
 the setup list and in model selector dropdowns throughout the app.
 
 ---
+
+## Model selector provider filter
+
+Model selector dropdowns on the chat, create benchmark, and run benchmark pages
+include a compact provider filter above the list.
+
+<img src="./model-filter.jpg" width="400px" alt="Model setup workspace">
+
+- **All** is always available and shows every active model.
+- Additional buttons appear only for providers that are online and enabled.
+- Selecting a provider filters the dropdown to that provider's models.
+- Each page remembers its own selected filter in the local database and restores
+  it when the page is reopened.
 
 ## Troubleshooting
 

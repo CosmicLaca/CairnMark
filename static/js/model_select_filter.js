@@ -141,11 +141,16 @@
 
         static async initProviderFilters() {
             const api = window.CairnmarkApi;
+            const path = window.location.pathname || "/";
+            const page = path === "/" ? "chat"
+                : path.startsWith("/create_benchmark") ? "create"
+                : path.startsWith("/run_benchmark") ? "run"
+                : "all";
             let saved = "all";
             try {
                 const response = await (api
-                    ? api.request("/model_selector/filter")
-                    : fetch("/model_selector/filter").then((r) => r.json()));
+                    ? api.request(`/model_selector/filter?page=${encodeURIComponent(page)}`)
+                    : fetch(`/model_selector/filter?page=${encodeURIComponent(page)}`).then((r) => r.json()));
                 saved = (response && response.provider) || "all";
             } catch (error) {
                 saved = "all";
@@ -174,13 +179,13 @@
                             if (api) {
                                 await api.json("/model_selector/filter", {
                                     method: "POST",
-                                    body: {provider},
+                                    body: {page, provider},
                                 });
                             } else {
                                 await fetch("/model_selector/filter", {
                                     method: "POST",
                                     headers: {"Content-Type": "application/json"},
-                                    body: JSON.stringify({provider}),
+                                    body: JSON.stringify({page, provider}),
                                 });
                             }
                         } catch (error) {

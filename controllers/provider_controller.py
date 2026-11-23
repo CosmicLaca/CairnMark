@@ -45,9 +45,10 @@ class ProviderController:
 
     def model_selector_filter(self):
         """Return the saved model-selector provider filter."""
+        page = str(request.args.get("page", "all")).strip() or "all"
         try:
             return jsonify(
-                {"provider": self.service.model_selector_filter()}
+                {"provider": self.service.model_selector_filter(page)}
             )
         except ProviderValidationError as error:
             return jsonify({"error": str(error)}), 400
@@ -55,11 +56,12 @@ class ProviderController:
     def save_model_selector_filter(self):
         """Persist the model-selector provider filter."""
         data = request.get_json(silent=True) or {}
+        page = str(data.get("page", "all")).strip() or "all"
         provider = str(data.get("provider", "")).strip()
         if not provider or len(provider) > 100:
             return jsonify({"error": "A valid provider is required"}), 400
         try:
-            selected = self.service.save_model_selector_filter(provider)
+            selected = self.service.save_model_selector_filter(page, provider)
         except ProviderValidationError as error:
             return jsonify({"error": str(error)}), 400
         return jsonify({"provider": selected})

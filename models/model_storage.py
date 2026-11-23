@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS provider_setup_preferences (
 );
 
 CREATE TABLE IF NOT EXISTS model_selector_preferences (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
+    page TEXT PRIMARY KEY,
     selected_provider TEXT NOT NULL DEFAULT 'all',
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
@@ -55,7 +55,32 @@ LATER_COLUMNS = {
 }
 
 
-STORE = SQLiteStore("DATABASE_PATH", schema=SCHEMA, columns=LATER_COLUMNS)
+def _migrate_model_selector_preferences(connection):
+    columns = {
+        row[1]
+        for row in connection.execute(
+            "PRAGMA table_info(model_selector_preferences)"
+        )
+    }
+    if columns and "page" not in columns:
+        connection.execute("DROP TABLE model_selector_preferences")
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS model_selector_preferences (
+            page TEXT PRIMARY KEY,
+            selected_provider TEXT NOT NULL DEFAULT 'all',
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+
+STORE = SQLiteStore(
+    "DATABASE_PATH",
+    schema=SCHEMA,
+    columns=LATER_COLUMNS,
+    migrate=_migrate_model_selector_preferences,
+)
 _UNSET = object()
 
 
@@ -241,28 +266,30 @@ class ModelConfigurationRepository:
             (provider,),
         )
 
-    def model_selector_filter(self, provider=_UNSET):
+    def model_selector_filter(self, page, provider=_UNSET):
         """Read or persist the provider selected in model selector dropdowns."""
+        page = str(page or "all").strip() or "all"
         if provider is _UNSET:
             row = self.store.fetch(
                 """
                 SELECT selected_provider
                 FROM model_selector_preferences
-                WHERE id = 1
+                WHERE page = ?
                 """,
+                (page,),
                 one=True,
             )
             return row[0] if row else "all"
 
         self.store.execute(
             """
-            INSERT INTO model_selector_preferences (id, selected_provider)
-            VALUES (1, ?)
-            ON CONFLICT(id) DO UPDATE SET
+            INSERT INTO model_selector_preferences (page, selected_provider)
+            VALUES (?, ?)
+            ON CONFLICT(page) DO UPDATE SET
                 selected_provider = excluded.selected_provider,
                 updated_at = CURRENT_TIMESTAMP
             """,
-            (provider,),
+            (page, provider),
         )
 
 
