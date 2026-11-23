@@ -2,11 +2,14 @@
 
 import asyncio
 import base64
+import concurrent.futures
+import contextvars
 import json
 import logging
 import os
 import re
 import socket
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -31,6 +34,84 @@ MCP_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 LOGGER = logging.getLogger(__name__)
 
 
+class _PersistentStdioClient:
+    """Keep one stateful MCP stdio server alive across sequential calls."""
+
+    def __init__(self, details, timeout_ms):
+        self.details = details
+        self.timeout_ms = timeout_ms
+        self.ready = threading.Event()
+        self.loop = None
+        self.requests = None
+        self.start_error = None
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+        if not self.ready.wait(timeout_ms / 1000):
+            raise TimeoutError("Timed out starting the MCP stdio service.")
+        if self.start_error is not None:
+            raise self.start_error
+
+    def _run(self):
+        try:
+            asyncio.run(self._serve())
+        except Exception as error:  # noqa: BLE001
+            self.start_error = error
+            self.ready.set()
+
+    async def _serve(self):
+        command = str(self.details.get("command") or "").strip()
+        args = self.details.get("args", [])
+        if not command or not isinstance(args, list):
+            raise ValueError("The MCP service has no usable command.")
+        environment = self.details.get("environment")
+        if not isinstance(environment, dict):
+            environment = None
+        parameters = StdioServerParameters(
+            command=command,
+            args=[str(argument) for argument in args],
+            env=environment,
+            cwd=self.details.get("cwd") or None,
+        )
+        with open(os.devnull, "w", encoding="utf-8") as stderr:
+            async with stdio_client(parameters, errlog=stderr) as streams:
+                async with ClientSession(streams[0], streams[1]) as session:
+                    await session.initialize()
+                    self.loop = asyncio.get_running_loop()
+                    self.requests = asyncio.Queue()
+                    self.ready.set()
+                    while True:
+                        request = await self.requests.get()
+                        if request is None:
+                            return
+                        tool_name, arguments, future = request
+                        try:
+                            result = await session.call_tool(tool_name, arguments)
+                            future.set_result(result.model_dump(
+                                mode="json",
+                                by_alias=True,
+                                exclude_none=True,
+                            ))
+                        except Exception as error:  # noqa: BLE001
+                            future.set_exception(error)
+
+    def call(self, tool_name, arguments):
+        """Call one tool on the retained session from the request thread."""
+        if self.loop is None or self.requests is None:
+            raise RuntimeError("The MCP stdio service is not available.")
+        future = concurrent.futures.Future()
+        self.loop.call_soon_threadsafe(
+            self.requests.put_nowait,
+            (tool_name, arguments, future),
+        )
+        return future.result(timeout=self.timeout_ms / 1000)
+
+    def close(self):
+        """Close the retained session and its child process."""
+        if self.loop is not None and self.requests is not None:
+            self.loop.call_soon_threadsafe(self.requests.put_nowait, None)
+        self.thread.join(timeout=min(self.timeout_ms / 1000, 5))
+
+
 class McpServiceRegistry:
     """Read, import, update, and check private MCP server declarations."""
 
@@ -43,6 +124,29 @@ class McpServiceRegistry:
         self.config_path = Path(config_path)
         self.opencode_path = Path(opencode_path)
         self.opener = opener or urllib.request.urlopen
+        self._stdio_session_scope = contextvars.ContextVar(
+            f"mcp_stdio_sessions_{id(self)}",
+            default=None,
+        )
+
+    def persistent_tool_sessions(self):
+        """Retain stateful stdio services for one assistant tool loop."""
+        registry = self
+
+        class SessionScope:
+            def __enter__(self):
+                self.sessions = {}
+                self.token = registry._stdio_session_scope.set(self.sessions)
+                return self
+
+            def __exit__(self, _error_type, _error, _traceback):
+                try:
+                    for session in self.sessions.values():
+                        session.close()
+                finally:
+                    registry._stdio_session_scope.reset(self.token)
+
+        return SessionScope()
 
     def configured(self):
         """Return whether the CairnMark MCP configuration already exists."""
@@ -682,6 +786,13 @@ class McpServiceRegistry:
                         endpoint,
                     )
                 )
+            sessions = self._stdio_session_scope.get()
+            if sessions is not None:
+                session = sessions.get(name)
+                if session is None:
+                    session = _PersistentStdioClient(details, timeout_ms)
+                    sessions[name] = session
+                return session.call(tool_name, arguments)
             return asyncio.run(
                 self._call_stdio_async(
                     details,
