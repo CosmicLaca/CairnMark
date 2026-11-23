@@ -115,6 +115,29 @@ chat fields documented in the **[chat guide](chat.md)**.
 
 ---
 
+## Model setup and capabilities
+
+Each model row in a provider setup has a **Model setup** button. It opens a
+**Model settings** modal where context size and capability flags can be defined
+when the provider does not expose them through an API (hosted providers).
+
+- **n_ctx** – context size in tokens. For llama.cpp this follows the detected
+  starting mode (`n_ctx`, `fit_off`, or `fit_on`); for hosted providers it is
+  stored under the selected API tier (default `Free`).
+- **Modalities** – vision, video, and audio input support. Saved values drive the
+  media upload buttons in chat.
+- **Chat template capabilities** – tool-call and tool support flags. Saved values
+  drive the tool capability indicator and the tool icon in model selectors.
+- **API tier** – for hosted providers only. Select the tier that matches the
+  access key; the context size is saved per tier. The chat status line shows
+  `API::<tier>` (for example `API::Plus`).
+
+Defaults are `4096` tokens for `n_ctx`, all modality/tool switches off, and the
+`Free` tier. Saved capability data is also shown as icons next to model names in
+the setup list and in model selector dropdowns throughout the app.
+
+---
+
 ## Troubleshooting
 
 ### A provider cannot be enabled
