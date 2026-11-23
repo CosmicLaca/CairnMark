@@ -530,7 +530,7 @@
 .model-provider-filter {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 2px;
     margin-bottom: 8px;
 }
 
@@ -538,10 +538,10 @@
     border: 1px solid var(--line);
     background: rgba(255, 255, 255, 0.52);
     color: var(--ink);
-    font-size: 12px;
+    font-size: 11px;
     line-height: 1;
-    padding: 4px 8px;
-    border-radius: 999px;
+    padding: 2px 4px;
+    border-radius: 4px;
     cursor: pointer;
 }
 
