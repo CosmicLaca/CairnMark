@@ -4019,7 +4019,7 @@
             modelNctxEl.textContent = "";
         }
         const isLocal = provider === "llama.cpp" || provider === "vllm";
-        if (!isLocal || !model) {
+        if (!model) {
             updateTokenUsage();
             return;
         }

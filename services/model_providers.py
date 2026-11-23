@@ -1491,9 +1491,7 @@ class ModelProviderService:
             ):
                 self.models.models(provider, merged)
             models = merged
-        if provider == "llama.cpp":
-            models = self._attach_saved_modalities(models)
-        elif configuration and configuration.get("custom"):
+        if configuration and configuration.get("custom"):
             models = [
                 {
                     **model,
@@ -1502,6 +1500,8 @@ class ModelProviderService:
                 }
                 for model in models
             ]
+        else:
+            models = self._attach_saved_capabilities(provider, models)
         summary = self.models.summary(provider)
         return {
             "models": models,
@@ -1585,11 +1585,22 @@ class ModelProviderService:
 
     def fetch_model_params(self, provider, model):
         """Return cached defaults, otherwise read them from the local model."""
-        if provider not in ("llama.cpp", "vllm"):
-            raise ProviderValidationError(
-                "Additional parameters are only available for local providers"
-            )
         parameter_key = f"{provider}::{model}"
+        if provider not in ("llama.cpp", "vllm"):
+            self.spec(provider)
+            saved = self.parameters.value(parameter_key)
+            return {
+                "params": {},
+                "modalities": ModelProviderService._display_field(
+                    saved, "modalities"
+                ),
+                "chat_template_caps": ModelProviderService._display_field(
+                    saved, "chat_template_caps"
+                ),
+                "n_ctx": ModelProviderService._display_n_ctx(saved, "API"),
+                "ctx_mode": "API",
+                "source": "database",
+            }
         ctx_mode = (
             self.detect_ctx_mode(provider)
             if provider == "llama.cpp"
@@ -1725,21 +1736,24 @@ class ModelProviderService:
 
     def model_params_status(self, provider, model):
         """Return saved parameter/context state without reading ``/props``."""
-        if provider not in ("llama.cpp", "vllm"):
-            raise ProviderValidationError(
-                "Additional parameters are only available for local providers"
-            )
+        self.spec(provider)
         saved = self.parameters.value(f"{provider}::{model}")
-        ctx_mode = (
-            self.detect_ctx_mode(provider)
-            if provider == "llama.cpp"
-            else None
-        )
+        if provider == "llama.cpp":
+            ctx_mode = self.detect_ctx_mode(provider)
+        elif provider == "vllm":
+            ctx_mode = None
+        else:
+            ctx_mode = "API"
         params_saved = self._has_saved_params(saved)
         n_ctx = self._display_n_ctx(saved, ctx_mode)
-        if not params_saved:
+        has_capabilities = isinstance(saved, dict) and (
+            bool(saved.get("modalities"))
+            or bool(saved.get("chat_template_caps"))
+            or saved.get("n_ctx") is not None
+        )
+        if not params_saved and not has_capabilities:
             state = "missing_params"
-        elif provider == "llama.cpp" and n_ctx is None:
+        elif provider == "llama.cpp" and n_ctx is None and not has_capabilities:
             state = "missing_ctx"
         else:
             state = "complete"
@@ -1803,7 +1817,7 @@ class ModelProviderService:
             return False
         if "params" in saved_params:
             return isinstance(saved_params["params"], dict)
-        metadata_keys = {"modalities", "chat_template_caps", "n_ctx_modes"}
+        metadata_keys = {"modalities", "chat_template_caps", "n_ctx_modes", "n_ctx"}
         return any(key not in metadata_keys for key in saved_params)
 
     @staticmethod
@@ -1815,41 +1829,63 @@ class ModelProviderService:
 
     @staticmethod
     def _display_n_ctx(saved_params, mode=None):
-        """Return the saved context size for *mode*, if present."""
+        """Return the saved context size for *mode*, if present.
+
+        For providers without a router-mode context setting (or when a manual
+        override was saved), fall back to a top-level ``n_ctx`` value.
+        """
         if not isinstance(saved_params, dict):
             return None
         modes = saved_params.get("n_ctx_modes")
         if isinstance(modes, dict) and mode:
             value = modes.get(mode)
             if isinstance(value, bool):
-                return None
-            if isinstance(value, (int, float)):
+                pass
+            elif isinstance(value, (int, float)):
                 return int(value)
-            if isinstance(value, str) and value.strip():
+            elif isinstance(value, str) and value.strip():
                 try:
                     return int(float(value.strip()))
                 except ValueError:
-                    return None
+                    pass
+        value = saved_params.get("n_ctx")
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
+            return int(value)
+        if isinstance(value, str) and value.strip():
+            try:
+                return int(float(value.strip()))
+            except ValueError:
+                return None
         return None
 
     def _attach_saved_modalities(self, models):
-        """Attach locally saved modality flags to each model, if any.
+        """Attach locally saved modality flags to each model, if any."""
+        return self._attach_saved_capabilities("llama.cpp", models)
 
-        Reads only the parameter database; the provider server is never
-        contacted. Models without saved modalities are left untouched.
-        """
+    def _attach_saved_capabilities(self, provider, models):
+        """Attach saved modality and tool-capability flags to each model."""
         updated = []
         for model in models:
             entry = dict(model)
             model_name = entry.get("id") or entry.get("name")
             if model_name:
-                saved = self.parameters.value(f"llama.cpp::{model_name}")
+                saved = self.parameters.value(f"{provider}::{model_name}")
                 modalities = (
                     ModelProviderService._display_field(saved, "modalities")
                     if saved else {}
                 )
                 if modalities:
                     entry["modalities"] = modalities
+                caps = (
+                    ModelProviderService._display_field(
+                        saved, "chat_template_caps"
+                    )
+                    if saved else {}
+                )
+                if caps:
+                    entry["chat_template_caps"] = caps
             updated.append(entry)
         return updated
 
@@ -1862,17 +1898,55 @@ class ModelProviderService:
         return self.parameters.delete(f"{provider}::{model}")
 
     def save_model_params(self, provider, model, params):
-        """Persist custom default parameters for one local provider model."""
-        if provider not in ("llama.cpp", "vllm"):
-            raise ProviderValidationError(
-                "Additional parameters are only available for local providers"
-            )
+        """Persist custom default parameters for one provider model."""
+        self.spec(provider)
         if not isinstance(params, dict):
             raise ProviderValidationError("Parameters must be an object")
         parameter_key = f"{provider}::{model}"
         existing = self.parameters.value(parameter_key)
         full = existing if isinstance(existing, dict) else {}
-        full["params"] = params
+        capability_keys = {"n_ctx", "modalities", "chat_template_caps"}
+        capability_data = {
+            key: params[key] for key in capability_keys if key in params
+        }
+        other = {
+            key: value for key, value in params.items()
+            if key not in capability_keys
+        }
+        if capability_data:
+            if other:
+                full["params"] = other
+        else:
+            full["params"] = params
+        if "n_ctx" in capability_data:
+            value = capability_data["n_ctx"]
+            if value is None:
+                full.pop("n_ctx", None)
+            else:
+                try:
+                    value = int(value)
+                except (TypeError, ValueError):
+                    value = None
+                if value is not None and provider not in ("llama.cpp", "vllm") and value < 1024:
+                    value = 1024
+                if value is None:
+                    full.pop("n_ctx", None)
+                else:
+                    full["n_ctx"] = value
+                    modes = full.get("n_ctx_modes")
+                    modes = dict(modes) if isinstance(modes, dict) else {}
+                    if provider == "llama.cpp":
+                        mode = self.detect_ctx_mode(provider)
+                        if mode:
+                            modes[mode] = value
+                    elif provider != "vllm":
+                        modes["API"] = value
+                    if modes:
+                        full["n_ctx_modes"] = modes
+        if "modalities" in capability_data:
+            full["modalities"] = capability_data["modalities"] or {}
+        if "chat_template_caps" in capability_data:
+            full["chat_template_caps"] = capability_data["chat_template_caps"] or {}
         self.parameters.value(parameter_key, full)
         return full
 

@@ -279,8 +279,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 nameElement.textContent = modelDisplayLabel(model, apiProvider);
                 nameShell.appendChild(nameElement);
 
-                // Show saved modality icons (llama.cpp only, DB data only).
-                if (provider === 'llama.cpp' && model.modalities && typeof model.modalities === 'object') {
+                // Show saved modality icons (DB data only).
+                if (model.modalities && typeof model.modalities === 'object') {
                     MODALITY_ICONS.forEach((icon) => {
                         if (model.modalities[icon.key] === true) {
                             const iconElement = document.createElement('span');
@@ -293,13 +293,30 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                 }
 
+                // Show a tool icon when the model supports tools.
+                const caps = model.chat_template_caps;
+                if (caps && typeof caps === 'object'
+                    && (caps.supports_tools === true
+                        || caps.supports_tool_calls === true)) {
+                    const toolIcon = document.createElement('span');
+                    toolIcon.className = 'model-modality-icon';
+                    toolIcon.textContent = '🔧';
+                    toolIcon.title = 'Tool support';
+                    toolIcon.setAttribute('aria-label', 'Tool support');
+                    nameShell.appendChild(toolIcon);
+                }
+
                 item.appendChild(nameShell);
+
+                const actionsShell = document.createElement('div');
+                actionsShell.className = 'model-item-actions';
+
                 if (singleModel) {
                     item.classList.add('is-single-model');
                     const activeState = document.createElement('span');
                     activeState.className = 'single-model-state';
                     activeState.textContent = 'Active';
-                    item.appendChild(activeState);
+                    actionsShell.appendChild(activeState);
                 } else {
                     const switchLabel = document.createElement('label');
                     switchLabel.className = 'switch';
@@ -319,8 +336,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     const slider = document.createElement('span');
                     slider.className = 'slider';
                     switchLabel.append(toggle, slider);
-                    item.appendChild(switchLabel);
+                    actionsShell.appendChild(switchLabel);
                 }
+
+                const setupButton = document.createElement('button');
+                setupButton.type = 'button';
+                setupButton.className = 'model-setup-button';
+                setupButton.dataset.modelSetup = '';
+                setupButton.setAttribute('aria-label', `Model setup for ${name}`);
+                setupButton.textContent = 'Model setup';
+                setupButton.addEventListener('click', () => {
+                    openModelSettings(provider, name);
+                });
+                actionsShell.appendChild(setupButton);
+
+                item.appendChild(actionsShell);
                 modelListItems.appendChild(item);
             });
 
@@ -546,6 +576,125 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // ---- Model settings modal (n_ctx, modalities, chat_template_caps) ----
+    const modelSettingsModal = document.getElementById('model-settings-modal');
+    const modelSettingsTitle = modelSettingsModal?.querySelector('#model-settings-title');
+    const modelSettingsNctx = document.getElementById('model-settings-n-ctx');
+    const modelSettingsMode = document.getElementById('model-settings-mode');
+    const modelSettingsSave = modelSettingsModal?.querySelector('.modal-save-button');
+    const modelSettingsCancel = modelSettingsModal?.querySelector('.modal-cancel-button');
+    const modelSettingsClose = modelSettingsModal?.querySelector('.close-modal-button');
+    const modalitySwitches = [...(modelSettingsModal?.querySelectorAll('[data-modality]') || [])];
+    const capSwitches = [...(modelSettingsModal?.querySelectorAll('[data-cap]') || [])];
+    let currentModelSettings = null;
+
+    function setModelSettingsOpen(isOpen) {
+        if (!modelSettingsModal) return;
+        modelSettingsModal.hidden = !isOpen;
+        modelSettingsModal.setAttribute('aria-hidden', String(!isOpen));
+        document.body.classList.toggle('modal-open', isOpen);
+    }
+
+    async function openModelSettings(provider, model) {
+        currentModelSettings = {provider, model};
+        if (modelSettingsTitle) {
+            modelSettingsTitle.textContent = `Model settings: ${model}`;
+        }
+        if (modelSettingsMode) {
+            modelSettingsMode.textContent = provider === 'llama.cpp' ? 'current' : 'API';
+        }
+        if (modelSettingsNctx) {
+            modelSettingsNctx.value = '4096';
+        }
+        modalitySwitches.forEach((cb) => { cb.checked = false; });
+        capSwitches.forEach((cb) => { cb.checked = false; });
+        setModelSettingsOpen(true);
+        try {
+            const payload = await api.request(
+                `/setup_models/model_params/status?provider=${encodeURIComponent(provider)}&model=${encodeURIComponent(model)}`
+            );
+            if (modelSettingsNctx) {
+                modelSettingsNctx.value = (payload && payload.n_ctx != null)
+                    ? String(payload.n_ctx)
+                    : '4096';
+            }
+            if (modelSettingsMode && payload && payload.ctx_mode) {
+                modelSettingsMode.textContent = payload.ctx_mode;
+            }
+            const modalities = (payload && payload.modalities) || {};
+            modalitySwitches.forEach((cb) => {
+                cb.checked = modalities[cb.dataset.modality] === true;
+            });
+            const caps = (payload && payload.chat_template_caps) || {};
+            capSwitches.forEach((cb) => {
+                cb.checked = caps[cb.dataset.cap] === true;
+            });
+        } catch (error) {
+            console.error('Could not load model settings:', error);
+        }
+    }
+
+    async function saveModelSettings() {
+        if (!currentModelSettings) return;
+        const modalities = {};
+        modalitySwitches.forEach((cb) => {
+            modalities[cb.dataset.modality] = cb.checked;
+        });
+        const caps = {};
+        capSwitches.forEach((cb) => {
+            caps[cb.dataset.cap] = cb.checked;
+        });
+        const nCtx = modelSettingsNctx ? Number(modelSettingsNctx.value) : 4096;
+        if (modelSettingsSave) {
+            modelSettingsSave.disabled = true;
+        }
+        try {
+            await api.json('/setup_models/model_params/save', {
+                method: 'POST',
+                body: {
+                    provider: currentModelSettings.provider,
+                    model: currentModelSettings.model,
+                    n_ctx: Number.isFinite(nCtx) && nCtx > 0 ? nCtx : 4096,
+                    modalities,
+                    chat_template_caps: caps,
+                },
+            });
+            setModelSettingsOpen(false);
+            currentModelSettings = null;
+        } catch (error) {
+            console.error('Could not save model settings:', error);
+            alert(`Error saving model settings: ${error.message}`);
+        } finally {
+            if (modelSettingsSave) {
+                modelSettingsSave.disabled = false;
+            }
+        }
+    }
+
+    if (modelSettingsCancel) {
+        modelSettingsCancel.addEventListener('click', () => {
+            setModelSettingsOpen(false);
+            currentModelSettings = null;
+        });
+    }
+    if (modelSettingsClose) {
+        modelSettingsClose.addEventListener('click', () => {
+            setModelSettingsOpen(false);
+            currentModelSettings = null;
+        });
+    }
+    if (modelSettingsModal) {
+        modelSettingsModal.addEventListener('click', (event) => {
+            if (event.target === modelSettingsModal) {
+                setModelSettingsOpen(false);
+                currentModelSettings = null;
+            }
+        });
+    }
+    if (modelSettingsSave) {
+        modelSettingsSave.addEventListener('click', saveModelSettings);
+    }
+
     document.addEventListener('keydown', (event) => {
         if (event.key !== 'Escape') {
             return;
@@ -555,6 +704,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 modal.hidden = true;
                 modal.setAttribute('aria-hidden', 'true');
             });
+        if (modelSettingsModal && modelSettingsModal.getAttribute('aria-hidden') === 'false') {
+            modelSettingsModal.hidden = true;
+            modelSettingsModal.setAttribute('aria-hidden', 'true');
+            currentModelSettings = null;
+        }
         document.body.classList.remove('modal-open');
     });
 });

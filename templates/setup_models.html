@@ -246,6 +246,53 @@
   {{ provider_modal(provider) }}
 {% endfor %}
 {{ provider_modal(custom_provider) }}
+
+<div
+  id="model-settings-modal"
+  class="modal model-settings-modal"
+  aria-hidden="true"
+  aria-modal="true"
+  role="dialog"
+  aria-labelledby="model-settings-title"
+>
+  <div class="modal-content model-settings-content">
+    <header class="modal-header">
+      <div class="modal-title-group">
+        <span class="modal-kicker">Model capabilities</span>
+        <h2 id="model-settings-title">Model settings</h2>
+        <p>Set the context size and capability flags used by chat.</p>
+      </div>
+      <div class="modal-header-actions">
+        <button class="close-modal-button" type="button" aria-label="Close dialog"><span aria-hidden="true">×</span></button>
+      </div>
+    </header>
+    <div class="modal-body">
+      <div class="form-group">
+        <label for="model-settings-n-ctx">Context size (n_ctx)</label>
+        <span class="field-description">Tokens available to the model at <span id="model-settings-mode">API</span> mode.</span>
+        <input id="model-settings-n-ctx" type="number" min="1024" step="1" value="4096">
+      </div>
+      <fieldset class="model-settings-group">
+        <legend>Modalities</legend>
+        <label class="model-settings-switch"><input type="checkbox" data-modality="vision"> <span>Vision input</span></label>
+        <label class="model-settings-switch"><input type="checkbox" data-modality="video"> <span>Video input</span></label>
+        <label class="model-settings-switch"><input type="checkbox" data-modality="audio"> <span>Audio input</span></label>
+      </fieldset>
+      <fieldset class="model-settings-group">
+        <legend>Chat template capabilities</legend>
+        <label class="model-settings-switch"><input type="checkbox" data-cap="supports_tool_calls"> <span>Supports tool calls</span></label>
+        <label class="model-settings-switch"><input type="checkbox" data-cap="supports_tools"> <span>Supports tools</span></label>
+      </fieldset>
+    </div>
+    <footer class="modal-footer">
+      <span class="modal-save-note"><i></i> Stored per model in the parameter database</span>
+      <div>
+        <button class="modal-cancel-button" type="button">Cancel</button>
+        <button class="modal-save-button" type="button"><span aria-hidden="true">✓</span> Save</button>
+      </div>
+    </footer>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
