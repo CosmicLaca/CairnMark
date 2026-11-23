@@ -1563,3 +1563,10 @@ body.modal-open {
     gap: 8px;
     padding: 4px 0;
 }
+
+.model-settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 0;
+}

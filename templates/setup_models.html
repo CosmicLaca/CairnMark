@@ -267,6 +267,24 @@
       </div>
     </header>
     <div class="modal-body">
+      <div class="form-group" id="model-settings-tier-group">
+        <label for="model-settings-tier">API tier</label>
+        <span class="field-description">Tier associated with the API key</span>
+        <div class="select-shell">
+          <select id="model-settings-tier">
+          <option value="Free">Free</option>
+          <option value="General">General</option>
+          <option value="Paid">Paid</option>
+          <option value="Plus">Plus</option>
+          <option value="Balanced">Balanced</option>
+          <option value="Pro">Pro</option>
+          <option value="Developer">Developer</option>
+          <option value="Ultra">Ultra</option>
+          <option value="High-end">High-end</option>
+          <option value="Special">Special</option>
+          <option value="Enterprise">Enterprise</option>
+        </select>
+      </div>
       <div class="form-group">
         <label for="model-settings-n-ctx">Context size (n_ctx)</label>
         <span class="field-description">Tokens available to the model at <span id="model-settings-mode">API</span> mode.</span>
@@ -274,14 +292,14 @@
       </div>
       <fieldset class="model-settings-group">
         <legend>Modalities</legend>
-        <label class="model-settings-switch"><input type="checkbox" data-modality="vision"> <span>Vision input</span></label>
-        <label class="model-settings-switch"><input type="checkbox" data-modality="video"> <span>Video input</span></label>
-        <label class="model-settings-switch"><input type="checkbox" data-modality="audio"> <span>Audio input</span></label>
+        <div class="model-settings-row"><span>Vision input</span><label class="switch"><input type="checkbox" data-modality="vision"><span class="slider"></span></label></div>
+        <div class="model-settings-row"><span>Video input</span><label class="switch"><input type="checkbox" data-modality="video"><span class="slider"></span></label></div>
+        <div class="model-settings-row"><span>Audio input</span><label class="switch"><input type="checkbox" data-modality="audio"><span class="slider"></span></label></div>
       </fieldset>
       <fieldset class="model-settings-group">
         <legend>Chat template capabilities</legend>
-        <label class="model-settings-switch"><input type="checkbox" data-cap="supports_tool_calls"> <span>Supports tool calls</span></label>
-        <label class="model-settings-switch"><input type="checkbox" data-cap="supports_tools"> <span>Supports tools</span></label>
+        <div class="model-settings-row"><span>Supports tool calls</span><label class="switch"><input type="checkbox" data-cap="supports_tool_calls"><span class="slider"></span></label></div>
+        <div class="model-settings-row"><span>Supports tools</span><label class="switch"><input type="checkbox" data-cap="supports_tools"><span class="slider"></span></label></div>
       </fieldset>
     </div>
     <footer class="modal-footer">

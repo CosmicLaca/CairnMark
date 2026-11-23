@@ -581,6 +581,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const modelSettingsTitle = modelSettingsModal?.querySelector('#model-settings-title');
     const modelSettingsNctx = document.getElementById('model-settings-n-ctx');
     const modelSettingsMode = document.getElementById('model-settings-mode');
+    const modelSettingsTier = document.getElementById('model-settings-tier');
+    const modelSettingsTierGroup = document.getElementById('model-settings-tier-group');
     const modelSettingsSave = modelSettingsModal?.querySelector('.modal-save-button');
     const modelSettingsCancel = modelSettingsModal?.querySelector('.modal-cancel-button');
     const modelSettingsClose = modelSettingsModal?.querySelector('.close-modal-button');
@@ -603,6 +605,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (modelSettingsMode) {
             modelSettingsMode.textContent = provider === 'llama.cpp' ? 'current' : 'API';
         }
+        if (modelSettingsTierGroup) {
+            modelSettingsTierGroup.hidden = (provider === 'llama.cpp');
+        }
+        if (modelSettingsTier) {
+            modelSettingsTier.value = 'Free';
+        }
         if (modelSettingsNctx) {
             modelSettingsNctx.value = '4096';
         }
@@ -620,6 +628,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (modelSettingsMode && payload && payload.ctx_mode) {
                 modelSettingsMode.textContent = payload.ctx_mode;
+            }
+            if (modelSettingsTier && payload && payload.tier) {
+                modelSettingsTier.value = payload.tier;
             }
             const modalities = (payload && payload.modalities) || {};
             modalitySwitches.forEach((cb) => {
@@ -657,6 +668,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     n_ctx: Number.isFinite(nCtx) && nCtx > 0 ? nCtx : 4096,
                     modalities,
                     chat_template_caps: caps,
+                    tier: modelSettingsTier ? modelSettingsTier.value : 'Free',
                 },
             });
             setModelSettingsOpen(false);

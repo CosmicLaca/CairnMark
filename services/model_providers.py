@@ -1602,6 +1602,10 @@ class ModelProviderService:
         if provider not in ("llama.cpp", "vllm"):
             self.spec(provider)
             saved = self.parameters.value(parameter_key)
+            tier = "Free"
+            if isinstance(saved, dict) and saved.get("tier"):
+                tier = str(saved.get("tier"))
+            ctx_mode = f"API::{tier}"
             return {
                 "params": {},
                 "modalities": ModelProviderService._display_field(
@@ -1610,8 +1614,9 @@ class ModelProviderService:
                 "chat_template_caps": ModelProviderService._display_field(
                     saved, "chat_template_caps"
                 ),
-                "n_ctx": ModelProviderService._display_n_ctx(saved, "API"),
-                "ctx_mode": "API",
+                "n_ctx": ModelProviderService._display_n_ctx(saved, ctx_mode),
+                "ctx_mode": ctx_mode,
+                "tier": tier,
                 "source": "database",
             }
         ctx_mode = (
@@ -1753,10 +1758,15 @@ class ModelProviderService:
         saved = self.parameters.value(f"{provider}::{model}")
         if provider == "llama.cpp":
             ctx_mode = self.detect_ctx_mode(provider)
+            tier = None
         elif provider == "vllm":
             ctx_mode = None
+            tier = None
         else:
-            ctx_mode = "API"
+            tier = "Free"
+            if isinstance(saved, dict) and saved.get("tier"):
+                tier = str(saved.get("tier"))
+            ctx_mode = f"API::{tier}"
         params_saved = self._has_saved_params(saved)
         n_ctx = self._display_n_ctx(saved, ctx_mode)
         has_capabilities = isinstance(saved, dict) and (
@@ -1777,6 +1787,7 @@ class ModelProviderService:
             "chat_template_caps": self._display_field(saved, "chat_template_caps"),
             "ctx_mode": ctx_mode,
             "n_ctx": n_ctx,
+            "tier": tier,
         }
 
     @staticmethod
@@ -1918,7 +1929,7 @@ class ModelProviderService:
         parameter_key = f"{provider}::{model}"
         existing = self.parameters.value(parameter_key)
         full = existing if isinstance(existing, dict) else {}
-        capability_keys = {"n_ctx", "modalities", "chat_template_caps"}
+        capability_keys = {"n_ctx", "modalities", "chat_template_caps", "tier"}
         capability_data = {
             key: params[key] for key in capability_keys if key in params
         }
@@ -1953,13 +1964,20 @@ class ModelProviderService:
                         if mode:
                             modes[mode] = value
                     elif provider != "vllm":
-                        modes["API"] = value
+                        tier = full.get("tier")
+                        if not tier and "tier" in capability_data:
+                            tier = capability_data.get("tier")
+                        tier = str(tier or "Free")
+                        full["tier"] = tier
+                        modes[f"API::{tier}"] = value
                     if modes:
                         full["n_ctx_modes"] = modes
         if "modalities" in capability_data:
             full["modalities"] = capability_data["modalities"] or {}
         if "chat_template_caps" in capability_data:
             full["chat_template_caps"] = capability_data["chat_template_caps"] or {}
+        if "tier" in capability_data:
+            full["tier"] = capability_data["tier"] or "Free"
         self.parameters.value(parameter_key, full)
         return full
 
