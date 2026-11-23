@@ -13,6 +13,7 @@ class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key")
     DATABASE_PATH = PROJECT_ROOT / "instance" / "cairnmark.db"
     CHAT_DATABASE_PATH = PROJECT_ROOT / "instance" / "chathistory.db"
+    MEDIA_DATABASE_PATH = PROJECT_ROOT / "instance" / "media.db"
     PARAMETER_DATABASE_PATH = PROJECT_ROOT / "instance" / "parameters.db"
     TOOLS_DATABASE_PATH = PROJECT_ROOT / "instance" / "tools.db"
     BENCHMARK_DIRECTORY = PROJECT_ROOT / "Benchmark-prompts"

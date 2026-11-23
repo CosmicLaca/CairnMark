@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% set local_attachments = chat_local_attachments|default([], true) %}
 
 {% block styles %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/workspace-components.css') }}">
@@ -13,6 +14,21 @@
     <span class="chat-info-tooltip" role="tooltip">{{ help }}</span>
   </button>
 </div>
+{%- endmacro %}
+
+{% macro chat_file_item(attachment) -%}
+  {% set available = attachment.exists|default(true) %}
+  {% if available %}
+  <a class="chat-file-item{% if attachment.category == 'image' %} chat-file-item--image{% endif %}" href="{% if attachment.kind == 'external' %}{{ attachment.filename }}{% elif attachment.kind == 'generated' %}{{ url_for('chat_generated_document', filename=attachment.filename) }}{% else %}{{ url_for('chat_preview', filename=attachment.filename, download=1) }}{% endif %}"{% if attachment.kind == 'external' %} target="_blank" rel="noopener noreferrer"{% else %} download="{{ attachment.name }}"{% endif %}{% if attachment.category == 'image' %} data-chat-file-image-src="{% if attachment.kind == 'generated' %}{{ url_for('chat_generated_document', filename=attachment.filename, preview=1) }}{% else %}{{ url_for('chat_preview', filename=attachment.filename) }}{% endif %}"{% endif %}>
+    <span class="chat-file-name">{{ attachment.name }}</span>
+    <span class="chat-file-download" aria-hidden="true">{% if attachment.kind == 'external' %}↗{% else %}⇩{% endif %}</span>
+  </a>
+  {% else %}
+  <div class="chat-file-item chat-file-item--missing{% if attachment.category == 'image' %} chat-file-item--image{% endif %}">
+    <span class="chat-file-name">{{ attachment.name }}</span>
+    <span class="chat-file-missing">Missing</span>
+  </div>
+  {% endif %}
 {%- endmacro %}
 
 {% block content %}
@@ -62,6 +78,50 @@
         </button>
       </div>
     </div>
+
+    <details class="chat-file-accordion" data-chat-file-accordion{% if not local_attachments %} hidden{% endif %}>
+      <summary>
+        <span>Chat attachments</span>
+        <span class="chat-file-count" data-chat-file-count>{{ local_attachments|length }}</span>
+      </summary>
+      <div class="chat-file-list" data-chat-file-list aria-label="Files attached to this chat">
+        {% set image_attachments = local_attachments|selectattr('category', 'equalto', 'image')|list %}
+        {% set audio_attachments = local_attachments|selectattr('category', 'equalto', 'audio')|list %}
+        {% set video_attachments = local_attachments|selectattr('category', 'equalto', 'video')|list %}
+        {% set document_attachments = local_attachments|selectattr('category', 'equalto', 'document')|list %}
+        {% set external_attachments = local_attachments|selectattr('category', 'equalto', 'external')|list %}
+        {% if image_attachments %}
+        <div class="chat-file-section-heading">Images</div>
+        {% for attachment in image_attachments %}
+          {{ chat_file_item(attachment) }}
+        {% endfor %}
+        {% endif %}
+        {% if audio_attachments %}
+        <div class="chat-file-section-heading">Audios</div>
+        {% for attachment in audio_attachments %}
+          {{ chat_file_item(attachment) }}
+        {% endfor %}
+        {% endif %}
+        {% if video_attachments %}
+        <div class="chat-file-section-heading">Videos</div>
+        {% for attachment in video_attachments %}
+          {{ chat_file_item(attachment) }}
+        {% endfor %}
+        {% endif %}
+        {% if document_attachments %}
+        <div class="chat-file-section-heading">Documents</div>
+        {% for attachment in document_attachments %}
+          {{ chat_file_item(attachment) }}
+        {% endfor %}
+        {% endif %}
+        {% if external_attachments %}
+        <div class="chat-file-section-heading">External links</div>
+        {% for attachment in external_attachments %}
+          {{ chat_file_item(attachment) }}
+        {% endfor %}
+        {% endif %}
+      </div>
+    </details>
 
     <div class="chat-history" data-chat-history>
       <div class="chat-empty-state" data-chat-empty{% if chat_messages %} hidden{% endif %}>
@@ -872,6 +932,7 @@
   <script>
     window.CairnmarkMineruSettings = {{ mineru_settings|tojson }};
     window.CairnmarkChatCompactSettings = {{ chat_compact_settings|tojson }};
+    window.CairnmarkChatLocalAttachments = {{ local_attachments|tojson }};
     window.CairnmarkParameterHelpUrl = {{ url_for('static', filename='parameters.json')|tojson }};
     window.CairnmarkMcpToolHelpUrl = {{ url_for('static', filename='mcp-tools.json')|tojson }};
     window.CairnmarkMcpConfigUrl = {{ url_for('chat_mcp_configuration')|tojson }};

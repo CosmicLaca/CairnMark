@@ -35,6 +35,7 @@ from models.chat_storage import CHAT_HISTORY
 from models.mcp_settings import MCP_SETTINGS
 from services.chat_attachments import AttachmentProcessingError
 from services.chat_exports import ChatExportRepository
+from services.chat_media import CHAT_MEDIA
 from services.chat_previews import ChatPreviewStore
 from services.chat_requests import CHAT_PARAMETER_FIELDS, ChatRequestWorkflow
 from services.chat_tools import ChatToolService
@@ -61,6 +62,7 @@ class ChatController:
         external_image_service=None,
         webpage_preview_service=None,
         history_repository=None,
+        media_service=None,
     ):
         self.service = service or ModelProviderService()
         self.history = history_repository or CHAT_HISTORY
@@ -74,6 +76,7 @@ class ChatController:
         self.tools = tool_service
         self.external_images = external_image_service or ExternalImageService()
         self.webpages = webpage_preview_service or WebpagePreviewService(self.previews)
+        self.media = media_service or CHAT_MEDIA
 
     @staticmethod
     def _add_tools_to_request_body(request_body, bindings, transcript):
@@ -114,8 +117,8 @@ class ChatController:
         )
 
     @staticmethod
-    def _generated_documents(transcript):
-        """Return successful LibreOffice saves located in the output folder."""
+    def _generated_document_candidates(transcript):
+        """Return safe LibreOffice save targets, including missing files."""
         output_directory = Path(
             current_app.config["GENERATED_DOCUMENT_DIRECTORY"]
         ).resolve()
@@ -133,49 +136,13 @@ class ChatController:
                 relative_path = saved_path.relative_to(output_directory)
             except (AttributeError, json.JSONDecodeError, OSError, ValueError):
                 continue
-            if not saved_path.is_file():
-                continue
             name = relative_path.as_posix()
             if name not in {item["name"] for item in documents}:
-                documents.append({"name": name})
+                documents.append({
+                    "name": name,
+                    "exists": saved_path.is_file(),
+                })
         return documents
-
-    def _messages_with_generated_documents(self, messages):
-        """Attach verified generated-document downloads to chat messages."""
-        enriched = []
-        for message in messages:
-            item = dict(message)
-            transcript = []
-            try:
-                request_body = json.loads(item.get("request_body") or "{}")
-                transcript = request_body.get("messages") or []
-            except (AttributeError, json.JSONDecodeError):
-                pass
-            documents = self._generated_documents(transcript)
-            if not documents:
-                match = re.fullmatch(
-                    r"\s*<\|tool_call>call:[A-Za-z0-9_.:-]+"
-                    r"\{.*(?:file_name|file_path|filename):<\|\"\|>"
-                    r"([^<>]+)<\|\"\|>.*\}<tool_call\|>\s*",
-                    str(item.get("content") or ""),
-                    flags=re.DOTALL,
-                )
-                if match:
-                    filename = match.group(1).strip()
-                    safe_name = Path(filename)
-                    output_directory = Path(
-                        current_app.config["GENERATED_DOCUMENT_DIRECTORY"]
-                    )
-                    if (
-                        safe_name.name == filename
-                        and (output_directory / safe_name).is_file()
-                    ):
-                        documents = [{"name": filename}]
-            item.pop("generated_documents", None)
-            if documents:
-                item["generated_documents"] = documents
-            enriched.append(item)
-        return enriched
 
     def _record_failed_response(
         self,
@@ -219,7 +186,8 @@ class ChatController:
 
     def context(self):
         settings = CHAT_SETTINGS.form()
-        messages = self._messages_with_generated_documents(self.history.messages())
+        self.media.ensure_backfilled(self.history)
+        messages = self.history.messages()
         attachment_settings = CHAT_SETTINGS.group("attachments")
         return {
             "chat_settings": settings,
@@ -236,6 +204,7 @@ class ChatController:
             "chat_compact_settings": CHAT_SETTINGS.group("compact"),
             "mineru_settings": CHAT_SETTINGS.group("mineru"),
             "chat_messages": messages,
+            "chat_local_attachments": self.media.list(),
             "active_models": self.service.active_models(),
             "saved_chats": self.history.saved("list", "chat"),
             "saved_system_prompts": self.history.saved("list", "system_prompt"),
@@ -245,6 +214,7 @@ class ChatController:
         return self.requests.parse(request.get_json(silent=True) or {})
 
     def send(self):
+        self.media.ensure_backfilled(self.history)
         try:
             chat_request = self._parse_request()
         except ValueError as error:
@@ -286,7 +256,7 @@ class ChatController:
         document_preview_media = [
             {
                 "type": "document",
-                "filename": "",
+                "filename": str(document.get("local_filename") or ""),
                 "original_name": str(document.get("filename") or "Document"),
             }
             for document in (chat_request.documents or [])
@@ -299,6 +269,9 @@ class ChatController:
             "user",
             chat_request.user_message,
             **preview_data,
+        )
+        self.media.add_active(
+            self.media.records_from_messages([preview_data])
         )
 
         stream_requested = request.args.get("stream") == "1" or "text/event-stream" in (
@@ -356,6 +329,7 @@ class ChatController:
                 chat_request,
                 request_body,
             )
+            payload["local_attachments"] = self.media.list()
             payload["messages"] = self.history.messages()
             return jsonify(payload), 502
 
@@ -445,6 +419,7 @@ class ChatController:
                     chat_request,
                     request_body,
                 )
+                payload["local_attachments"] = self.media.list()
                 payload["messages"] = self.history.messages()
                 return jsonify(payload), 422
             except Exception as error:  # noqa: BLE001
@@ -462,9 +437,16 @@ class ChatController:
                     chat_request,
                     request_body,
                 )
+                payload["local_attachments"] = self.media.list()
                 payload["messages"] = self.history.messages()
                 return jsonify(payload), 502
             elapsed = round(time.monotonic() - started, 2)
+            document_candidates = self._generated_document_candidates(transcript)
+            generated_documents = [
+                {"name": document["name"]}
+                for document in document_candidates
+                if document["exists"]
+            ]
             assistant_id = self.history.add(
                 "assistant",
                 response_text,
@@ -477,6 +459,7 @@ class ChatController:
                 saved_system_prompt_name=chat_request.saved_prompt_name,
                 request_body=json.dumps(request_body),
                 used_tools=used_tools,
+                generated_documents=generated_documents,
             )
             payload = self.requests.result_payload(
                 response_text,
@@ -488,7 +471,12 @@ class ChatController:
                 request_body,
             )
             payload["used_tools"] = used_tools
-            payload["generated_documents"] = self._generated_documents(transcript)
+            payload["generated_documents"] = generated_documents
+            self.media.add_active(
+                self.media.generated_records(transcript)
+                + self.media.external_records(response_text)
+            )
+            payload["local_attachments"] = self.media.list()
             payload["message_id"] = assistant_id
             payload["messages"] = self.history.messages()
             return jsonify(payload)
@@ -499,6 +487,7 @@ class ChatController:
             response_text = ""
             request_body = {"model": model, "messages": messages}
             used_tools = []
+            transcript = []
             try:
                 if needs_conversion:
                     status = {
@@ -575,6 +564,14 @@ class ChatController:
                             usage = event.get("usage", usage) or usage
                             yield f"data: {json.dumps(event)}\n\n"
                 elapsed = round(time.monotonic() - started, 2)
+                document_candidates = self._generated_document_candidates(
+                    transcript
+                )
+                generated_documents = [
+                    {"name": document["name"]}
+                    for document in document_candidates
+                    if document["exists"]
+                ]
                 assistant_id = self.history.add(
                     "assistant",
                     response_text,
@@ -587,6 +584,7 @@ class ChatController:
                     saved_system_prompt_name=chat_request.saved_prompt_name,
                     request_body=json.dumps(request_body),
                     used_tools=used_tools,
+                    generated_documents=generated_documents,
                 )
                 payload = self.requests.result_payload(
                     response_text,
@@ -599,9 +597,12 @@ class ChatController:
                     event_type="result",
                 )
                 payload["used_tools"] = used_tools
-                payload["generated_documents"] = self._generated_documents(
-                    transcript
+                payload["generated_documents"] = generated_documents
+                self.media.add_active(
+                    self.media.generated_records(transcript)
+                    + self.media.external_records(response_text)
                 )
+                payload["local_attachments"] = self.media.list()
                 payload["message_id"] = assistant_id
                 yield f"data: {json.dumps(payload)}\n\n"
             except Exception as error:  # noqa: BLE001
@@ -617,6 +618,7 @@ class ChatController:
                     chat_request,
                     request_body,
                 )
+                payload["local_attachments"] = self.media.list()
                 yield f"data: {json.dumps(payload)}\n\n"
 
         return Response(
@@ -799,7 +801,13 @@ class ChatController:
         file_path = directory / safe_name
         if not file_path.is_file():
             return ("", 404)
-        return send_from_directory(directory, safe_name)
+        as_attachment = request.args.get("download") == "1"
+        return send_from_directory(
+            directory,
+            safe_name,
+            as_attachment=as_attachment,
+            download_name=safe_name if as_attachment else None,
+        )
 
     def download_generated_document(self, filename):
         """Download one document created by an application tool."""
@@ -810,11 +818,12 @@ class ChatController:
         file_path = directory / safe_path
         if not file_path.is_file():
             return ("", 404)
+        as_attachment = request.args.get("preview") != "1"
         return send_from_directory(
             directory,
             safe_path.as_posix(),
-            as_attachment=True,
-            download_name=safe_path.name,
+            as_attachment=as_attachment,
+            download_name=safe_path.name if as_attachment else None,
         )
 
     def download_external_image(self):
@@ -849,6 +858,7 @@ class ChatController:
 
     def capture_webpage_previews(self):
         """Capture ordinary webpage links and persist their UUID mappings."""
+        self.media.ensure_backfilled(self.history)
         data = request.get_json(silent=True) or {}
         try:
             message_id = int(data.get("message_id"))
@@ -870,7 +880,20 @@ class ChatController:
             timeout_seconds=settings["webpage_preview_timeout"],
         )
         self.history.update_webpage_previews(message_id, previews)
-        return jsonify({"previews": previews})
+        records = []
+        for preview in previews:
+            record = self.media.preview_record(
+                preview.get("filename"),
+                media_type="image",
+            )
+            if record:
+                records.append(record)
+        records.extend(self.media.external_records("\n".join(urls)))
+        self.media.add_active(records)
+        return jsonify({
+            "previews": previews,
+            "attachments": self.media.list(),
+        })
 
     def save_settings(self):
         """Persist only the model, system prompt, and generation controls.
@@ -989,14 +1012,9 @@ class ChatController:
     )
 
     def clear(self):
-        current_messages = self.history.messages()
-        filenames = self.previews.filenames(current_messages)
-        saved_messages = [
-            self.history.saved("get", "chat", name) or []
-            for name in self.history.saved("list", "chat")
-        ]
+        self.media.ensure_backfilled(self.history)
         self.history.messages([])
-        self.previews.delete_unreferenced(filenames, *saved_messages)
+        self.media.delete_scope("active")
         return jsonify({"message": "Chat cleared."})
 
     def export_chat(self):
@@ -1030,8 +1048,8 @@ class ChatController:
         except ValueError as error:
             return jsonify({"error": str(error)}), 400
 
-        current_messages = self.history.messages()
-        replaced_filenames = self.previews.filenames(current_messages)
+        self.media.ensure_backfilled(self.history)
+        messages, _changed = self.media.enrich_generated_documents(messages)
         try:
             self.history.messages(messages)
         except Exception:  # noqa: BLE001
@@ -1039,18 +1057,11 @@ class ChatController:
             return jsonify({"error": "Chat import failed."}), 500
 
         restored = self.history.messages()
-        saved_messages = [
-            self.history.saved("get", "chat", name) or []
-            for name in self.history.saved("list", "chat")
-        ]
-        self.previews.delete_unreferenced(
-            replaced_filenames,
-            restored,
-            *saved_messages,
-        )
+        self.media.replace_active_from_messages(restored)
         return jsonify({
             "message": "Chat imported.",
-            "messages": self._messages_with_generated_documents(restored),
+            "messages": restored,
+            "attachments": self.media.list(),
         })
 
     def _mineru_check(
@@ -1690,6 +1701,7 @@ class ChatController:
 
     def process_document(self):
         """Process a binary document through the configured MinerU service."""
+        self.media.ensure_backfilled(self.history)
         data = request.get_json(silent=True) or {}
         filename = str(data.get("filename") or data.get("name") or "document").strip()
         raw_data = data.get("data")
@@ -1701,6 +1713,17 @@ class ChatController:
             return jsonify({"error": "Document data must be valid base64."}), 400
         if not file_bytes:
             return jsonify({"error": "Document data is empty."}), 400
+
+        local_filename = self.previews.save_original(raw_data.strip(), filename)
+        if not local_filename:
+            return jsonify({"error": "Document could not be saved locally."}), 500
+        record = self.media.preview_record(
+            local_filename,
+            filename,
+            "document",
+        )
+        if record:
+            self.media.add_active([record])
 
         settings = CHAT_SETTINGS.group("mineru")
         endpoint = str(settings.get("endpoint") or "").strip().rstrip("/")
@@ -1816,28 +1839,22 @@ class ChatController:
 
         if not extracted:
             return jsonify({"error": "MinerU did not return text content."}), 502
-        return jsonify({"content": extracted})
+        return jsonify({
+            "content": extracted,
+            "local_filename": local_filename,
+            "attachments": self.media.list(),
+        })
 
     def abort(self):
-        messages = self.history.messages()
-        filenames = []
-        if (
-            messages
-            and isinstance(messages[-1], dict)
-            and messages[-1].get("role") == "user"
-        ):
-            filenames = self.previews.filenames([messages[-1]])
-        referenced = [messages[:-1]] + [
-            self.history.saved("get", "chat", name) or []
-            for name in self.history.saved("list", "chat")
-        ]
+        self.media.ensure_backfilled(self.history)
         deleted = self.history.delete_last()
         if deleted:
-            self.previews.delete_unreferenced(filenames, *referenced)
+            self.media.replace_active_from_messages(self.history.messages())
         return jsonify({"message": "Request aborted.", "deleted": deleted})
 
     def saved_chat(self, action):
         """List, save, load, replace, or delete a named chat."""
+        self.media.ensure_backfilled(self.history)
         if action == "list":
             return jsonify({"names": self.history.saved("list", "chat")})
         data = request.get_json(silent=True) or {}
@@ -1846,51 +1863,37 @@ class ChatController:
             return jsonify({"error": "Chat name is required."}), 400
         if action == "save":
             self.history.saved("save", "chat", name, self.history.messages())
+            self.media.copy_active_to_saved(name)
             return jsonify({"message": "Chat saved.", "name": name})
         if action == "load":
             if not self.history.load(name):
                 return jsonify({"error": "Saved chat not found."}), 404
-            messages = self._messages_with_generated_documents(
-                self.history.messages()
-            )
+            self.media.copy_saved_to_active(name)
+            messages = self.history.messages()
             return jsonify(
                 {
                     "message": "Chat loaded.",
                     "name": name,
                     "messages": messages,
+                    "attachments": self.media.list(),
                 }
             )
         if action == "replace":
-            saved = self.history.saved("get", "chat", name)
-            if saved is None:
+            if self.history.saved("get", "chat", name) is None:
                 return jsonify({"error": "Saved chat not found."}), 404
             current_messages = self.history.messages()
-            replaced_filenames = self.previews.filenames(saved)
             self.history.saved("save", "chat", name, current_messages)
-            referenced = [current_messages] + [
-                self.history.saved("get", "chat", other) or []
-                for other in self.history.saved("list", "chat")
-                if other != name
-            ]
-            self.previews.delete_unreferenced(replaced_filenames, *referenced)
+            self.media.copy_active_to_saved(name)
             return jsonify({"message": "Chat replaced.", "name": name})
 
         saved = self.history.saved("get", "chat", name)
         if saved is None:
             return jsonify({"error": "Saved chat not found."}), 404
-        current_messages = self.history.messages()
-        filenames = self.previews.filenames(saved) + self.previews.filenames(
-            current_messages
-        )
-        referenced = [
-            self.history.saved("get", "chat", other) or []
-            for other in self.history.saved("list", "chat")
-            if other != name
-        ]
         if not self.history.saved("delete", "chat", name):
             return jsonify({"error": "Saved chat not found."}), 404
         self.history.messages([])
-        self.previews.delete_unreferenced(filenames, *referenced)
+        self.media.delete_scope("saved", name)
+        self.media.delete_scope("active")
         return jsonify({"message": "Chat deleted.", "name": name})
 
     def saved_system_prompt(self, action):

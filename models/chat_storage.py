@@ -59,6 +59,7 @@ MESSAGE_COLUMNS = (
     "used_tools",
     "webpage_previews",
     "webpage_preview_checked",
+    "generated_documents",
     "created_at",
 )
 MESSAGE_DEFAULTS = {
@@ -80,6 +81,7 @@ MESSAGE_DEFAULTS = {
     "used_tools": [],
     "webpage_previews": [],
     "webpage_preview_checked": False,
+    "generated_documents": [],
 }
 LATER_MESSAGE_COLUMNS = {
     "model_name": "TEXT NOT NULL DEFAULT ''",
@@ -98,6 +100,7 @@ LATER_MESSAGE_COLUMNS = {
     "used_tools": "TEXT NOT NULL DEFAULT ''",
     "webpage_previews": "TEXT NOT NULL DEFAULT ''",
     "webpage_preview_checked": "INTEGER NOT NULL DEFAULT 0",
+    "generated_documents": "TEXT NOT NULL DEFAULT ''",
 }
 SAVED_RECORDS = {
     "chat": ("saved_chats", "messages", True),
@@ -207,6 +210,9 @@ class ChatRepository:
             ]
             message["webpage_previews"] = _parse_list(
                 message["webpage_previews"]
+            )
+            message["generated_documents"] = _parse_list(
+                message["generated_documents"]
             )
             message["has_audio"] = bool(message["has_audio"])
             message["compacted"] = bool(message["compacted"])
@@ -324,6 +330,9 @@ class ChatRepository:
         values["preview_media"] = _stored_list(values["preview_media"])
         values["used_tools"] = _stored_list(values["used_tools"])
         values["webpage_previews"] = _stored_list(values["webpage_previews"])
+        values["generated_documents"] = _stored_list(
+            values["generated_documents"]
+        )
         values["has_audio"] = int(bool(values["has_audio"]))
         values["compacted"] = int(bool(values["compacted"]))
         values["is_error"] = int(bool(values["is_error"]))

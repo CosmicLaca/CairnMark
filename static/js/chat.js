@@ -38,6 +38,9 @@
     const savedSelect = document.querySelector("[data-chat-saved]");
     const replaceBtn = document.querySelector("[data-chat-replace]");
     const deleteBtn = document.querySelector("[data-chat-delete]");
+    const chatFileAccordion = document.querySelector("[data-chat-file-accordion]");
+    const chatFileList = document.querySelector("[data-chat-file-list]");
+    const chatFileCount = document.querySelector("[data-chat-file-count]");
     const saveOpenBtn = document.querySelector("[data-chat-save-open]");
     const saveModal = document.querySelector("[data-save-chat-modal]");
     const saveNameInput = document.querySelector("[data-save-chat-name]");
@@ -171,6 +174,205 @@
     ) || 75;
     let reverseImageSource = "";
     let reverseImageIsExternal = false;
+    const chatLocalFiles = new Map();
+    let chatFileImageHover = null;
+
+    const categoryForFilename = (filename) => {
+        const name = String(filename || "");
+        if (/\.(?:avif|bmp|gif|jpe?g|png|svg|tiff?|webp)$/i.test(name)) {
+            return "image";
+        }
+        if (/\.(?:aac|flac|m4a|mp3|ogg|opus|wav)$/i.test(name)) {
+            return "audio";
+        }
+        if (/\.(?:avi|m4v|mkv|mov|mp4|webm)$/i.test(name)) {
+            return "video";
+        }
+        return "document";
+    };
+
+    const localFileKey = (item) => (
+        `${String(item?.kind || "preview")}::${String(item?.filename || "")}`
+    );
+
+    const localFileHref = (item) => {
+        if (item.kind === "external") return item.filename;
+        const encoded = String(item.filename || "")
+            .split("/")
+            .map(encodeURIComponent)
+            .join("/");
+        if (item.kind === "generated") {
+            return `/chat/generated_document/${encoded}`;
+        }
+        return `/chat/preview/${encoded}?download=1`;
+    };
+
+    const localFilePreviewHref = (item) => {
+        const encoded = String(item.filename || "")
+            .split("/")
+            .map(encodeURIComponent)
+            .join("/");
+        if (item.kind === "generated") {
+            return `/chat/generated_document/${encoded}?preview=1`;
+        }
+        return `/chat/preview/${encoded}`;
+    };
+
+    const hideChatFileImageHover = () => {
+        if (chatFileImageHover) chatFileImageHover.hidden = true;
+    };
+
+    const showChatFileImageHover = (item, anchor) => {
+        if (!chatFileImageHover) {
+            chatFileImageHover = document.createElement("div");
+            chatFileImageHover.className = "chat-file-image-hover";
+            const image = document.createElement("img");
+            image.alt = "Attachment preview";
+            chatFileImageHover.appendChild(image);
+            document.body.appendChild(chatFileImageHover);
+        }
+        const image = chatFileImageHover.querySelector("img");
+        image.src = localFilePreviewHref(item);
+        chatFileImageHover.hidden = false;
+        const position = () => {
+            const anchorRect = anchor.getBoundingClientRect();
+            const previewRect = chatFileImageHover.getBoundingClientRect();
+            const margin = 12;
+            const fitsRight = anchorRect.right + margin + previewRect.width
+                <= window.innerWidth;
+            const left = fitsRight
+                ? anchorRect.right + margin
+                : Math.max(margin, anchorRect.left - previewRect.width - margin);
+            const top = Math.max(
+                margin,
+                Math.min(anchorRect.top, window.innerHeight - previewRect.height - margin)
+            );
+            chatFileImageHover.style.left = `${Math.round(left)}px`;
+            chatFileImageHover.style.top = `${Math.round(top)}px`;
+        };
+        image.onload = position;
+        window.requestAnimationFrame(position);
+    };
+
+    const appendChatFileSection = (label, items) => {
+        if (items.length === 0) return;
+        const heading = document.createElement("div");
+        heading.className = "chat-file-section-heading";
+        heading.textContent = label;
+        chatFileList.appendChild(heading);
+        items.forEach((item) => {
+            const row = document.createElement(item.exists ? "a" : "div");
+            row.className = "chat-file-item";
+            if (item.category === "image") {
+                row.classList.add("chat-file-item--image");
+            }
+            if (item.exists) {
+                row.href = localFileHref(item);
+                if (item.kind === "external") {
+                    row.target = "_blank";
+                    row.rel = "noopener noreferrer";
+                } else {
+                    row.download = item.name
+                        || String(item.filename).split("/").pop();
+                }
+            } else {
+                row.classList.add("chat-file-item--missing");
+            }
+            const name = document.createElement("span");
+            name.className = "chat-file-name";
+            name.textContent = item.name || item.filename;
+            const status = document.createElement("span");
+            if (item.exists) {
+                status.className = "chat-file-download";
+                status.setAttribute("aria-hidden", "true");
+                status.textContent = item.kind === "external" ? "↗" : "⇩";
+            } else {
+                status.className = "chat-file-missing";
+                status.textContent = "Missing";
+            }
+            row.append(name, status);
+            if (item.exists && item.category === "image") {
+                row.addEventListener("mouseenter", () => {
+                    showChatFileImageHover(item, row);
+                });
+                row.addEventListener("mouseleave", hideChatFileImageHover);
+                row.addEventListener("focus", () => {
+                    showChatFileImageHover(item, row);
+                });
+                row.addEventListener("blur", hideChatFileImageHover);
+            }
+            chatFileList.appendChild(row);
+        });
+    };
+
+    const renderChatLocalFiles = () => {
+        if (!chatFileAccordion || !chatFileList || !chatFileCount) return;
+        hideChatFileImageHover();
+        chatFileList.replaceChildren();
+        const files = [...chatLocalFiles.values()];
+        appendChatFileSection(
+            "Images",
+            files.filter((item) => item.category === "image")
+        );
+        appendChatFileSection(
+            "Audios",
+            files.filter((item) => item.category === "audio")
+        );
+        appendChatFileSection(
+            "Videos",
+            files.filter((item) => item.category === "video")
+        );
+        appendChatFileSection(
+            "Documents",
+            files.filter((item) => item.category === "document")
+        );
+        appendChatFileSection(
+            "External links",
+            files.filter((item) => item.category === "external")
+        );
+        chatFileCount.textContent = String(chatLocalFiles.size);
+        chatFileAccordion.hidden = chatLocalFiles.size === 0;
+        if (chatLocalFiles.size === 0) chatFileAccordion.open = false;
+    };
+
+    const addChatLocalFiles = (items, render = true) => {
+        (Array.isArray(items) ? items : []).forEach((item) => {
+            const filename = String(item?.filename || "").trim();
+            const kind = ["generated", "external"].includes(item?.kind)
+                ? item.kind
+                : "preview";
+            if (!filename) return;
+            const suppliedCategory = String(item?.category || "");
+            const category = [
+                "image", "audio", "video", "document", "external",
+            ].includes(
+                suppliedCategory
+            )
+                ? suppliedCategory
+                : categoryForFilename(item?.name || filename);
+            const normalized = {
+                kind,
+                filename,
+                name: String(item?.name || filename.split("/").pop()),
+                exists: item?.exists !== false,
+                category,
+            };
+            chatLocalFiles.set(localFileKey(normalized), normalized);
+        });
+        if (render) renderChatLocalFiles();
+    };
+
+    const replaceChatLocalFiles = (items) => {
+        chatLocalFiles.clear();
+        addChatLocalFiles(items, false);
+        renderChatLocalFiles();
+    };
+
+    replaceChatLocalFiles(window.CairnmarkChatLocalAttachments || []);
+    chatFileList?.addEventListener("scroll", hideChatFileImageHover);
+    chatFileAccordion?.addEventListener("toggle", () => {
+        if (!chatFileAccordion.open) hideChatFileImageHover();
+    });
     const mcpConfigUrl = window.CairnmarkMcpConfigUrl || "/chat/mcp_configuration";
     const mcpImportUrl = window.CairnmarkMcpImportUrl
         || "/chat/mcp_configuration/import_opencode";
@@ -925,10 +1127,12 @@
             method: "POST",
             body: { message_id: messageId, urls },
         }).then((payload) => {
+            if (!message.isConnected) return;
             const captured = Array.isArray(payload?.previews) ? payload.previews : [];
             message.dataset.webpagePreviews = JSON.stringify(captured);
             message.dataset.captureWebpagePreviews = "done";
             bindWebpagePreviews(root, captured);
+            replaceChatLocalFiles(payload.attachments || []);
         }).catch(() => {
             // Screenshot failures intentionally leave ordinary links unchanged.
             message.dataset.captureWebpagePreviews = "done";
@@ -1260,6 +1464,7 @@
         }
 
         historyEl.appendChild(div);
+        addChatLocalFiles(meta?.local_attachments || []);
         syncEmptyState();
         historyEl.scrollTop = historyEl.scrollHeight;
         return div;
@@ -1268,6 +1473,7 @@
     const renderHistory = (messages) => {
         if (!historyEl) return;
         hideHoverPreview();
+        replaceChatLocalFiles([]);
         historyEl.replaceChildren(emptyStateEl);
         (messages || []).forEach((m) => {
             appendMessage(m.role, m.content, {
@@ -1321,6 +1527,7 @@
             request_body: payload.request_body,
             used_tools: payload.used_tools || [],
             generated_documents: generatedDocuments,
+            local_attachments: payload.local_attachments || [],
             message_id: payload.message_id,
             webpage_previews: payload.webpage_previews || [],
             capture_webpage_previews: !payload.is_error && payload.type !== "error",
@@ -1555,11 +1762,13 @@
                     const ext = String(attachment.name || "").split(".").pop().toLowerCase();
                     attachment.documentPayload = {
                         filename: attachment.name,
+                        local_filename: payload.local_filename || "",
                         mime_type: attachment.mime,
                         extension: ext,
                         size: attachment.size || 0,
                         content: payload.content,
                     };
+                    replaceChatLocalFiles(payload.attachments || []);
                     // Update the already-rendered document icon? Not needed.
                 } catch (error) {
                     if (loadingEl && loadingEl.element) loadingEl.element.remove();
@@ -1613,6 +1822,7 @@
                 extension: attachment.documentPayload.extension,
                 size: attachment.documentPayload.size,
                 content: attachment.documentPayload.content,
+                local_filename: attachment.documentPayload.local_filename || "",
             }));
         if (documents.length > 0) {
             requestBody.documents = documents;
@@ -1793,6 +2003,7 @@
                 syncEmptyState();
             }
             if (savedSelect) savedSelect.value = "";
+            replaceChatLocalFiles([]);
             chatContext.clear();
             updateTokenUsage();
         } catch (error) {
@@ -1820,8 +2031,9 @@
         }
     };
 
-    const applyImportedHistory = (messages) => {
+    const applyImportedHistory = (messages, attachments) => {
         renderHistory(messages);
+        replaceChatLocalFiles(attachments || []);
         chatContext.replace((messages || []).map((message) => ({
             input_tokens: message.input_tokens || 0,
             output_tokens: message.output_tokens || 0,
@@ -1850,7 +2062,10 @@
                     method: "POST",
                     body: { document: documentPayload },
                 });
-                applyImportedHistory(payload.messages || []);
+                applyImportedHistory(
+                    payload.messages || [],
+                    payload.attachments || []
+                );
             } catch (error) {
                 window.alert(`Import chat failed: ${error}`);
             } finally {
@@ -1928,6 +2143,7 @@
             });
             const messages = payload.messages || [];
             renderHistory(messages);
+            replaceChatLocalFiles(payload.attachments || []);
             chatContext.replace(messages.map((message) => ({
                     input_tokens: message.input_tokens || 0,
                     output_tokens: message.output_tokens || 0,
@@ -1956,6 +2172,7 @@
                 historyEl.replaceChildren(emptyStateEl);
                 syncEmptyState();
             }
+            replaceChatLocalFiles([]);
             if (!hasChatMessages()) {
                 chatContext.clear();
                 updateTokenUsage();

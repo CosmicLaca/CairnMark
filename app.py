@@ -5,6 +5,7 @@ import argparse
 import logging
 import os
 import socket
+from pathlib import Path
 
 from flask import Flask
 
@@ -50,6 +51,14 @@ def create_app(config_name=None, config_overrides=None):
     app.config.from_object(config_class)
     if config_overrides:
         app.config.from_mapping(config_overrides)
+        if (
+            "CHAT_DATABASE_PATH" in config_overrides
+            and "MEDIA_DATABASE_PATH" not in config_overrides
+        ):
+            chat_path = Path(app.config["CHAT_DATABASE_PATH"])
+            app.config["MEDIA_DATABASE_PATH"] = str(
+                chat_path.with_name("media.db")
+            )
     app.logger.setLevel(getattr(logging, app.config["LOG_LEVEL"], logging.INFO))
     init_storage(app)
     init_routes(app)

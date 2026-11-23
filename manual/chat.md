@@ -125,6 +125,30 @@ keeps them in the page until it is reloaded.
 
 ---
 
+## Chat attachments accordion
+
+When the current conversation contains related files or links, the collapsed
+**Chat attachments** row appears above the conversation. Open it to browse a
+height-limited, scrollable list grouped under **Images**, **Audios**,
+**Videos**, **Documents**, and **External links**. Local items show their
+filename and a download action. Hovering an available image filename displays
+a floating preview. If a referenced local file was moved or deleted, its name
+remains visible with a **Missing** notice instead of a download action.
+
+Uploaded files and documents created by MCP tools are registered in
+`instance/media.db` as soon as they become associated with the active chat.
+The accordion reads this index directly instead of parsing the complete
+conversation, which keeps saved-chat loading fast. Saving, loading, replacing,
+importing, or deleting a chat updates its media references as part of the same
+chat action.
+
+Files under `instance/preview/` are reference-aware. Deleting or clearing a
+chat removes a preview file only when no active or saved chat still references
+it. MCP-created files under `Generated-documents/` are never deleted with a
+chat; the user remains responsible for managing that folder.
+
+---
+
 ## Images, audio, and video in answers
 
 Direct public image URLs can appear as previews while retaining the original

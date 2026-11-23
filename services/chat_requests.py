@@ -4,6 +4,7 @@ import base64
 import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from models.chat_settings import CHAT_SETTINGS, VIDEO_FPS_VALUES
 from models.chat_storage import CHAT_HISTORY
@@ -222,6 +223,9 @@ class ChatRequestWorkflow:
                         "extension": extension,
                         "size": size,
                         "content": content,
+                        "local_filename": Path(
+                            str(item.get("local_filename") or "")
+                        ).name,
                     }
                 )
                 continue

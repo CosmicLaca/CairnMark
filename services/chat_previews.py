@@ -3,6 +3,7 @@
 import base64
 import io
 import json
+import re
 import uuid
 from pathlib import Path
 
@@ -58,6 +59,22 @@ class ChatPreviewStore:
             current_app.logger.exception("Chat preview could not be saved")
             return None
 
+    def save_original(self, data, original_name):
+        """Persist an uploaded file with a safe generated filename."""
+        try:
+            decoded = base64.b64decode(data, validate=True)
+            if not decoded:
+                return None
+            suffix = Path(str(original_name or "")).suffix.lower()
+            if not re.fullmatch(r"\.[a-z0-9]{1,10}", suffix):
+                suffix = ".bin"
+            filename = f"attachment-{uuid.uuid4().hex}{suffix}"
+            (self.directory() / filename).write_bytes(decoded)
+            return filename
+        except Exception:  # noqa: BLE001
+            current_app.logger.exception("Original chat attachment could not be saved")
+            return None
+
     def save_attachments(
         self,
         attachments,
@@ -68,7 +85,6 @@ class ChatPreviewStore:
         """Persist requested previews and return message metadata for them."""
         preview_images = []
         preview_media = []
-        has_audio = False
         for attachment in attachments or []:
             attachment_type = attachment.get("type")
             if attachment_type == "image":
@@ -76,18 +92,16 @@ class ChatPreviewStore:
                 if filename:
                     preview_images.append(filename)
             elif attachment_type == "audio":
-                has_audio = True
-                if save_original_media:
-                    converted = convert_audio_attachment(attachment)
-                    filename = self.save(
-                        converted.get("data", attachment.get("data", "")),
-                        "mp3",
+                converted = convert_audio_attachment(attachment)
+                filename = self.save(
+                    converted.get("data", attachment.get("data", "")),
+                    "mp3",
+                )
+                if filename:
+                    preview_media.append(
+                        self._media_record("audio", filename, attachment)
                     )
-                    if filename:
-                        preview_media.append(
-                            self._media_record("audio", filename, attachment)
-                        )
-            elif attachment_type == "video" and save_original_media:
+            elif attachment_type == "video":
                 converted = convert_video_attachment(attachment, fps=video_fps)
                 data = converted["data"]
                 if attachment.get("attach_audio") and video_has_audio(
@@ -101,10 +115,6 @@ class ChatPreviewStore:
                     preview_media.append(
                         self._media_record("video", filename, attachment)
                     )
-            elif attachment_type == "video" and attachment.get("preview_data"):
-                filename = self.save(attachment["preview_data"], "jpg")
-                if filename:
-                    preview_images.append(filename)
             elif attachment_type == "document":
                 preview_media.append(
                     {
@@ -116,7 +126,7 @@ class ChatPreviewStore:
         return {
             "preview_images": preview_images,
             "preview_media": preview_media,
-            "has_audio": has_audio and not save_original_media,
+            "has_audio": False,
         }
 
     @staticmethod
