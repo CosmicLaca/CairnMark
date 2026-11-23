@@ -3,6 +3,7 @@
 import base64
 import io
 import json
+import re
 import time
 import urllib.request
 import zipfile
@@ -97,6 +98,85 @@ class ChatController:
                     used.append(identity)
         return used
 
+    @staticmethod
+    def _is_libreoffice_save_tool(name):
+        """Recognize managed and Custom LibreOffice save aliases."""
+        stable_name = re.sub(
+            r"__[0-9a-f]{8}$",
+            "",
+            str(name or "").strip().lower(),
+        )
+        parts = stable_name.split("__")
+        return (
+            len(parts) >= 3
+            and "libreoffice" in parts[-2]
+            and parts[-1] in {"lo_save", "libreoffice_lo_save"}
+        )
+
+    @staticmethod
+    def _generated_documents(transcript):
+        """Return successful LibreOffice saves located in the output folder."""
+        output_directory = Path(
+            current_app.config["GENERATED_DOCUMENT_DIRECTORY"]
+        ).resolve()
+        documents = []
+        for message in transcript or []:
+            if message.get("role") != "tool":
+                continue
+            if not ChatController._is_libreoffice_save_tool(
+                message.get("name")
+            ):
+                continue
+            try:
+                result = json.loads(str(message.get("content") or ""))
+                saved_path = Path(str(result.get("saved") or "")).resolve()
+                relative_path = saved_path.relative_to(output_directory)
+            except (AttributeError, json.JSONDecodeError, OSError, ValueError):
+                continue
+            if not saved_path.is_file():
+                continue
+            name = relative_path.as_posix()
+            if name not in {item["name"] for item in documents}:
+                documents.append({"name": name})
+        return documents
+
+    def _messages_with_generated_documents(self, messages):
+        """Attach verified generated-document downloads to chat messages."""
+        enriched = []
+        for message in messages:
+            item = dict(message)
+            transcript = []
+            try:
+                request_body = json.loads(item.get("request_body") or "{}")
+                transcript = request_body.get("messages") or []
+            except (AttributeError, json.JSONDecodeError):
+                pass
+            documents = self._generated_documents(transcript)
+            if not documents:
+                match = re.fullmatch(
+                    r"\s*<\|tool_call>call:[A-Za-z0-9_.:-]+"
+                    r"\{.*(?:file_name|file_path|filename):<\|\"\|>"
+                    r"([^<>]+)<\|\"\|>.*\}<tool_call\|>\s*",
+                    str(item.get("content") or ""),
+                    flags=re.DOTALL,
+                )
+                if match:
+                    filename = match.group(1).strip()
+                    safe_name = Path(filename)
+                    output_directory = Path(
+                        current_app.config["GENERATED_DOCUMENT_DIRECTORY"]
+                    )
+                    if (
+                        safe_name.name == filename
+                        and (output_directory / safe_name).is_file()
+                    ):
+                        documents = [{"name": filename}]
+            item.pop("generated_documents", None)
+            if documents:
+                item["generated_documents"] = documents
+            enriched.append(item)
+        return enriched
+
     def _record_failed_response(
         self,
         error,
@@ -139,7 +219,7 @@ class ChatController:
 
     def context(self):
         settings = CHAT_SETTINGS.form()
-        messages = self.history.messages()
+        messages = self._messages_with_generated_documents(self.history.messages())
         attachment_settings = CHAT_SETTINGS.group("attachments")
         return {
             "chat_settings": settings,
@@ -312,6 +392,7 @@ class ChatController:
             started = time.monotonic()
             request_body = {"model": model, "messages": messages}
             used_tools = []
+            transcript = []
             try:
                 plan = self.requests.attachment_plan(
                     chat_request.attachments,
@@ -407,6 +488,7 @@ class ChatController:
                 request_body,
             )
             payload["used_tools"] = used_tools
+            payload["generated_documents"] = self._generated_documents(transcript)
             payload["message_id"] = assistant_id
             payload["messages"] = self.history.messages()
             return jsonify(payload)
@@ -517,6 +599,9 @@ class ChatController:
                     event_type="result",
                 )
                 payload["used_tools"] = used_tools
+                payload["generated_documents"] = self._generated_documents(
+                    transcript
+                )
                 payload["message_id"] = assistant_id
                 yield f"data: {json.dumps(payload)}\n\n"
             except Exception as error:  # noqa: BLE001
@@ -716,6 +801,22 @@ class ChatController:
             return ("", 404)
         return send_from_directory(directory, safe_name)
 
+    def download_generated_document(self, filename):
+        """Download one document created by an application tool."""
+        directory = Path(current_app.config["GENERATED_DOCUMENT_DIRECTORY"])
+        safe_path = Path(filename)
+        if safe_path.is_absolute() or ".." in safe_path.parts:
+            return ("", 404)
+        file_path = directory / safe_path
+        if not file_path.is_file():
+            return ("", 404)
+        return send_from_directory(
+            directory,
+            safe_path.as_posix(),
+            as_attachment=True,
+            download_name=safe_path.name,
+        )
+
     def download_external_image(self):
         """Download a validated public chat image through a same-origin route."""
         try:
@@ -729,6 +830,22 @@ class ChatController:
             download_name=image.filename,
             max_age=0,
         )
+
+    def inspect_external_image(self):
+        """Report whether a validated public URL returns an image MIME type."""
+        try:
+            document = self.external_images.inspect(request.args.get("url", ""))
+        except ExternalImageError as error:
+            return jsonify({"error": str(error)}), 400
+        response = jsonify(
+            {
+                "is_image": document.content_type.startswith("image/"),
+                "content_type": document.content_type,
+                "filename": document.filename,
+            }
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     def capture_webpage_previews(self):
         """Capture ordinary webpage links and persist their UUID mappings."""
@@ -931,7 +1048,10 @@ class ChatController:
             restored,
             *saved_messages,
         )
-        return jsonify({"message": "Chat imported.", "messages": restored})
+        return jsonify({
+            "message": "Chat imported.",
+            "messages": self._messages_with_generated_documents(restored),
+        })
 
     def _mineru_check(
         self,
@@ -1730,11 +1850,14 @@ class ChatController:
         if action == "load":
             if not self.history.load(name):
                 return jsonify({"error": "Saved chat not found."}), 404
+            messages = self._messages_with_generated_documents(
+                self.history.messages()
+            )
             return jsonify(
                 {
                     "message": "Chat loaded.",
                     "name": name,
-                    "messages": self.history.messages(),
+                    "messages": messages,
                 }
             )
         if action == "replace":

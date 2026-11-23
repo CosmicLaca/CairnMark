@@ -27,6 +27,14 @@ class DownloadedImage:
     filename: str
 
 
+@dataclass(frozen=True)
+class ExternalDocumentInfo:
+    """Describe the response metadata for a validated public URL."""
+
+    content_type: str
+    filename: str
+
+
 class _ValidatedRedirectHandler(urllib.request.HTTPRedirectHandler):
     def __init__(self, validator):
         self.validator = validator
@@ -90,6 +98,51 @@ class ExternalImageService:
             safe_name += mimetypes.guess_extension(content_type) or ".img"
         return safe_name[:160]
 
+    def _open(self, request, timeout):
+        if self.opener is not None:
+            return self.opener(request, timeout=timeout)
+        opener = urllib.request.build_opener(
+            _ValidatedRedirectHandler(self._validated_url)
+        )
+        return opener.open(request, timeout=timeout)
+
+    def inspect(self, url):
+        """Return response MIME metadata without downloading the document body."""
+        safe_url = self._validated_url(url)
+        request = urllib.request.Request(
+            safe_url,
+            headers={
+                "Accept": "image/avif,image/webp,image/*,*/*;q=0.5",
+                "User-Agent": "CairnMark/1.0",
+            },
+            method="HEAD",
+        )
+        try:
+            with self._open(request, timeout=8) as response:
+                status = getattr(response, "status", None)
+                if status is None:
+                    status = response.getcode()
+                if status != 200:
+                    raise ExternalImageError(
+                        "The document server did not return HTTP 200."
+                    )
+                final_url = self._validated_url(response.geturl())
+                content_type = self._content_type(response.headers)
+                content_length = response.headers.get("Content-Length")
+                if content_length and int(content_length) > MAX_EXTERNAL_IMAGE_BYTES:
+                    raise ExternalImageError("The document is larger than 25 MB.")
+        except ExternalImageError:
+            raise
+        except (OSError, urllib.error.URLError, ValueError) as error:
+            raise ExternalImageError(
+                "The external document could not be inspected."
+            ) from error
+
+        return ExternalDocumentInfo(
+            content_type=content_type,
+            filename=self._filename(final_url, content_type),
+        )
+
     def download(self, url):
         """Return a bounded public image download."""
         safe_url = self._validated_url(url)
@@ -102,13 +155,7 @@ class ExternalImageService:
             method="GET",
         )
         try:
-            if self.opener is not None:
-                response_context = self.opener(request, timeout=20)
-            else:
-                opener = urllib.request.build_opener(
-                    _ValidatedRedirectHandler(self._validated_url)
-                )
-                response_context = opener.open(request, timeout=20)
+            response_context = self._open(request, timeout=20)
             with response_context as response:
                 status = getattr(response, "status", None)
                 if status is None:

@@ -185,6 +185,16 @@
           </div>
           {% else %}
           <div class="chat-content markdown-content" data-raw="{{ message.content|e }}">{{ message.content }}</div>
+          {% if message.role == 'assistant' and message.generated_documents %}
+          <div class="chat-generated-documents" aria-label="Generated documents">
+            {% for document in message.generated_documents %}
+            <a class="chat-generated-document" href="{{ url_for('chat_generated_document', filename=document.name) }}" download>
+              <span class="chat-generated-document-name">{{ document.name }}</span>
+              <span class="chat-generated-document-download" aria-hidden="true">⇩</span>
+            </a>
+            {% endfor %}
+          </div>
+          {% endif %}
           {% if message.role == 'user' and message.has_audio %}
           <span class="chat-user-audio-icon" title="Audio attachment">🎤</span>
           {% endif %}

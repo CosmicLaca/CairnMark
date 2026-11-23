@@ -535,7 +535,9 @@
     };
 
     const externalImageDownloadUrl = "/chat/external_image_download";
+    const externalImageInspectUrl = "/chat/external_image_inspect";
     const externalImageTimeoutMs = 1000;
+    const externalImageInspections = new Map();
 
     const externalImageFilename = (url) => {
         try {
@@ -546,9 +548,9 @@
         }
     };
 
-    const downloadExternalImage = async (url, button) => {
+    const downloadExternalImage = async (url, button, suggestedName = "") => {
         const endpoint = `${externalImageDownloadUrl}?url=${encodeURIComponent(url)}`;
-        const filename = externalImageFilename(url);
+        const filename = suggestedName || externalImageFilename(url);
         button.disabled = true;
         try {
             if (typeof window.showSaveFilePicker === "function") {
@@ -611,7 +613,11 @@
                 event.preventDefault();
                 event.stopPropagation();
                 const button = event.currentTarget;
-                downloadExternalImage(overlay.dataset.imageUrl || "", button);
+                downloadExternalImage(
+                    overlay.dataset.imageUrl || "",
+                    button,
+                    overlay.dataset.imageFilename || ""
+                );
             });
         document.body.appendChild(overlay);
         externalImageHover = overlay;
@@ -660,6 +666,7 @@
         const hoverImage = overlay.querySelector(".chat-image-hover-image");
         const hoverLink = overlay.querySelector(".chat-image-hover-link");
         overlay.dataset.imageUrl = url;
+        overlay.dataset.imageFilename = preview.dataset.imageFilename || "";
         hoverLink.href = url;
         hoverImage.src = image.src;
         overlay.style.visibility = "hidden";
@@ -674,6 +681,7 @@
                 const url = preview.getAttribute("data-image-url") || "";
                 const image = preview.querySelector(".chat-markdown-image");
                 const download = preview.querySelector(".chat-markdown-image-download");
+                const filename = preview.dataset.imageFilename || "";
                 if (!url || !image || !download) return;
 
                 let finished = false;
@@ -712,10 +720,81 @@
                 download.addEventListener("click", (event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    downloadExternalImage(url, download);
+                    downloadExternalImage(url, download, filename);
                 });
                 probe.src = url;
             });
+    };
+
+    const createExternalImagePreview = (url, filename) => {
+        const preview = document.createElement("span");
+        preview.className = "chat-markdown-image-preview";
+        preview.dataset.chatImagePreview = "";
+        preview.dataset.imageUrl = url;
+        preview.dataset.imageFilename = filename || "";
+
+        const fallback = document.createElement("a");
+        fallback.className = "chat-markdown-image-fallback";
+        fallback.href = url;
+        fallback.target = "_blank";
+        fallback.rel = "noopener noreferrer";
+        fallback.textContent = url;
+
+        const imageLink = document.createElement("a");
+        imageLink.className = "chat-markdown-image-link";
+        imageLink.href = url;
+        imageLink.target = "_blank";
+        imageLink.rel = "noopener noreferrer";
+        const image = document.createElement("img");
+        image.className = "chat-markdown-image";
+        image.alt = "External image preview";
+        imageLink.appendChild(image);
+
+        const reverse = document.createElement("button");
+        reverse.className = "chat-markdown-image-reverse";
+        reverse.type = "button";
+        reverse.dataset.reverseImageSrc = url;
+        reverse.title = "Reverse image search";
+        reverse.setAttribute("aria-label", "Reverse image search");
+        reverse.textContent = "⌕";
+
+        const download = document.createElement("button");
+        download.className = "chat-markdown-image-download";
+        download.type = "button";
+        download.title = "Download image";
+        download.setAttribute("aria-label", "Download image");
+        download.textContent = "⇩";
+
+        preview.append(fallback, imageLink, reverse, download);
+        return preview;
+    };
+
+    const inspectExternalImage = (url) => {
+        if (!externalImageInspections.has(url)) {
+            const endpoint = `${externalImageInspectUrl}?url=${encodeURIComponent(url)}`;
+            externalImageInspections.set(
+                url,
+                fetch(endpoint, { cache: "no-store" })
+                    .then((response) => response.ok ? response.json() : null)
+                    .catch(() => null)
+            );
+        }
+        return externalImageInspections.get(url);
+    };
+
+    const hydrateOpaqueAssistantImages = (root) => {
+        root.querySelectorAll(
+            "[data-external-image-candidate]:not([data-image-inspected])"
+        ).forEach((link) => {
+            link.dataset.imageInspected = "true";
+            const url = link.dataset.externalImageCandidate || "";
+            if (!url) return;
+            inspectExternalImage(url).then((result) => {
+                if (!result?.is_image || !link.isConnected) return;
+                link.replaceWith(createExternalImagePreview(url, result.filename));
+                hydrateAssistantImages(root);
+            });
+        });
     };
 
     const hydrateAssistantAudio = (root) => {
@@ -858,6 +937,7 @@
 
     const hydrateAssistantMedia = (root) => {
         hydrateAssistantImages(root);
+        hydrateOpaqueAssistantImages(root);
         hydrateAssistantAudio(root);
         hydrateWebpagePreviews(root);
     };
@@ -1062,6 +1142,32 @@
         if (role === "assistant") {
             div.appendChild(contentDiv);
             attachAssistantActions(contentDiv, content);
+            const generatedDocuments = Array.isArray(meta?.generated_documents)
+                ? meta.generated_documents
+                : [];
+            if (generatedDocuments.length > 0) {
+                const documents = document.createElement("div");
+                documents.className = "chat-generated-documents";
+                documents.setAttribute("aria-label", "Generated documents");
+                generatedDocuments.forEach((item) => {
+                    const name = String(item?.name || "").trim();
+                    if (!name) return;
+                    const link = document.createElement("a");
+                    link.className = "chat-generated-document";
+                    link.href = `/chat/generated_document/${name.split("/").map(encodeURIComponent).join("/")}`;
+                    link.download = name.split("/").pop();
+                    const label = document.createElement("span");
+                    label.className = "chat-generated-document-name";
+                    label.textContent = name;
+                    const icon = document.createElement("span");
+                    icon.className = "chat-generated-document-download";
+                    icon.setAttribute("aria-hidden", "true");
+                    icon.textContent = "⇩";
+                    link.append(label, icon);
+                    documents.appendChild(link);
+                });
+                if (documents.children.length > 0) div.appendChild(documents);
+            }
         } else {
             const previewImages =
                 meta && Array.isArray(meta.preview_images)
@@ -1177,6 +1283,7 @@
                 preview_media: m.preview_media || [],
                 request_body: m.request_body,
                 used_tools: m.used_tools || [],
+                generated_documents: m.generated_documents || [],
                 message_id: m.id,
                 webpage_previews: m.webpage_previews || [],
                 capture_webpage_previews: !m.is_error
@@ -1191,7 +1298,12 @@
     };
 
     const appendAssistantPayload = (payload) => {
-        if (!payload || !payload.response) return false;
+        const generatedDocuments = Array.isArray(payload?.generated_documents)
+            ? payload.generated_documents
+            : [];
+        if (!payload || (!payload.response && generatedDocuments.length === 0)) {
+            return false;
+        }
         chatContext.add({
             input_tokens: payload.input_tokens || 0,
             output_tokens: payload.output_tokens || 0,
@@ -1208,6 +1320,7 @@
             system_prompt: payload.system_prompt,
             request_body: payload.request_body,
             used_tools: payload.used_tools || [],
+            generated_documents: generatedDocuments,
             message_id: payload.message_id,
             webpage_previews: payload.webpage_previews || [],
             capture_webpage_previews: !payload.is_error && payload.type !== "error",

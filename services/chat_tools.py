@@ -3,6 +3,7 @@
 import hashlib
 import json
 import re
+from contextlib import nullcontext
 from dataclasses import dataclass
 
 from models.mcp_settings import DEFAULT_TOOL_GLOBAL_SETTINGS, MCP_SETTINGS
@@ -271,7 +272,17 @@ class ChatToolService:
                 and value not in (None, "", [])
             )
         }
-        merged.update(arguments)
+        normalized_arguments = dict(arguments)
+        if (
+            "path" in properties
+            and "file_path" not in properties
+            and "path" not in normalized_arguments
+        ):
+            for alias in ("file_path", "file_name", "filename"):
+                if alias in normalized_arguments:
+                    normalized_arguments["path"] = normalized_arguments.pop(alias)
+                    break
+        merged.update(normalized_arguments)
         return merged
 
     @staticmethod
@@ -361,6 +372,36 @@ class ChatToolService:
         ), relaxed_arguments
 
     def iter_complete(
+        self,
+        provider,
+        model,
+        messages,
+        bindings,
+        request_parameters,
+        extra_parameters,
+        attachments=None,
+        documents=None,
+    ):
+        """Yield one completion while retaining stateful Custom MCP sessions."""
+        session_scope = getattr(
+            self.registry,
+            "persistent_tool_sessions",
+            None,
+        )
+        context = session_scope() if callable(session_scope) else nullcontext()
+        with context:
+            yield from self._iter_complete(
+                provider,
+                model,
+                messages,
+                bindings,
+                request_parameters,
+                extra_parameters,
+                attachments,
+                documents,
+            )
+
+    def _iter_complete(
         self,
         provider,
         model,

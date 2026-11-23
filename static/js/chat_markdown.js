@@ -138,7 +138,11 @@
                 && !IMAGE_PATH_PATTERN.test(url.pathname)
                 ? ` data-webpage-preview-url="${safeUrl}"`
                 : "";
-            return `<a href="${safeUrl}"${previewAttribute} target="_blank" rel="noopener noreferrer">${label}</a>`;
+            const imageInspectAttribute = ["http:", "https:"].includes(url.protocol)
+                && !IMAGE_PATH_PATTERN.test(url.pathname)
+                ? ` data-external-image-candidate="${safeUrl}"`
+                : "";
+            return `<a href="${safeUrl}"${previewAttribute}${imageInspectAttribute} target="_blank" rel="noopener noreferrer">${label}</a>`;
         } catch (error) {
             return label;
         }

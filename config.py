@@ -18,6 +18,7 @@ class Config:
     BENCHMARK_DIRECTORY = PROJECT_ROOT / "Benchmark-prompts"
     SYSTEM_PROMPT_DIRECTORY = PROJECT_ROOT / "System-prompts"
     CHAT_EXPORT_DIRECTORY = PROJECT_ROOT / "Exported-chat"
+    GENERATED_DOCUMENT_DIRECTORY = PROJECT_ROOT / "Generated-documents"
     MANUAL_DIRECTORY = PROJECT_ROOT / "manual"
     MCP_CONFIG_PATH = PROJECT_ROOT / "services" / "mcp.json"
     OPENCODE_CONFIG_PATH = Path.home() / ".config" / "opencode" / "opencode.json"

@@ -8,6 +8,8 @@ tests
 Exported-chat
 debug_model.py
 services/user_mcp_services.json
+Generated-documents/
+mcp_tools/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

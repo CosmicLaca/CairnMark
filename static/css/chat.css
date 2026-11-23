@@ -528,6 +528,48 @@
     color: var(--ink);
 }
 
+.chat-generated-documents {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-top: 0.65rem;
+}
+
+.chat-generated-document {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    max-width: 100%;
+    padding: 0.5rem 0.65rem;
+    color: var(--ink);
+    text-decoration: none;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+}
+
+.chat-generated-document:hover,
+.chat-generated-document:focus-visible {
+    border-color: var(--aqua);
+}
+
+.chat-generated-document-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chat-generated-document-download {
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    color: #ffffff;
+    background: #256b60;
+    border-radius: 3px;
+}
+
 .chat-used-tools-icon {
     display: inline-flex;
     color: #3c897c;

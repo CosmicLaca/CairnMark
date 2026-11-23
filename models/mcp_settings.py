@@ -47,8 +47,8 @@ DEFAULT_TOOL_GUIDANCE = (
     "the limitation."
 )
 DEFAULT_TOOL_GLOBAL_SETTINGS = {
-    "max_rounds": 6,
-    "max_total_calls": 12,
+    "max_rounds": 15,
+    "max_total_calls": 30,
     "max_consecutive_failures": 2,
     "max_result_chars": 20_000,
     "tool_policy": "automatic",

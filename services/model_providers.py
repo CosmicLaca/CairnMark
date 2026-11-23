@@ -2401,10 +2401,16 @@ class ModelProviderService:
                     },
                 }
             )
+        message_text = sdk._message_text(message.content)
+        if not normalized_calls:
+            recovered_call = self._raw_tool_call(message_text, tools)
+            if recovered_call is not None:
+                normalized_calls.append(recovered_call)
+                message_text = ""
         usage = response.usage
         return {
             "role": "assistant",
-            "content": sdk._message_text(message.content),
+            "content": message_text,
             "tool_calls": normalized_calls,
         }, {
             "prompt_tokens": getattr(usage, "prompt_tokens", 0) if usage else 0,
@@ -2839,3 +2845,56 @@ class ModelProviderService:
 
         self.models.set_enabled(provider, enabled)
         return {"provider": provider, "enabled": enabled}
+    @staticmethod
+    def _raw_tool_call(content, tools):
+        """Recover one llama.cpp tool call emitted as visible template text."""
+        text = str(content or "").strip()
+        match = re.fullmatch(
+            r"<\|tool_call>call:([A-Za-z0-9_.:-]+)(\{.*\})<tool_call\|>",
+            text,
+            flags=re.DOTALL,
+        )
+        if not match:
+            return None
+        allowed_names = {
+            str(item.get("function", {}).get("name") or "")
+            for item in tools
+            if isinstance(item, dict)
+        }
+        name, raw_arguments = match.groups()
+        if name not in allowed_names:
+            stable_name = re.sub(r"__[0-9a-f]{8}$", "", name)
+            matching_names = [
+                allowed_name
+                for allowed_name in allowed_names
+                if re.sub(r"__[0-9a-f]{8}$", "", allowed_name) == stable_name
+            ]
+            if len(matching_names) != 1:
+                return None
+            name = matching_names[0]
+        quote_marker = re.escape('<|"|>')
+        normalized = re.sub(
+            rf"{quote_marker}(.*?){quote_marker}",
+            lambda value: json.dumps(value.group(1), ensure_ascii=False),
+            raw_arguments,
+            flags=re.DOTALL,
+        )
+        normalized = re.sub(
+            r"([{,])\s*([A-Za-z_][A-Za-z0-9_-]*)\s*:",
+            r'\1"\2":',
+            normalized,
+        )
+        try:
+            arguments = json.loads(normalized)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(arguments, dict):
+            return None
+        return {
+            "id": "recovered_tool_call",
+            "type": "function",
+            "function": {
+                "name": name,
+                "arguments": json.dumps(arguments, ensure_ascii=False),
+            },
+        }
