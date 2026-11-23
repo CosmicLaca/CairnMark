@@ -2562,8 +2562,14 @@
             ? timeout
             : mcpDefaultTimeoutMs;
         savedMcpToolSettings.set(name, settings);
+        const source = details && details.source;
         const row = document.createElement("div");
         row.className = "mcp-service-row mcp-service-row--checking";
+        row.classList.add(
+            source === "opencode"
+                ? "mcp-service-row--opencode"
+                : "mcp-service-row--custom"
+        );
         row.setAttribute("data-mcp-service-row", name);
 
         const identity = document.createElement("div");
@@ -2575,7 +2581,6 @@
         const serviceName = createMcpName(name);
         const sourceBadge = document.createElement("span");
         sourceBadge.className = "mcp-source-badge mcp-source-badge--custom";
-        const source = details && details.source;
         sourceBadge.textContent = source === "opencode" ? "OpenCode" : "Custom";
         sourceBadge.title = source === "opencode"
             ? "Imported from OpenCode"

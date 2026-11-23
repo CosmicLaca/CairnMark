@@ -1,0 +1,13 @@
+{
+  "endpoint": {
+    "name": "Open-Meteo connectivity test URL",
+    "type": "text",
+    "default": "https://api.open-meteo.com/v1/forecast?latitude=47.4979&longitude=19.0402&current=temperature_2m",
+    "required": false
+  },
+  "test": {
+    "name": "Test Open-Meteo access",
+    "type": "Button",
+    "access_key": "endpoint"
+  }
+}

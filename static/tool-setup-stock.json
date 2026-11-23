@@ -1,0 +1,19 @@
+{
+  "endpoint": {
+    "name": "Alpha Vantage connectivity test URL",
+    "type": "text",
+    "default": "https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=IBM&apikey=demo",
+    "required": false
+  },
+  "password": {
+    "name": "Alpha Vantage API key",
+    "type": "password",
+    "default": "",
+    "required": true
+  },
+  "test": {
+    "name": "Test Alpha Vantage access",
+    "type": "Button",
+    "access_key": "endpoint"
+  }
+}

@@ -1509,6 +1509,14 @@
     background: rgba(180, 35, 24, 0.05);
 }
 
+.mcp-service-row--custom {
+    background: rgba(255, 224, 112, 0.19);
+}
+
+.mcp-service-row--opencode {
+    background: rgba(120, 130, 126, 0.09);
+}
+
 .mcp-service-identity,
 .mcp-service-controls {
     display: flex;

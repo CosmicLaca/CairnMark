@@ -385,6 +385,29 @@ class McpServiceRegistry:
         test_details["args"] = args
         return test_details
 
+    @staticmethod
+    def _details_with_service_settings(
+        details,
+        endpoint="",
+        user="",
+        password="",
+    ):
+        """Pass saved connection settings only to that service process."""
+        configured = dict(details)
+        environment = details.get("environment")
+        environment = dict(environment) if isinstance(environment, dict) else {}
+        for key, value in (
+            ("MCP_SERVICE_ENDPOINT", endpoint),
+            ("MCP_SERVICE_USER", user),
+            ("MCP_SERVICE_PASSWORD", password),
+        ):
+            value = str(value or "").strip()
+            if value:
+                environment[key] = value
+        if environment:
+            configured["environment"] = environment
+        return configured
+
     def test_endpoint(
         self,
         name,
@@ -642,6 +665,12 @@ class McpServiceRegistry:
                 settings.get("user", ""),
                 settings.get("password", ""),
             )
+        details = self._details_with_service_settings(
+            details,
+            endpoint,
+            settings.get("user", ""),
+            settings.get("password", ""),
+        )
         try:
             if self._uses_http_transport(details):
                 return asyncio.run(
@@ -704,6 +733,12 @@ class McpServiceRegistry:
                 user,
                 password,
             )
+        details = self._details_with_service_settings(
+            details,
+            configured_endpoint,
+            user,
+            password,
+        )
 
         if self._uses_http_transport(details):
             tools_count = len(
@@ -788,6 +823,12 @@ class McpServiceRegistry:
                 user,
                 password,
             )
+        details = self._details_with_service_settings(
+            details,
+            configured_endpoint,
+            user,
+            password,
+        )
 
         tools = self._discover_transport(
             details,
