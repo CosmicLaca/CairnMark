@@ -186,6 +186,7 @@ class McpSettingsStore(SQLiteStore):
         """Encrypt plaintext fields declared as password inputs by schemas."""
         target_path = self.path(app.config)
         fields_by_service = self._schema_secret_fields(app.static_folder)
+        default_secret_fields = fields_by_service.get("default", set())
         with sqlite3.connect(target_path) as connection:
             rows = connection.execute(
                 """
@@ -202,9 +203,10 @@ class McpSettingsStore(SQLiteStore):
                 if not isinstance(settings, dict):
                     continue
                 changed = False
-                secret_fields = fields_by_service.get(service_name, set()) | {
-                    "password"
-                }
+                secret_fields = fields_by_service.get(
+                    service_name,
+                    default_secret_fields,
+                ) | {"password"}
                 for field_name in secret_fields:
                     secret = settings.get(field_name)
                     if not secret or isinstance(secret, dict):

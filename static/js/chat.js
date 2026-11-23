@@ -2949,6 +2949,7 @@
             return mcpSetupDefinitions.get(name);
         }
         let definitions = {};
+        let cacheDefinitions = false;
         try {
             const setupUrl = toolSetupUrlTemplate.replace(
                 "__SERVICE__",
@@ -2957,11 +2958,19 @@
             const payload = await api.request(setupUrl);
             if (payload && typeof payload === "object" && !Array.isArray(payload)) {
                 definitions = payload;
+                cacheDefinitions = true;
             }
         } catch (error) {
-            // Most stdio MCP services do not require service-specific settings.
+            // Fall back to the universal default schema when no service-specific
+            // settings file exists. Do not cache that fallback under the service
+            // name, so a schema added later is discovered without a page reload.
+            if (name !== "default") {
+                definitions = await loadMcpSetupDefinitions("default");
+            } else {
+                // Most stdio MCP services do not require service-specific settings.
+            }
         }
-        mcpSetupDefinitions.set(name, definitions);
+        if (cacheDefinitions) mcpSetupDefinitions.set(name, definitions);
         return definitions;
     };
 
@@ -3640,7 +3649,7 @@
         mcpServiceList.appendChild(importPanel);
     };
 
-    const renderMcpCustomForm = () => {
+    const renderMcpCustomForm = (definitions, requestSequence) => {
         const form = document.createElement("section");
         form.className = "mcp-custom-server";
         const heading = document.createElement("div");
@@ -3648,7 +3657,7 @@
         const title = document.createElement("strong");
         title.textContent = "Add new custom MCP service";
         const hint = document.createElement("span");
-        hint.textContent = "Saved privately to services/mcp.json.";
+        hint.textContent = "Saved privately to services/custom_mcp.json.";
         heading.append(title, hint);
         const grid = document.createElement("div");
         grid.className = "mcp-custom-server-grid";
@@ -3658,7 +3667,54 @@
             createMcpEmptyField("command", "Command"),
             createMcpEmptyField("args", "Args (JSON array)")
         );
-        form.append(heading, grid);
+
+        const setup = document.createElement("div");
+        setup.className = "mcp-custom-tool-setup";
+        setup.setAttribute("data-mcp-custom-tool-setup", "default");
+        const setupHeading = document.createElement("div");
+        setupHeading.className = "mcp-tool-setup-heading";
+        const setupTitle = document.createElement("strong");
+        setupTitle.textContent = "Default setup";
+        const setupHint = document.createElement("span");
+        setupHint.textContent = "Service-specific settings";
+        setupHeading.append(setupTitle, setupHint);
+        const setupGrid = document.createElement("div");
+        setupGrid.className = "mcp-tool-setup-grid";
+        Object.entries(definitions || {}).forEach(([key, definition]) => {
+            if (!definition || typeof definition !== "object") return;
+            const field = createMcpToolField(
+                "default",
+                key,
+                definition,
+                {},
+                "external"
+            );
+            const testButton = field.querySelector("[data-mcp-endpoint-test]");
+            if (testButton) {
+                testButton.disabled = true;
+                testButton.title = "Save the service before testing access.";
+            }
+            setupGrid.appendChild(field);
+        });
+        setup.append(setupHeading, setupGrid);
+
+        const addButton = document.createElement("button");
+        addButton.type = "button";
+        addButton.className = "modal-save-button mcp-add-tool-button";
+        addButton.textContent = "Add tool";
+        addButton.addEventListener("click", async () => {
+            addButton.disabled = true;
+            try {
+                await saveFirstCustomMcpService();
+                if (requestSequence === mcpSettingsSequence) {
+                    await openMcpSettings();
+                }
+            } catch (error) {
+                window.alert(String(error));
+                addButton.disabled = false;
+            }
+        });
+        form.append(heading, grid, setup, addButton);
         mcpServiceList.appendChild(form);
     };
 
@@ -3702,7 +3758,9 @@
                 return checkMcpService(name, row, requestSequence);
             });
             await Promise.all([...checks, managedTools]);
-            renderMcpCustomForm();
+            const defaultSetupDefinitions = await loadMcpSetupDefinitions("default");
+            if (requestSequence !== mcpSettingsSequence) return;
+            renderMcpCustomForm(defaultSetupDefinitions, requestSequence);
             if (
                 requestSequence === mcpSettingsSequence
                 && mcpSettingsSaveBtn
@@ -3794,6 +3852,10 @@
         if (timeout !== null && (!Number.isInteger(timeout) || timeout < 1)) {
             throw new Error("Timeout must be a positive integer.");
         }
+        const settings = readMcpAccordionSettings(
+            form.querySelector("[data-mcp-custom-tool-setup]"),
+            {}
+        );
         await api.json(mcpServerSaveUrl, {
             method: "POST",
             body: {
@@ -3801,6 +3863,7 @@
                 command: fields.command,
                 args,
                 timeout_ms: timeout,
+                settings,
             },
         });
     };

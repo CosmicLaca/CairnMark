@@ -1067,13 +1067,20 @@ class ChatController:
 
     @staticmethod
     def _mcp_setup_definitions(name):
-        setup_path = Path(current_app.static_folder) / f"tool-setup-{name}.json"
-        try:
-            with setup_path.open("r", encoding="utf-8-sig") as setup_file:
-                definitions = json.load(setup_file)
-        except (OSError, json.JSONDecodeError):
-            return None
-        return definitions if isinstance(definitions, dict) else None
+        setup_names = (name,) if name == "default" else (name, "default")
+        for setup_name in setup_names:
+            setup_path = (
+                Path(current_app.static_folder)
+                / f"tool-setup-{setup_name}.json"
+            )
+            try:
+                with setup_path.open("r", encoding="utf-8-sig") as setup_file:
+                    definitions = json.load(setup_file)
+            except (OSError, json.JSONDecodeError):
+                continue
+            if isinstance(definitions, dict):
+                return definitions
+        return None
 
     @classmethod
     def _mcp_secret_fields(cls, name):
@@ -1149,12 +1156,48 @@ class ChatController:
     def save_mcp_server(self):
         """Create or update one private local MCP server declaration."""
         data = request.get_json(silent=True) or {}
+        settings = data.get("settings", {})
+        if not isinstance(settings, dict):
+            return jsonify({"error": "MCP settings must be an object."}), 400
         try:
+            service_name = str(data.get("name") or "").strip()
             declaration = self._mcp_registry().save_local_server(
-                data.get("name"),
+                service_name,
                 data.get("command"),
                 data.get("args"),
                 data.get("timeout_ms"),
+            )
+            existing = next(
+                (
+                    record
+                    for record in self.mcp_settings.all()
+                    if record["source"] == "external"
+                    and record["service"] == service_name
+                    and not record["tool"]
+                ),
+                None,
+            )
+            saved_settings = dict(existing["settings"]) if existing else {}
+            secret_fields = self._mcp_secret_fields(service_name) | {"password"}
+            for field_name, value in settings.items():
+                if (
+                    field_name in secret_fields
+                    and value in (None, "")
+                    and saved_settings.get(field_name)
+                ):
+                    continue
+                saved_settings[field_name] = value
+            self.mcp_settings.upsert(
+                [
+                    {
+                        "source": "external",
+                        "service": service_name,
+                        "tool": "",
+                        "enabled": existing["enabled"] if existing else False,
+                        "settings": saved_settings,
+                        "secret_fields": sorted(secret_fields),
+                    }
+                ]
             )
             return jsonify({"saved": True, "server": declaration})
         except OSError:
