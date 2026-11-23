@@ -38,6 +38,8 @@ not collide.
 6. Select **Save**.
 7. Right-click the tool button, enable global tool use, and save again.
 
+<img src="./first-mcp.jpg" height="400px" alt="MCP tool setting">
+
 Import from OpenCode is offered only on first setup and is never automatic.
 Private connection declarations remain in `services/mcp.json` rather than the
 main application database.

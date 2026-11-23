@@ -121,10 +121,14 @@ subtools, and save.
 > Use the Weather tool to report the current weather in Budapest, Hungary.
 > Include observation time, temperature, apparent temperature, humidity,
 > precipitation, wind speed, and source.
+> 
+> <img src="mcp-weather.jpg" width="80%" alt="CairnMark chat workspace">
 
 > Use the Weather forecast tool for a five-day forecast for London, United
 > Kingdom. Return a Markdown table with date, conditions, minimum and maximum
 > temperature, and maximum precipitation probability.
+> 
+> <img src="mcp-weather-1.jpg" width="80%" alt="CairnMark chat workspace">
 
 ### Weather troubleshooting
 
@@ -201,6 +205,8 @@ then save.
 > Use the Stock tool to retrieve the latest available IBM quote. Include the
 > trading date, open, high, low, price, previous close, change, change percent,
 > volume, data freshness, and source.
+> 
+> <img src="mcp-stock.jpg" width="80%" alt="CairnMark chat workspace">
 
 > Use the Stock tool to retrieve the ten most recent daily prices for MSFT and
 > present date, open, high, low, close, and volume in a table.
@@ -263,10 +269,14 @@ parent service, and enable only the chart generators you plan to use.
 > Use AntV Chart to create a line chart of monthly revenue: January 12000,
 > February 14500, March 13200, April 17800, May 19300, June 22100. Title it
 > “First Half Revenue”, label the Y axis “USD”, and return the generated chart.
+> 
+> <img src="mcp-antv.jpg" width="82%" alt="CairnMark chat workspace">
 
 > Use AntV Chart to create a dual-axis chart. Months: Jan, Feb, Mar, Apr, May.
-> Sales: 120, 150, 135, 180, 210. Profit-margin percentages: 12, 15, 14, 18,
-> 21. Use columns for sales and a line for profit margin.
+> Sales: 120, 150, 135, 180, 210. Profit-margin percentages: 12, 15, 14, 18, 21. 
+> Use columns for sales and a line for profit margin.
+> 
+> <img src="mcp-antv-1.jpg" width="82%" alt="CairnMark chat workspace">
 
 ### Chart responses and downloads
 
@@ -398,6 +408,8 @@ conversation to another installation.
 > energy, and energy storage. Insert a table with columns Technology, Typical
 > Efficiency, Main Advantage, Main Challenge, and Outlook. Add a conclusion.
 > Save the document as `renewable-energy-outlook-2035.docx`, then close it.
+> 
+> <img src="mcp-libre.jpg" width="80%" alt="CairnMark chat workspace">
 
 The current server supports paragraph styles and structured tables, but its
 `writer_insert_table` tool does not expose granular cell background colors or

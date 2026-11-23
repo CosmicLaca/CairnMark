@@ -142,6 +142,8 @@ conversation, which keeps saved-chat loading fast. Saving, loading, replacing,
 importing, or deleting a chat updates its media references as part of the same
 chat action.
 
+<img src="chat-attachments.jpg" width="70%" alt="Chat attachments">
+
 Files under `instance/preview/` are reference-aware. Deleting or clearing a
 chat removes a preview file only when no active or saved chat still references
 it. MCP-created files under `Generated-documents/` are never deleted with a
@@ -165,6 +167,8 @@ shortcuts. A local upload cannot be submitted to another site automatically,
 so CairnMark opens the provider's official upload page and leaves sending the
 image as an explicit user action.
 
+<img src="embedd-images.jpg" width="70%" alt="Chat attachments">
+
 Public external images rendered in an assistant response have the same search
 action next to their download control. In this case CairnMark supplies the
 public image URL to the selected reverse-search provider automatically. This is
@@ -180,6 +184,8 @@ Ordinary public HTTP or HTTPS page links in an assistant response can display a
 use their specialized previews. CairnMark captures at most five distinct pages
 per response, follows only safe public destinations, and ignores a page when it
 does not return HTTP 200 or cannot be captured within the configured timeout.
+
+<img src="link-screenshot.jpg" width="70%" alt="Link screenshots">
 
 Preview images use generated identifiers under `instance/preview/`; the remote
 URL is never used as a filename. The URL-to-preview mapping is message metadata,
