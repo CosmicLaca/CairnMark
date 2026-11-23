@@ -309,6 +309,7 @@
     font-size: 0.82rem;
     text-align: left;
     cursor: pointer;
+    white-space: nowrap;
 }
 
 .searchable-select-option:hover,

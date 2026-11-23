@@ -1191,13 +1191,26 @@ class ModelProviderService:
             label = f"{label} (API)"
         elif size_gb is not None:
             label = f"{label} ({size_gb} GB)"
-        return {
+        entry = {
             "provider": provider,
             "provider_label": display_name,
             "model": model_name,
             "size_gb": size_gb,
             "label": label,
         }
+        saved = self.parameters.value(f"{provider}::{model_name}")
+        if isinstance(saved, dict):
+            modalities = ModelProviderService._display_field(
+                saved, "modalities"
+            )
+            if modalities:
+                entry["modalities"] = modalities
+            caps = ModelProviderService._display_field(
+                saved, "chat_template_caps"
+            )
+            if caps:
+                entry["chat_template_caps"] = caps
+        return entry
 
     def active_models(self):
         """Return enabled provider models ready for selection.

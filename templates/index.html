@@ -358,7 +358,7 @@
             {% for model in active_models %}
               <option value="{{ model.provider }}::{{ model.model }}"
                 {% if chat_settings.model_name|trim == (model.provider ~ "::" ~ model.model)|trim %}selected{% endif %}>
-                {{ model.label }}
+                {{ model.label }}{% if model.modalities and model.modalities.vision %} 📷{% endif %}{% if model.modalities and model.modalities.video %} 🎥{% endif %}{% if model.modalities and model.modalities.audio %} 🎤{% endif %}{% if model.chat_template_caps and (model.chat_template_caps.supports_tools or model.chat_template_caps.supports_tool_calls) %} 🔧{% endif %}
               </option>
             {% endfor %}
           </select>
