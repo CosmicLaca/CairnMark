@@ -1564,6 +1564,11 @@ class ChatController:
             for item in normalized
             if item["source"] == "external"
         }
+        external_enabled = {
+            item["service"]: item["enabled"]
+            for item in normalized
+            if item["source"] == "external"
+        }
         cached_external_tools = {
             (tool["service"], tool["tool"])
             for tool in self.mcp_settings.cached_tools()
@@ -1572,6 +1577,10 @@ class ChatController:
             item for item in normalized if item["source"].startswith("external")
         ):
             name = record["service"]
+            service_enabled = external_enabled.get(name, False)
+            if not record["enabled"] or not service_enabled:
+                eligible.append(record)
+                continue
             if name not in external_status:
                 service_settings = external_settings.get(name, {})
                 try:
@@ -1597,7 +1606,19 @@ class ChatController:
         managed_records = [
             item for item in normalized if item["source"].startswith("llama_")
         ]
-        if managed_records:
+        managed_enabled = {
+            item["service"]: item["enabled"]
+            for item in managed_records
+            if item["source"] == "llama_service"
+        }
+        enabled_managed_records = [
+            item
+            for item in managed_records
+            if item["enabled"] and managed_enabled.get(item["service"], False)
+        ]
+        if managed_records and not enabled_managed_records:
+            eligible.extend(managed_records)
+        elif enabled_managed_records:
             discovery = self.service.llama_managed_tools()
             live_tools = {}
             live_services = set()
@@ -1622,7 +1643,10 @@ class ChatController:
                 }
             )
             managed_status = {}
-            for service_name in live_services:
+            enabled_services = {
+                item["service"] for item in enabled_managed_records
+            }
+            for service_name in live_services & enabled_services:
                 settings = service_settings.get(service_name, {})
                 definitions, test_definition = self._mcp_endpoint_test_setup(
                     service_name,
@@ -1652,6 +1676,12 @@ class ChatController:
 
             for record in managed_records:
                 service_name = record["service"]
+                if (
+                    not record["enabled"]
+                    or not managed_enabled.get(service_name, False)
+                ):
+                    eligible.append(record)
+                    continue
                 accessible = managed_status.get(service_name, False)
                 if record["source"] == "llama_tool":
                     accessible = (

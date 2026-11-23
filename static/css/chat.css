@@ -1722,6 +1722,18 @@
     background: rgba(120, 130, 126, 0.09);
 }
 
+.mcp-service-row--offline {
+    background: rgba(180, 35, 24, 0.09);
+}
+
+.mcp-service-row--custom.mcp-service-row--offline {
+    background: rgba(205, 170, 55, 0.28);
+}
+
+.mcp-service-row--opencode.mcp-service-row--offline {
+    background: rgba(105, 113, 110, 0.17);
+}
+
 .mcp-service-identity,
 .mcp-service-controls {
     display: flex;
@@ -2336,6 +2348,11 @@
 
 .llama-managed-service--offline {
     border-left-color: #b42318;
+    background: rgba(76, 91, 87, 0.08);
+}
+
+.llama-managed-service--offline .llama-managed-service-heading {
+    background: rgba(76, 141, 129, 0.13);
 }
 
 .llama-managed-service--offline .llama-managed-service-status {

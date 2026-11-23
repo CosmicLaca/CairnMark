@@ -2631,7 +2631,6 @@
             "chat-tool-capability--inactive",
             globalToolsEnabled !== true || !hasEnabledServices
         );
-        toolCapabilityEl.setAttribute("aria-label", label);
         toolCapabilityEl.setAttribute("title", label);
         if (toolCapabilityTooltip) toolCapabilityTooltip.textContent = label;
     };
@@ -2995,6 +2994,24 @@
             toggleMcpToolSetup(name, details, row, setupIcon);
         });
         return row;
+    };
+
+    const showSavedDisabledMcpService = (row) => {
+        row.classList.remove(
+            "mcp-service-row--checking",
+            "mcp-service-row--offline",
+            "mcp-service-row--online"
+        );
+        const status = row.querySelector("[data-mcp-service-status]");
+        if (status) status.textContent = "Disabled";
+        const spinner = row.querySelector(".mcp-service-spinner");
+        if (spinner) spinner.hidden = true;
+        const offlineTooltip = row.querySelector(
+            ".mcp-service-offline-tooltip"
+        );
+        if (offlineTooltip) offlineTooltip.hidden = true;
+        applyCustomMcpServiceState(row, true);
+        row.setAttribute("data-mcp-service-online", "unchecked");
     };
 
     const testMcpSetupAccess = async (
@@ -3754,7 +3771,8 @@
         serviceName,
         entries,
         providerOnline,
-        providerName
+        providerName,
+        checkAvailability
     ) => {
         const servicePresent = entries.some((entry) => !entry.removed);
         const service = document.createElement("section");
@@ -3784,7 +3802,7 @@
         const status = document.createElement("span");
         status.className = "llama-managed-service-status";
         status.setAttribute("data-llama-managed-service-status", "");
-        status.textContent = "Checking API…";
+        status.textContent = checkAvailability ? "Checking API…" : "Disabled";
         controls.appendChild(status);
 
         const serviceSwitch = document.createElement("button");
@@ -3877,14 +3895,31 @@
         controls.appendChild(expandButton);
         header.append(identity, controls);
         service.append(header, toolList);
-        await updateLlamaServiceAvailability(
-            serviceName,
-            service,
-            definitions,
-            providerOnline,
-            servicePresent,
-            providerName
-        );
+        if (checkAvailability) {
+            await updateLlamaServiceAvailability(
+                serviceName,
+                service,
+                definitions,
+                providerOnline,
+                servicePresent,
+                providerName
+            );
+        } else {
+            service.setAttribute("data-llama-service-online", "unchecked");
+            serviceSwitch.disabled = !servicePresent;
+            setMcpSwitch(serviceSwitch, false);
+            service.querySelectorAll("[data-llama-managed-tool-switch]").forEach(
+                (toolSwitch) => {
+                    const removed = toolSwitch.closest(".llama-managed-tool-row")
+                        ?.classList.contains("llama-managed-tool-row--removed");
+                    toolSwitch.setAttribute(
+                        "data-llama-tool-available",
+                        removed ? "false" : "true"
+                    );
+                    toolSwitch.disabled = true;
+                }
+            );
+        }
         return service;
     };
 
@@ -3898,7 +3933,16 @@
         mcpServiceList.appendChild(loading);
 
         try {
-            const payload = await api.request(llamaManagedToolsUrl);
+            const hasEnabledService = Array.from(
+                savedLlamaServiceStates.values()
+            ).some(Boolean);
+            const payload = hasEnabledService
+                ? await api.request(llamaManagedToolsUrl)
+                : {
+                    configured: knownLlamaTools.size > 0,
+                    online: true,
+                    tools: Array.from(knownLlamaTools.values()),
+                };
             if (requestSequence !== mcpSettingsSequence) return 0;
             const providerOnline = Boolean(payload && payload.online);
             const tools = Array.isArray(payload && payload.tools)
@@ -3937,7 +3981,8 @@
                         serviceName,
                         serviceEntries,
                         providerOnline,
-                        provider
+                        provider,
+                        Boolean(savedLlamaServiceStates.get(serviceName))
                     )
                 ))
             );
@@ -4124,6 +4169,10 @@
             const checks = names.map((name) => {
                 const row = createMcpServiceRow(name, servers[name]);
                 mcpServiceList.appendChild(row);
+                if (!savedMcpStates.get(name)) {
+                    showSavedDisabledMcpService(row);
+                    return Promise.resolve();
+                }
                 return checkMcpService(name, row, requestSequence);
             });
             await Promise.all([...checks, managedTools]);
@@ -4259,10 +4308,9 @@
     const collectMcpSettingsRecords = () => {
         const records = [];
         mcpServiceList?.querySelectorAll("[data-mcp-service-row]").forEach((row) => {
-            if (!row.classList.contains("mcp-service-row--online")) return;
             const serviceSwitch = row.querySelector("[data-mcp-service-switch]");
             const name = serviceSwitch?.getAttribute("data-mcp-service-switch");
-            if (!name || serviceSwitch.disabled) return;
+            if (!name) return;
             const settings = readMcpAccordionSettings(
                 row.querySelector("[data-mcp-tool-setup]"),
                 savedMcpToolSettings.get(name) || {}
@@ -4303,14 +4351,10 @@
         mcpServiceList?.querySelectorAll("[data-llama-managed-service]").forEach(
             (service) => {
                 const serviceName = service.getAttribute("data-llama-managed-service");
-                const providerOnline = service.getAttribute("data-llama-provider-online") === "true";
                 const servicePresent = service.getAttribute("data-llama-service-present") === "true";
-                const serviceOnline = service.getAttribute("data-llama-service-online") === "true";
                 if (
                     !serviceName
-                    || !providerOnline
                     || !servicePresent
-                    || !serviceOnline
                 ) return;
                 const settings = readMcpAccordionSettings(
                     service.querySelector("[data-llama-managed-defaults]"),
