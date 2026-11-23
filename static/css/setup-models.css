@@ -1570,3 +1570,8 @@ body.modal-open {
     justify-content: space-between;
     padding: 6px 0;
 }
+
+.model-settings-content input:checked + .slider {
+    border-color: #398376;
+    background: #398376;
+}
