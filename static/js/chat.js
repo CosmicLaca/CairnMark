@@ -2575,8 +2575,11 @@
         const serviceName = createMcpName(name);
         const sourceBadge = document.createElement("span");
         sourceBadge.className = "mcp-source-badge mcp-source-badge--custom";
-        sourceBadge.textContent = "Custom";
-        sourceBadge.title = "Custom or imported MCP service";
+        const source = details && details.source;
+        sourceBadge.textContent = source === "opencode" ? "OpenCode" : "Custom";
+        sourceBadge.title = source === "opencode"
+            ? "Imported from OpenCode"
+            : "Custom MCP service";
         const toolCount = document.createElement("span");
         toolCount.className = "mcp-service-tool-count";
         toolCount.textContent = `${serviceTools.length} ${
@@ -3601,48 +3604,49 @@
         }
     };
 
-    const renderMcpFirstRun = (config, requestSequence) => {
-        if (config.opencode_import_available) {
-            const importPanel = document.createElement("section");
-            importPanel.className = "mcp-import-panel";
-            const importCopy = document.createElement("div");
-            const importTitle = document.createElement("strong");
-            importTitle.textContent = "OpenCode MCP settings found";
-            const importHint = document.createElement("span");
-            const names = Array.isArray(config.opencode_server_names)
-                ? config.opencode_server_names.join(", ")
-                : "";
-            importHint.textContent = names
-                ? `Available: ${names}`
-                : "Import the available local MCP servers.";
-            importCopy.append(importTitle, importHint);
-            const importButton = document.createElement("button");
-            importButton.type = "button";
-            importButton.className = "modal-save-button mcp-import-button";
-            importButton.textContent = "Import from OpenCode";
-            importButton.addEventListener("click", async () => {
-                importButton.disabled = true;
-                try {
-                    await api.json(mcpImportUrl, {method: "POST"});
-                    if (requestSequence === mcpSettingsSequence) {
-                        await openMcpSettings();
-                    }
-                } catch (error) {
-                    importHint.textContent = String(error);
-                    importPanel.classList.add("mcp-import-panel--error");
-                    importButton.disabled = false;
+    const renderMcpImportPanel = (config, requestSequence) => {
+        if (!config || !config.opencode_import_available) return;
+        const importPanel = document.createElement("section");
+        importPanel.className = "mcp-import-panel";
+        const importCopy = document.createElement("div");
+        const importTitle = document.createElement("strong");
+        importTitle.textContent = "OpenCode MCP settings found";
+        const importHint = document.createElement("span");
+        const names = Array.isArray(config.opencode_server_names)
+            ? config.opencode_server_names.join(", ")
+            : "";
+        importHint.textContent = names
+            ? `Available: ${names}`
+            : "Import the available local MCP servers.";
+        importCopy.append(importTitle, importHint);
+        const importButton = document.createElement("button");
+        importButton.type = "button";
+        importButton.className = "modal-save-button mcp-import-button";
+        importButton.textContent = "Import from OpenCode";
+        importButton.addEventListener("click", async () => {
+            importButton.disabled = true;
+            try {
+                await api.json(mcpImportUrl, {method: "POST"});
+                if (requestSequence === mcpSettingsSequence) {
+                    await openMcpSettings();
                 }
-            });
-            importPanel.append(importCopy, importButton);
-            mcpServiceList.appendChild(importPanel);
-        }
+            } catch (error) {
+                importHint.textContent = String(error);
+                importPanel.classList.add("mcp-import-panel--error");
+                importButton.disabled = false;
+            }
+        });
+        importPanel.append(importCopy, importButton);
+        mcpServiceList.appendChild(importPanel);
+    };
 
+    const renderMcpCustomForm = () => {
         const form = document.createElement("section");
         form.className = "mcp-custom-server";
         const heading = document.createElement("div");
         heading.className = "mcp-custom-server-heading";
         const title = document.createElement("strong");
-        title.textContent = "Add the first custom MCP service";
+        title.textContent = "Add new custom MCP service";
         const hint = document.createElement("span");
         hint.textContent = "Saved privately to services/mcp.json.";
         heading.append(title, hint);
@@ -3691,24 +3695,14 @@
                 : [];
             mcpServiceList.replaceChildren();
             const managedTools = renderLlamaManagedTools(requestSequence);
-            if (names.length === 0) {
-                renderMcpFirstRun(config || {}, requestSequence);
-                await managedTools;
-                if (mcpSettingsSaveBtn) mcpSettingsSaveBtn.disabled = false;
-                if (
-                    requestSequence === mcpSettingsSequence
-                    && mcpStatusCheckBtn
-                ) {
-                    mcpStatusCheckBtn.disabled = false;
-                }
-                return;
-            }
+            renderMcpImportPanel(config || {}, requestSequence);
             const checks = names.map((name) => {
                 const row = createMcpServiceRow(name, servers[name]);
                 mcpServiceList.appendChild(row);
                 return checkMcpService(name, row, requestSequence);
             });
             await Promise.all([...checks, managedTools]);
+            renderMcpCustomForm();
             if (
                 requestSequence === mcpSettingsSequence
                 && mcpSettingsSaveBtn

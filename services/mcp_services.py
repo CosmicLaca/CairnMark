@@ -150,21 +150,17 @@ class McpServiceRegistry:
 
     def client_configuration(self):
         """Return the modal configuration without unnecessary discovery."""
-        if self.configured():
-            return {
-                "configured": True,
-                "default_timeout_ms": DEFAULT_MCP_TIMEOUT_MS,
-                "mcpServers": self.services(),
-                "opencode_import_available": False,
-                "opencode_server_names": [],
-            }
+        existing = self.services() if self.configured() else {}
         discovered = self.opencode_services()
+        new_servers = [
+            name for name in discovered if name not in existing
+        ]
         return {
-            "configured": False,
+            "configured": self.configured(),
             "default_timeout_ms": DEFAULT_MCP_TIMEOUT_MS,
-            "mcpServers": {},
-            "opencode_import_available": bool(discovered),
-            "opencode_server_names": list(discovered),
+            "mcpServers": existing,
+            "opencode_import_available": bool(new_servers),
+            "opencode_server_names": new_servers,
         }
 
     def _write_services(self, servers):
@@ -176,14 +172,22 @@ class McpServiceRegistry:
         os.replace(temporary_path, self.config_path)
 
     def import_opencode(self):
-        """Explicitly import usable OpenCode MCP declarations once."""
-        if self.configured():
-            raise ValueError("services/mcp.json already exists.")
-        servers = self.opencode_services()
-        if not servers:
-            raise ValueError("No usable OpenCode MCP services were found.")
-        self._write_services(servers)
-        return servers
+        """Import usable OpenCode MCP declarations not already configured."""
+        existing = self.services() if self.configured() else {}
+        discovered = self.opencode_services()
+        new_servers = {
+            name: server
+            for name, server in discovered.items()
+            if name not in existing
+        }
+        if not new_servers:
+            raise ValueError("No new OpenCode MCP services were found.")
+        for server in new_servers.values():
+            server["source"] = "opencode"
+        merged = dict(existing)
+        merged.update(new_servers)
+        self._write_services(merged)
+        return new_servers
 
     def save_local_server(self, name, command, args, timeout_ms=None):
         """Create or update one local MCP server declaration."""

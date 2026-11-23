@@ -1,0 +1,78 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "type": "local",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "."
+      ]
+    },
+    "postgres": {
+      "type": "local",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres",
+        "postgresql://postgres:secret@localhost:5432/myapp"
+      ]
+    },
+    "playwright": {
+      "type": "local",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp"
+      ]
+    },
+    "git": {
+      "type": "local",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@cyanheads/git-mcp-server"
+      ]
+    },
+    "context7": {
+      "type": "local",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ]
+    },
+    "chrome-devtools": {
+      "type": "local",
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@latest"
+      ]
+    },
+    "comfyui": {
+      "type": "local",
+      "command": "npx",
+      "args": [
+        "-y",
+        "comfyui-mcp"
+      ]
+    },
+    "searxng": {
+      "type": "local",
+      "command": "npx",
+      "args": [
+        "-y",
+        "searxng-mcp-server"
+      ]
+    },
+    "solidcraft": {
+      "type": "local",
+      "command": "D:\\Software\\ArtCraft\\SolidCraft\\SolidCraft\\solidcraft-cli.exe",
+      "args": [
+        "mcp"
+      ],
+      "source": "opencode"
+    }
+  }
+}
