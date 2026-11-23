@@ -82,8 +82,8 @@ settings apply to every MCP source and are saved in `instance/tools.db` when
 | Setting | Default | Purpose |
 | --- | ---: | --- |
 | Enable/Disable tools | Off | Pauses or permits all saved tool services without changing their individual switches |
-| Maximum tool-call rounds | 6 | Limits model-to-tool continuation rounds per response; range 1–20 |
-| Maximum total tool calls | 12 | Limits all calls in one response, including parallel calls; range 1–100 |
+| Maximum tool-call rounds | 15 | Limits model-to-tool continuation rounds per response; range 1–20 |
+| Maximum total tool calls | 30 | Limits all calls in one response, including parallel calls; range 1–100 |
 | Stop after consecutive failures | 2 | Ends tool execution after repeated failures; range 1–10 |
 | Maximum result characters | 20,000 | Truncates each tool result before returning it to the model; range 1,000–500,000 |
 | Tool-use policy | Automatic | Controls when enabled definitions may be sent to the model |
@@ -130,6 +130,17 @@ body** when at least one tool was called. Its tooltip lists each distinct
 `provider::tool` identity used by that response. This audit marker is stored
 with active history, saved chats, and exported conversations.
 
+Custom stdio services remain connected for the complete assistant tool loop.
+This allows stateful servers such as LibreOffice to create a document, reuse its
+document ID across editing calls, save it, and close it before the MCP process
+ends.
+
+Successful LibreOffice saves inside `Generated-documents` render a document
+card and download action. CairnMark restores the card when loading active
+history, resuming a saved conversation, or importing a chat, provided the file
+still exists locally. Existing save-as targets receive a timestamped filename
+instead of being overwritten.
+
 ---
 
 ## SearXNG
@@ -137,6 +148,12 @@ with active history, saved chats, and exported conversations.
 For local SearXNG installation, engine configuration, direct API checks, image,
 audio, and video search examples, and troubleshooting, follow the complete
 **[MCP tool and local SearXNG setup guide](./tool-setup.md)**.
+
+## Custom tool examples
+
+For detailed app-level installation, form values, test prompts, output handling,
+and troubleshooting for the included Weather and Stock examples, AntV Chart,
+and LibreOffice, follow **[Custom MCP tool examples](./mcp-tools-examples.md)**.
 
 ---
 

@@ -192,6 +192,8 @@ The tool button appears only for a model whose saved capability data reports
 tool-call support. See **[MCP tool handling](mcp-tools.md)** for switches, service
 status, global policy, response markers, caching, and execution behavior. The
 complete local SearXNG procedure is in **[tool-setup.md](tool-setup.md)**.
+App-level Weather, Stock, AntV Chart, and LibreOffice examples are documented in
+**[mcp-tools-examples.md](mcp-tools-examples.md)**.
 
 <img src="tool-connect.jpg" width="35%" alt="Chat control">
 
