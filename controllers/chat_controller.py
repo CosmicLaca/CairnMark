@@ -279,14 +279,7 @@ class ChatController:
         )
 
         # Build messages list from the most recent turns kept by the user.
-        history = self.requests.active_history(
-            [
-                message
-                for message in self.history.messages()
-                if message["role"] in ("user", "assistant")
-                and not message.get("is_error")
-            ]
-        )
+        history = self.requests.active_history(self.history.messages())
         history_limit = chat_request.parameters.get("history_limit")
         send_all_previous = self.requests.history_switch(chat_request.raw)
         if send_all_previous:
@@ -835,8 +828,10 @@ class ChatController:
         return send_file(
             io.BytesIO(image.content),
             mimetype=image.content_type,
-            as_attachment=True,
-            download_name=image.filename,
+            as_attachment=request.args.get("preview") != "1",
+            download_name=(
+                image.filename if request.args.get("preview") != "1" else None
+            ),
             max_age=0,
         )
 

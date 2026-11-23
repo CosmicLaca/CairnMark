@@ -314,16 +314,25 @@ class ChatRequestWorkflow:
         return previous[max(0, len(previous) - (limit * 2)) :] + current
 
     def messages(self, system_prompt, history, history_limit):
-        """Build provider messages while retaining complete recent chat turns."""
+        """Build provider messages from role/content chat pairs only."""
         messages = []
         if system_prompt.strip():
             messages.append({"role": "system", "content": system_prompt})
-        messages.extend(
+        content_history = [
             {"role": item["role"], "content": item["content"]}
-            for item in self.selected_history(
-                history, history_limit, keep_current=True
+            for item in history
+            if (
+                isinstance(item, dict)
+                and item.get("role") in {"user", "assistant"}
+                and isinstance(item.get("content"), str)
+                and not item.get("is_error")
             )
-        )
+        ]
+        messages.extend(self.selected_history(
+            content_history,
+            history_limit,
+            keep_current=True,
+        ))
         return messages
 
     @staticmethod

@@ -887,17 +887,33 @@
                 if (!url || !image || !download) return;
 
                 let finished = false;
+                let proxyStarted = false;
                 const probe = new Image();
-                const finish = (available) => {
+                const finish = (available, source = url) => {
                     if (finished) return;
-                    finished = true;
                     window.clearTimeout(timeout);
                     if (!available) return;
-                    image.src = url;
+                    finished = true;
+                    image.src = source;
                     preview.classList.add("is-available");
                 };
+                const tryProxyPreview = () => {
+                    if (finished || proxyStarted) return;
+                    proxyStarted = true;
+                    window.clearTimeout(timeout);
+                    const proxyUrl = `${externalImageDownloadUrl}?preview=1&url=${
+                        encodeURIComponent(url)
+                    }`;
+                    image.addEventListener("load", () => {
+                        finish(
+                            image.naturalWidth > 0 && image.naturalHeight > 0,
+                            proxyUrl
+                        );
+                    }, { once: true });
+                    image.src = proxyUrl;
+                };
                 const timeout = window.setTimeout(
-                    () => finish(false),
+                    tryProxyPreview,
                     externalImageTimeoutMs
                 );
                 probe.addEventListener(
@@ -905,7 +921,7 @@
                     () => finish(probe.naturalWidth > 0 && probe.naturalHeight > 0),
                     { once: true }
                 );
-                probe.addEventListener("error", () => finish(false), { once: true });
+                probe.addEventListener("error", tryProxyPreview, { once: true });
                 image.addEventListener("error", () => {
                     image.removeAttribute("src");
                     preview.classList.remove("is-available");
