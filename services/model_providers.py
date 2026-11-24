@@ -1174,6 +1174,28 @@ class ModelProviderService:
                     "A valid online provider is required"
                 )
         self.models.model_selector_filter(page, provider)
+
+    def model_selector_model(self, page, active_models=None):
+        """Return a saved page model only while that model remains active."""
+        saved = self.models.model_selector_model(page)
+        entries = self.active_models() if active_models is None else active_models
+        active = {
+            f"{entry['provider']}::{entry['model']}"
+            for entry in entries
+        }
+        return saved if saved in active else ""
+
+    def save_model_selector_model(self, page, model_spec):
+        """Validate and persist the active model selected on one page."""
+        value = str(model_spec or "").strip()
+        active = {
+            f"{entry['provider']}::{entry['model']}"
+            for entry in self.active_models()
+        }
+        if not value or value not in active:
+            raise ProviderValidationError("Select an active model.")
+        self.models.model_selector_model(page, value)
+        return value
         return provider
 
     def saved_provider_overview(self, provider):

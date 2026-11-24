@@ -139,6 +139,17 @@
     };
 
     const handleCreate = async () => {
+        if (modelSelect?.value) {
+            try {
+                await api.json("/create_benchmark/model_selection", {
+                    method: "POST",
+                    body: { model: modelSelect.value },
+                });
+            } catch (error) {
+                window.alert(`Model selection could not be saved: ${error}`);
+            }
+        }
+
         const { valid, errors, topics } = validate();
         if (!valid) {
             window.alert(errors.join("\n"));

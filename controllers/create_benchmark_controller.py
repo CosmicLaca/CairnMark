@@ -62,8 +62,15 @@ class CreateBenchmarkController:
         if created_category not in categories:
             created_category = None
 
+        active_models = self.service.active_models()
+        saved_model = self.service.model_selector_model(
+            "create_benchmark",
+            active_models,
+        )
+
         return {
-            "active_models": self.service.active_models(),
+            "active_models": active_models,
+            "saved_model": saved_model,
             "categories": categories,
             "selected_category": selected_category,
             "created_category": created_category,
@@ -77,6 +84,18 @@ class CreateBenchmarkController:
             "new_category": "",
             "errors": [],
         }
+
+    def save_model_selection(self):
+        """Persist the benchmark creator's optional active-model selection."""
+        data = request.get_json(silent=True) or {}
+        try:
+            model = self.service.save_model_selector_model(
+                "create_benchmark",
+                data.get("model"),
+            )
+        except ProviderValidationError as error:
+            return jsonify({"error": str(error)}), 400
+        return jsonify({"model": model})
 
     def save_category(self, page):
         """Create a category from the creator form and return to the page."""

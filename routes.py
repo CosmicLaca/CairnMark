@@ -244,6 +244,12 @@ APPLICATION_ROUTES = (
         ("POST",),
     ),
     (
+        "/create_benchmark/model_selection",
+        "create_benchmark_model_selection",
+        create_benchmark_controller.save_model_selection,
+        ("POST",),
+    ),
+    (
         "/create_benchmark/generate",
         "create_benchmark_generate",
         create_benchmark_controller.generate,

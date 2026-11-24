@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS provider_setup_preferences (
 CREATE TABLE IF NOT EXISTS model_selector_preferences (
     page TEXT PRIMARY KEY,
     selected_provider TEXT NOT NULL DEFAULT 'all',
+    selected_model TEXT NOT NULL DEFAULT '',
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
 """
@@ -51,6 +52,9 @@ LATER_COLUMNS = {
     },
     "model_configurations": {
         "size_gb": "INTEGER",
+    },
+    "model_selector_preferences": {
+        "selected_model": "TEXT NOT NULL DEFAULT ''",
     },
 }
 
@@ -69,6 +73,7 @@ def _migrate_model_selector_preferences(connection):
         CREATE TABLE IF NOT EXISTS model_selector_preferences (
             page TEXT PRIMARY KEY,
             selected_provider TEXT NOT NULL DEFAULT 'all',
+            selected_model TEXT NOT NULL DEFAULT '',
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """
@@ -290,6 +295,32 @@ class ModelConfigurationRepository:
                 updated_at = CURRENT_TIMESTAMP
             """,
             (page, provider),
+        )
+
+    def model_selector_model(self, page, model=_UNSET):
+        """Read or persist the model selected in a page's model selector."""
+        page = str(page or "all").strip() or "all"
+        if model is _UNSET:
+            row = self.store.fetch(
+                """
+                SELECT selected_model
+                FROM model_selector_preferences
+                WHERE page = ?
+                """,
+                (page,),
+                one=True,
+            )
+            return row[0] if row else ""
+
+        self.store.execute(
+            """
+            INSERT INTO model_selector_preferences (page, selected_model)
+            VALUES (?, ?)
+            ON CONFLICT(page) DO UPDATE SET
+                selected_model = excluded.selected_model,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (page, model),
         )
 
 
