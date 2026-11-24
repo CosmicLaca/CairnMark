@@ -222,6 +222,148 @@
         if (chatFileImageHover) chatFileImageHover.hidden = true;
     };
 
+    let generatedDocumentHover = null;
+    let generatedDocumentHoverTimer = null;
+    const generatedDocumentPreviewRequests = new Map();
+    const generatedDocumentPreviewPattern = /\.(?:csv|docx|json|md|odt|pdf|txt)$/i;
+
+    const generatedDocumentPreviewUrl = (name) => {
+        const encoded = String(name || "")
+            .split("/")
+            .map(encodeURIComponent)
+            .join("/");
+        return `/chat/generated_document_preview/${encoded}`;
+    };
+
+    const ensureGeneratedDocumentHover = () => {
+        if (generatedDocumentHover) return generatedDocumentHover;
+        const preview = document.createElement("div");
+        preview.className = "chat-generated-document-hover";
+        preview.hidden = true;
+        const status = document.createElement("span");
+        status.className = "chat-generated-document-hover-status";
+        status.textContent = "Preparing preview…";
+        const frame = document.createElement("iframe");
+        frame.className = "chat-generated-document-hover-frame";
+        frame.title = "Document preview";
+        frame.hidden = true;
+        preview.append(status, frame);
+        preview.addEventListener("mouseenter", () => {
+            if (generatedDocumentHoverTimer !== null) {
+                window.clearTimeout(generatedDocumentHoverTimer);
+                generatedDocumentHoverTimer = null;
+            }
+        });
+        preview.addEventListener("mouseleave", () => {
+            generatedDocumentHoverTimer = window.setTimeout(() => {
+                preview.hidden = true;
+            }, 180);
+        });
+        document.body.appendChild(preview);
+        generatedDocumentHover = preview;
+        return preview;
+    };
+
+    const positionGeneratedDocumentHover = (preview, anchor) => {
+        const anchorRect = anchor.getBoundingClientRect();
+        const previewRect = preview.getBoundingClientRect();
+        const margin = 12;
+        const gap = 8;
+        let left = anchorRect.right + gap;
+        if (left + previewRect.width > window.innerWidth - margin) {
+            left = anchorRect.left - previewRect.width - gap;
+        }
+        left = Math.max(
+            margin,
+            Math.min(left, window.innerWidth - previewRect.width - margin)
+        );
+        const top = Math.max(
+            margin,
+            Math.min(anchorRect.top, window.innerHeight - previewRect.height - margin)
+        );
+        preview.style.left = `${Math.round(left)}px`;
+        preview.style.top = `${Math.round(top)}px`;
+    };
+
+    const showGeneratedDocumentHover = async (link, name) => {
+        if (!generatedDocumentPreviewPattern.test(name)) return;
+        if (generatedDocumentHoverTimer !== null) {
+            window.clearTimeout(generatedDocumentHoverTimer);
+            generatedDocumentHoverTimer = null;
+        }
+        const preview = ensureGeneratedDocumentHover();
+        const status = preview.querySelector(".chat-generated-document-hover-status");
+        const frame = preview.querySelector(".chat-generated-document-hover-frame");
+        const previewUrl = generatedDocumentPreviewUrl(name);
+        preview.dataset.previewUrl = previewUrl;
+        status.textContent = "Preparing preview…";
+        status.hidden = false;
+        frame.hidden = true;
+        preview.hidden = false;
+        window.requestAnimationFrame(() => positionGeneratedDocumentHover(preview, link));
+
+        let request = generatedDocumentPreviewRequests.get(previewUrl);
+        if (!request) {
+            request = fetch(previewUrl, { method: "HEAD", cache: "no-store" })
+                .then((response) => {
+                    const contentType = response.headers.get("Content-Type") || "";
+                    const supportedType = contentType.includes("application/pdf")
+                        || contentType.includes("text/html");
+                    if (!response.ok || !supportedType) {
+                        throw new Error("Document preview is unavailable.");
+                    }
+                    return true;
+                })
+                .catch((error) => {
+                    generatedDocumentPreviewRequests.delete(previewUrl);
+                    throw error;
+                });
+            generatedDocumentPreviewRequests.set(previewUrl, request);
+        }
+        try {
+            await request;
+        } catch (error) {
+            if (preview.dataset.previewUrl === previewUrl) preview.hidden = true;
+            return;
+        }
+        if (preview.hidden || preview.dataset.previewUrl !== previewUrl) return;
+        if (frame.src !== new URL(previewUrl, window.location.href).href) {
+            frame.src = previewUrl;
+        }
+        status.hidden = true;
+        frame.hidden = false;
+        window.requestAnimationFrame(() => positionGeneratedDocumentHover(preview, link));
+    };
+
+    const hideGeneratedDocumentHover = (immediate = false) => {
+        if (!generatedDocumentHover) return;
+        if (generatedDocumentHoverTimer !== null) {
+            window.clearTimeout(generatedDocumentHoverTimer);
+        }
+        if (immediate) {
+            generatedDocumentHover.hidden = true;
+            generatedDocumentHoverTimer = null;
+            return;
+        }
+        generatedDocumentHoverTimer = window.setTimeout(() => {
+            generatedDocumentHover.hidden = true;
+        }, 180);
+    };
+
+    const bindGeneratedDocumentPreview = (link, name) => {
+        if (!link || link.dataset.documentPreviewBound === "true") return;
+        link.dataset.documentPreviewBound = "true";
+        if (!generatedDocumentPreviewPattern.test(name)) return;
+        link.addEventListener("mouseenter", () => {
+            void showGeneratedDocumentHover(link, name);
+        });
+        link.addEventListener("mouseleave", () => hideGeneratedDocumentHover());
+        link.addEventListener("focus", () => {
+            void showGeneratedDocumentHover(link, name);
+        });
+        link.addEventListener("blur", () => hideGeneratedDocumentHover());
+    };
+
     const showChatFileImageHover = (item, anchor) => {
         if (!chatFileImageHover) {
             chatFileImageHover = document.createElement("div");
@@ -275,6 +417,10 @@
                     row.download = item.name
                         || String(item.filename).split("/").pop();
                 }
+                if (item.kind === "generated" && item.category === "document") {
+                    row.dataset.generatedDocumentName = item.filename;
+                    bindGeneratedDocumentPreview(row, item.filename);
+                }
             } else {
                 row.classList.add("chat-file-item--missing");
             }
@@ -308,6 +454,7 @@
     const renderChatLocalFiles = () => {
         if (!chatFileAccordion || !chatFileList || !chatFileCount) return;
         hideChatFileImageHover();
+        hideGeneratedDocumentHover(true);
         chatFileList.replaceChildren();
         const files = [...chatLocalFiles.values()];
         appendChatFileSection(
@@ -1169,6 +1316,8 @@
         const message = contentEl.parentElement;
         if (!message || message.querySelector(".chat-message-actions")) return;
 
+        const separator = document.createElement("hr");
+        separator.className = "chat-message-actions-separator";
         const actions = document.createElement("div");
         actions.className = "chat-message-actions";
         const toggleBtn = document.createElement("button");
@@ -1201,7 +1350,7 @@
             setTimeout(() => { copyBtn.textContent = "Copy"; }, 1500);
         });
         actions.append(toggleBtn, copyBtn);
-        message.appendChild(actions);
+        message.append(separator, actions);
     };
 
     const sqlTimestamp = (value) => {
@@ -1361,7 +1510,6 @@
             role === "assistant" ? "chat-content markdown-content" : "chat-content";
         if (role === "assistant") {
             div.appendChild(contentDiv);
-            attachAssistantActions(contentDiv, content);
             const generatedDocuments = Array.isArray(meta?.generated_documents)
                 ? meta.generated_documents
                 : [];
@@ -1376,6 +1524,7 @@
                     link.className = "chat-generated-document";
                     link.href = `/chat/generated_document/${name.split("/").map(encodeURIComponent).join("/")}`;
                     link.download = name.split("/").pop();
+                    link.dataset.generatedDocumentName = name;
                     const label = document.createElement("span");
                     label.className = "chat-generated-document-name";
                     label.textContent = name;
@@ -1384,10 +1533,12 @@
                     icon.setAttribute("aria-hidden", "true");
                     icon.textContent = "⇩";
                     link.append(label, icon);
+                    bindGeneratedDocumentPreview(link, name);
                     documents.appendChild(link);
                 });
                 if (documents.children.length > 0) div.appendChild(documents);
             }
+            attachAssistantActions(contentDiv, content);
         } else {
             const previewImages =
                 meta && Array.isArray(meta.preview_images)
@@ -5777,6 +5928,12 @@
     void loadParameterHelp();
     void loadToolGlobalState();
     renderMediaUploads(null);
+    document.querySelectorAll("[data-generated-document-name]").forEach((link) => {
+        bindGeneratedDocumentPreview(
+            link,
+            link.dataset.generatedDocumentName || ""
+        );
+    });
     if (!modelStateInitialized) setTimeout(updateMoreParamsButtonState, 0);
 
     if (historyEl) {

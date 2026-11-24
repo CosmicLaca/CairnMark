@@ -39,6 +39,7 @@ from services.chat_media import CHAT_MEDIA
 from services.chat_previews import ChatPreviewStore
 from services.chat_requests import CHAT_PARAMETER_FIELDS, ChatRequestWorkflow
 from services.chat_tools import ChatToolService
+from services.document_previews import DOCUMENT_PREVIEWS, DocumentPreviewError
 from services.external_images import ExternalImageError, ExternalImageService
 from services.mcp_services import MCP_NAME_PATTERN, McpServiceRegistry
 from services.model_providers import (
@@ -63,6 +64,7 @@ class ChatController:
         webpage_preview_service=None,
         history_repository=None,
         media_service=None,
+        document_preview_service=None,
     ):
         self.service = service or ModelProviderService()
         self.history = history_repository or CHAT_HISTORY
@@ -77,6 +79,7 @@ class ChatController:
         self.external_images = external_image_service or ExternalImageService()
         self.webpages = webpage_preview_service or WebpagePreviewService(self.previews)
         self.media = media_service or CHAT_MEDIA
+        self.document_previews = document_preview_service or DOCUMENT_PREVIEWS
 
     @staticmethod
     def _add_tools_to_request_body(request_body, bindings, transcript):
@@ -818,6 +821,31 @@ class ChatController:
             as_attachment=as_attachment,
             download_name=safe_path.name if as_attachment else None,
         )
+
+    def preview_generated_document(self, filename):
+        """Create or reuse an independent cached document preview."""
+        directory = Path(current_app.config["GENERATED_DOCUMENT_DIRECTORY"])
+        safe_path = Path(filename)
+        if safe_path.is_absolute() or ".." in safe_path.parts:
+            return ("", 404)
+        source_path = directory / safe_path
+        if not source_path.is_file():
+            return ("", 404)
+        try:
+            preview = self.document_previews.preview(source_path, safe_path)
+        except DocumentPreviewError as error:
+            return jsonify({"error": str(error)}), 422
+        response = send_file(
+            preview.path,
+            mimetype=preview.mimetype,
+            as_attachment=False,
+            max_age=0,
+        )
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'none'; style-src 'unsafe-inline'"
+        )
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
 
     def download_external_image(self):
         """Download a validated public chat image through a same-origin route."""

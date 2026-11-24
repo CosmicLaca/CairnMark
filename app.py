@@ -59,6 +59,14 @@ def create_app(config_name=None, config_overrides=None):
             app.config["MEDIA_DATABASE_PATH"] = str(
                 chat_path.with_name("media.db")
             )
+        if (
+            "CHAT_DATABASE_PATH" in config_overrides
+            and "DOCUMENT_PREVIEW_DIRECTORY" not in config_overrides
+        ):
+            chat_path = Path(app.config["CHAT_DATABASE_PATH"])
+            app.config["DOCUMENT_PREVIEW_DIRECTORY"] = str(
+                chat_path.with_name("document-previews")
+            )
     app.logger.setLevel(getattr(logging, app.config["LOG_LEVEL"], logging.INFO))
     init_storage(app)
     init_routes(app)

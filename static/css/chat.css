@@ -665,6 +665,13 @@
     gap: 8px;
 }
 
+.chat-message-actions-separator {
+    width: 100%;
+    margin: 0.75rem 0 0.55rem;
+    border: 0;
+    border-top: 1px solid var(--line);
+}
+
 .chat-meta,
 .chat-saved-prompt-name {
     color: #3c897c;
@@ -731,6 +738,43 @@
     color: #ffffff;
     background: #256b60;
     border-radius: 3px;
+}
+
+.chat-generated-document-hover {
+    position: fixed;
+    z-index: 1200;
+    display: grid;
+    width: min(480px, calc(100vw - 24px));
+    height: min(600px, calc(100vh - 24px));
+    overflow: hidden;
+    place-items: center;
+    pointer-events: auto;
+    border: 1px solid rgba(37, 107, 96, 0.28);
+    border-radius: 3px 13px 3px 3px;
+    background: #ffffff;
+    box-shadow: 0 12px 32px rgba(34, 42, 39, 0.22);
+}
+
+.chat-generated-document-hover[hidden] {
+    display: none;
+}
+
+.chat-generated-document-hover-frame {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: #ffffff;
+}
+
+.chat-generated-document-hover-frame[hidden],
+.chat-generated-document-hover-status[hidden] {
+    display: none;
+}
+
+.chat-generated-document-hover-status {
+    padding: 1rem;
+    color: var(--muted);
+    font-size: 0.78rem;
 }
 
 .chat-used-tools-icon {

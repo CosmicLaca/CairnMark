@@ -19,7 +19,7 @@
 {% macro chat_file_item(attachment) -%}
   {% set available = attachment.exists|default(true) %}
   {% if available %}
-  <a class="chat-file-item{% if attachment.category == 'image' %} chat-file-item--image{% endif %}" href="{% if attachment.kind == 'external' %}{{ attachment.filename }}{% elif attachment.kind == 'generated' %}{{ url_for('chat_generated_document', filename=attachment.filename) }}{% else %}{{ url_for('chat_preview', filename=attachment.filename, download=1) }}{% endif %}"{% if attachment.kind == 'external' %} target="_blank" rel="noopener noreferrer"{% else %} download="{{ attachment.name }}"{% endif %}{% if attachment.category == 'image' %} data-chat-file-image-src="{% if attachment.kind == 'generated' %}{{ url_for('chat_generated_document', filename=attachment.filename, preview=1) }}{% else %}{{ url_for('chat_preview', filename=attachment.filename) }}{% endif %}"{% endif %}>
+  <a class="chat-file-item{% if attachment.category == 'image' %} chat-file-item--image{% endif %}" href="{% if attachment.kind == 'external' %}{{ attachment.filename }}{% elif attachment.kind == 'generated' %}{{ url_for('chat_generated_document', filename=attachment.filename) }}{% else %}{{ url_for('chat_preview', filename=attachment.filename, download=1) }}{% endif %}"{% if attachment.kind == 'external' %} target="_blank" rel="noopener noreferrer"{% else %} download="{{ attachment.name }}"{% endif %}{% if attachment.category == 'image' %} data-chat-file-image-src="{% if attachment.kind == 'generated' %}{{ url_for('chat_generated_document', filename=attachment.filename, preview=1) }}{% else %}{{ url_for('chat_preview', filename=attachment.filename) }}{% endif %}"{% elif attachment.kind == 'generated' and attachment.category == 'document' %} data-generated-document-name="{{ attachment.filename }}"{% endif %}>
     <span class="chat-file-name">{{ attachment.name }}</span>
     <span class="chat-file-download" aria-hidden="true">{% if attachment.kind == 'external' %}↗{% else %}⇩{% endif %}</span>
   </a>
@@ -248,7 +248,7 @@
           {% if message.role == 'assistant' and message.generated_documents %}
           <div class="chat-generated-documents" aria-label="Generated documents">
             {% for document in message.generated_documents %}
-            <a class="chat-generated-document" href="{{ url_for('chat_generated_document', filename=document.name) }}" download>
+            <a class="chat-generated-document" href="{{ url_for('chat_generated_document', filename=document.name) }}" download data-generated-document-name="{{ document.name }}">
               <span class="chat-generated-document-name">{{ document.name }}</span>
               <span class="chat-generated-document-download" aria-hidden="true">⇩</span>
             </a>

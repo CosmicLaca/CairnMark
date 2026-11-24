@@ -148,6 +148,12 @@ APPLICATION_ROUTES = (
         ("GET",),
     ),
     (
+        "/chat/generated_document_preview/<path:filename>",
+        "chat_generated_document_preview",
+        chat_controller.preview_generated_document,
+        ("GET",),
+    ),
+    (
         "/chat/external_image_download",
         "chat_external_image_download",
         chat_controller.download_external_image,
