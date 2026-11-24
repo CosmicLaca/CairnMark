@@ -212,6 +212,7 @@
                     system_prompt: systemPromptTextarea?.value || "",
                     user_prompt: userPromptTextarea?.value || "",
                     topics: topics,
+                    ...(window.CairnmarkBenchmarkSetup?.requestValues?.() || {}),
                 }),
             });
             let result = null;
@@ -233,7 +234,7 @@
             const filename = result.filename || "";
             const characters = result.characters || 0;
             setStatus(
-                `Benchmark JSON is ready: ${filename} (${characters.toLocaleString()} characters generated)`,
+                `Benchmark JSON is ready: ${filename} (${characters.toLocaleString()} characters generated)${result.log_filename ? `; log: ${result.log_filename}` : ""}`,
                 false,
                 false
             );

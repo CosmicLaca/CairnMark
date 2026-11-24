@@ -105,6 +105,14 @@ class BenchmarkRepository:
         self.logs_directory.mkdir(parents=True, exist_ok=True)
         self._atomic_write(self.logs_directory / filename, content)
 
+    def save_json_log(self, filename, content):
+        """Atomically write a structured JSON generation log."""
+        self.logs_directory.mkdir(parents=True, exist_ok=True)
+        self._atomic_write(
+            self.logs_directory / filename,
+            json.dumps(content, indent=2, ensure_ascii=False),
+        )
+
     def unique_filename(self, stem, suffix=".json"):
         """Return a filename that does not exist in the benchmark directory."""
         candidate = f"{stem}{suffix}"

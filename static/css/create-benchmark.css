@@ -1,4 +1,19 @@
-/* Benchmark setup panel for the benchmark creator. */
+/* Benchmark creator-only elements; shared setup controls use chat.css. */
+
+.benchmark-log-toggle {
+    display: flex;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.35);
+    cursor: pointer;
+}
+
+.benchmark-log-toggle input { margin-top: 3px; }
+.benchmark-log-toggle span { display: grid; gap: 3px; }
+.benchmark-log-toggle small { color: #6f7c77; line-height: 1.4; }
+
+.benchmark-setup-message { min-height: 1.2em; margin: 0; }
 
 .benchmark-title-row {
     display: flex;

@@ -2249,6 +2249,36 @@ class ModelProviderService:
             timeout=timeout,
         )
 
+    def benchmark_generation_stream(
+        self,
+        provider,
+        model,
+        system_prompt,
+        user_prompt,
+        *,
+        temperature=None,
+        top_p=None,
+        top_k=None,
+        min_p=None,
+        seed=None,
+        extra_parameters=None,
+        timeout=300,
+    ):
+        """Stream one stateless, tool-free benchmark creation request."""
+        messages = self._stateless_prompt_messages(system_prompt, user_prompt)
+        yield from self.chat_completion_with_params_stream(
+            provider,
+            model,
+            messages,
+            temperature,
+            top_p,
+            top_k,
+            min_p=min_p,
+            seed=seed,
+            extra_parameters=extra_parameters,
+            timeout=timeout,
+        )
+
     @staticmethod
     def _sampling_parameters(
         temperature,

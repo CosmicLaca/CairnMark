@@ -41,8 +41,22 @@
   </div>
 {%- endmacro %}
 
+{% macro benchmark_parameter(id, label, help, key, value, step, minimum, maximum) -%}
+<div class="field-group">
+  <div class="chat-parameter-label">
+    <label for="{{ id }}">{{ label }}</label>
+    <button type="button" class="chat-info" data-parameter-help-key="{{ key }}">
+      <span aria-hidden="true">i</span>
+      <span class="chat-info-tooltip" role="tooltip">{{ help }}</span>
+    </button>
+  </div>
+  <input id="{{ id }}" type="number" step="{{ step }}" min="{{ minimum }}" max="{{ maximum }}" value="{{ value if value is not none else '' }}" data-benchmark-{{ key|replace('_', '-') }}>
+</div>
+{%- endmacro %}
+
 {% block styles %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/workspace-components.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/create-benchmark.css') }}">
 {% endblock %}
 
@@ -68,7 +82,9 @@
   </div>
 {% endif %}
 
-<section class="content model-selector-panel" aria-labelledby="benchmark-setup-title">
+<div class="chat-layout">
+<section class="chat-main content" aria-label="Benchmark creator">
+<section class="model-selector-panel" aria-labelledby="benchmark-setup-title">
   <span class="panel-kicker">Benchmark setup</span>
   <div class="benchmark-heading model-selector-heading">
     <div>
@@ -205,7 +221,7 @@
   </div>
 </section>
 
-<section class="content model-selector-panel" aria-labelledby="prompt-customization-title">
+<section class="model-selector-panel" aria-labelledby="prompt-customization-title">
   <span class="panel-kicker">Optional customization</span>
   <div class="benchmark-heading model-selector-heading">
     <div>
@@ -242,6 +258,69 @@
     </div>
   </div>
 </section>
+</section>
+
+<aside class="chat-setup content" aria-labelledby="benchmark-generation-title">
+  <header class="chat-setup-header">
+    <div>
+      <span class="panel-kicker">Benchmark setup</span>
+      <h2 id="benchmark-generation-title">Benchmark setup</h2>
+    </div>
+  </header>
+  <p class="chat-setup-lede">Used only while creating benchmark JSON. Empty fields are omitted.</p>
+  <fieldset class="field-group chat-parameters-field">
+  <legend>Generation parameters</legend>
+  <span class="field-hint">Fine-tune how much freedom the model has while creating the benchmark.</span>
+  <div class="chat-parameter-grid">
+    {{ benchmark_parameter("benchmark-temperature", "Temperature", "Controls randomness. Lower is more focused; higher is more varied.", "temperature", benchmark_settings.temperature, "0.1", "0", "2") }}
+    {{ benchmark_parameter("benchmark-top-p", "Top P", "Nucleus sampling threshold. 1.0 considers all tokens.", "top_p", benchmark_settings.top_p, "0.05", "0", "1") }}
+    {{ benchmark_parameter("benchmark-top-k", "Top K", "Limits sampling to the K most likely tokens. 0 disables the limit.", "top_k", benchmark_settings.top_k, "1", "0", "200") }}
+    <div class="field-group">
+      <div class="chat-parameter-label"><label for="benchmark-seed">Seed</label></div>
+      <div class="chat-seed-control">
+        <button type="button" class="chat-toggle-switch" data-benchmark-seed-switch role="switch" aria-checked="{{ 'true' if benchmark_settings.randomize_seed else 'false' }}" title="Randomize seed">
+          <span class="chat-toggle-switch-track" aria-hidden="true"><span class="chat-toggle-switch-knob"></span></span>
+          <span class="chat-toggle-switch-tooltip" role="tooltip">Randomize seed</span>
+        </button>
+        <input id="benchmark-seed" type="number" step="1" min="-1" max="4294967295" value="{{ benchmark_settings.seed if benchmark_settings.seed is not none else '' }}" data-benchmark-seed>
+      </div>
+    </div>
+    {{ benchmark_parameter("benchmark-min-p", "Min P", "Minimum relative probability threshold; a common range is 0.0–0.1.", "min_p", benchmark_settings.min_p, "0.01", "0", "1") }}
+  </div>
+  </fieldset>
+
+  <label class="benchmark-log-toggle">
+    <input type="checkbox" data-benchmark-create-log{% if benchmark_settings.create_log %} checked{% endif %}>
+    <span><strong>Create log</strong><small>Save request bodies and JSON responses under Benchmark-prompts/logs.</small></span>
+  </label>
+
+  <div class="chat-setup-bottom-actions">
+    <div class="chat-more-params-row">
+      <button class="save-metadata-button chat-more-params-button" type="button" data-benchmark-more-params disabled>
+        <span aria-hidden="true"></span>Set more parameters
+        <span class="more-params-state-sign" data-benchmark-more-state hidden>UNSET</span>
+      </button>
+    </div>
+    <div class="chat-setup-actions">
+      <button class="save-metadata-button" type="button" data-benchmark-save-settings>
+        <span aria-hidden="true">◆</span> Save setup
+      </button>
+    </div>
+  </div>
+  <p class="field-hint benchmark-setup-message" data-benchmark-setup-message role="status"></p>
+</aside>
+</div>
+
+<div class="modal more-params-modal" data-benchmark-more-modal hidden role="dialog" aria-modal="true" aria-labelledby="benchmark-more-title">
+  <div class="modal-content">
+    <header class="modal-header"><h2 id="benchmark-more-title">Additional model parameters</h2><button type="button" class="close-modal-button" data-benchmark-more-unset aria-label="Close">&times;</button></header>
+    <div class="modal-body"><div data-more-params-content data-benchmark-more-content></div></div>
+    <footer class="modal-footer more-params-footer">
+      <button type="button" class="modal-cancel-button" data-benchmark-more-unset>Unset</button>
+      <button type="button" class="modal-save-button" data-benchmark-more-set><span aria-hidden="true">✓</span> Set</button>
+    </footer>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -249,7 +328,9 @@
   <script src="{{ url_for('static', filename='js/model_select_filter.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/category_select.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/benchmark_topics.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/create_benchmark_setup.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/create_benchmark.js') }}" defer></script>
+  <script>window.CairnmarkParameterHelpUrl = {{ url_for('static', filename='parameters.json')|tojson }};</script>
   <script id="prompt-templates" type="application/json">
     {{ {"system": system_prompt_template, "user": user_prompt_template}|tojson }}
   </script>

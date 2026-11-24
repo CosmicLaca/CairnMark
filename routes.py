@@ -250,6 +250,12 @@ APPLICATION_ROUTES = (
         ("POST",),
     ),
     (
+        "/create_benchmark/settings",
+        "create_benchmark_settings",
+        create_benchmark_controller.save_settings,
+        ("POST",),
+    ),
+    (
         "/create_benchmark/generate",
         "create_benchmark_generate",
         create_benchmark_controller.generate,

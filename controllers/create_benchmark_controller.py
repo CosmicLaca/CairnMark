@@ -16,6 +16,7 @@ from flask import (
 )
 
 from models.benchmark_metadata import BENCHMARK_METADATA
+from models.create_benchmark_settings import CREATE_BENCHMARK_SETTINGS
 from services.benchmark_categories import (
     UNCATEGORIZED,
     category_names,
@@ -28,6 +29,7 @@ from services.benchmark_documents import (
     read_prompt_template,
 )
 from services.benchmark_progress import BenchmarkStreamParser
+from services.chat_requests import ChatRequestWorkflow
 from services.model_providers import (
     ModelProviderService,
     ProviderOfflineError,
@@ -46,10 +48,17 @@ class BenchmarkGenerationError(Exception):
 class CreateBenchmarkController:
     """Provide model choices and category creation for the creator."""
 
-    def __init__(self, service=None, repository=None, metadata_repository=None):
+    def __init__(
+        self,
+        service=None,
+        repository=None,
+        metadata_repository=None,
+        settings_repository=None,
+    ):
         self.service = service or ModelProviderService()
         self.repository = repository or BenchmarkRepository()
         self.metadata = metadata_repository or BENCHMARK_METADATA
+        self.settings = settings_repository or CREATE_BENCHMARK_SETTINGS
 
     def context(self):
         """Return selector options and the current category selection."""
@@ -71,6 +80,7 @@ class CreateBenchmarkController:
         return {
             "active_models": active_models,
             "saved_model": saved_model,
+            "benchmark_settings": self.settings.get(),
             "categories": categories,
             "selected_category": selected_category,
             "created_category": created_category,
@@ -96,6 +106,20 @@ class CreateBenchmarkController:
         except ProviderValidationError as error:
             return jsonify({"error": str(error)}), 400
         return jsonify({"model": model})
+
+    def save_settings(self):
+        """Persist settings used only by benchmark JSON creation."""
+        data = request.get_json(silent=True) or {}
+        try:
+            saved = {
+                **self._validate_parameters(data),
+                "randomize_seed": bool(data.get("randomize_seed", False)),
+                "create_log": bool(data.get("create_log", False)),
+            }
+            saved = self.settings.save(saved)
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
+        return jsonify({"settings": saved})
 
     def save_category(self, page):
         """Create a category from the creator form and return to the page."""
@@ -173,6 +197,56 @@ class CreateBenchmarkController:
         value = re.sub(r"\s+", "_", value)
         return value or "benchmark"
 
+    @staticmethod
+    def _validate_parameters(parameters):
+        """Validate the creator's allowlisted sampling parameters."""
+        ranges = {
+            "temperature": (0, 2),
+            "top_p": (0, 1),
+            "top_k": (0, 200),
+            "min_p": (0, 1),
+            "seed": (-1, 4294967295),
+        }
+        cleaned = {}
+        for name, (minimum, maximum) in ranges.items():
+            value = parameters.get(name)
+            if value in (None, ""):
+                cleaned[name] = None
+                continue
+            converter = int if name in {"top_k", "seed"} else float
+            try:
+                value = converter(value)
+            except (TypeError, ValueError) as error:
+                raise ValueError(
+                    f"{name.replace('_', ' ').title()} must be a valid number."
+                ) from error
+            if value < minimum or value > maximum:
+                raise ValueError(
+                    f"{name.replace('_', ' ').title()} must be between "
+                    f"{minimum} and {maximum}."
+                )
+            cleaned[name] = value
+        return cleaned
+
+    @staticmethod
+    def _topic_log(topics, request_body, parsed):
+        """Group one creation request and its JSON response by main topic."""
+        sections = {}
+        if isinstance(parsed, list):
+            for section in parsed:
+                if isinstance(section, dict):
+                    sections.update(section)
+        elif isinstance(parsed, dict):
+            sections.update(parsed)
+        folded = {str(key).casefold(): value for key, value in sections.items()}
+        return {
+            topic["name"]: {
+                "request_body": request_body,
+                "raw_response": folded.get(topic["name"].casefold()),
+            }
+            for topic in topics
+        }
+
     def generate(self):
         """Generate a benchmark JSON via the selected model."""
         data = request.get_json(silent=True) or {}
@@ -186,6 +260,15 @@ class CreateBenchmarkController:
         model_spec = (data.get("model") or "").strip()
         system_prompt = data.get("system_prompt") or ""
         user_prompt = data.get("user_prompt") or ""
+
+        try:
+            parameters = self._validate_parameters(data)
+            extra_parameters = ChatRequestWorkflow.model_parameters(
+                data.get("model_params")
+            )
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
+        create_log = bool(data.get("create_log", False))
 
         topics = data.get("topics") or []
         filled_topics = [
@@ -238,6 +321,9 @@ class CreateBenchmarkController:
             "system_prompt": system_prompt,
             "user_prompt": user_prompt,
             "topics": filled_topics,
+            "parameters": parameters,
+            "extra_parameters": extra_parameters,
+            "create_log": create_log,
         }
 
         stream_requested = (
@@ -282,14 +368,22 @@ class CreateBenchmarkController:
         system_prompt,
         user_prompt,
         topics,
+        parameters,
+        extra_parameters,
+        create_log,
     ):
         """Yield topic progress while the model writes, then the saved result."""
         parser = BenchmarkStreamParser(topics)
         content = ""
         last_progress = None
         try:
-            for event in self.service.chat_completion_stream(
-                provider, model, system_prompt, user_prompt
+            for event in self.service.benchmark_generation_stream(
+                provider,
+                model,
+                system_prompt,
+                user_prompt,
+                **parameters,
+                extra_parameters=extra_parameters,
             ):
                 if event.get("type") != "chunk":
                     continue
@@ -344,11 +438,43 @@ class CreateBenchmarkController:
             },
         )
 
+        log_filename = None
+        if create_log:
+            request_body = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                **{
+                    name: value
+                    for name, value in parameters.items()
+                    if value is not None
+                },
+                **self.service.local_extra_parameters(
+                    provider, extra_parameters
+                ),
+            }
+            log_filename = f"{filename.rsplit('.', 1)[0]}-creation.json"
+            try:
+                self.repository.save_json_log(
+                    log_filename,
+                    self._topic_log(topics, request_body, parsed),
+                )
+            except OSError as error:
+                current_app.logger.exception(
+                    "Could not save benchmark creation log"
+                )
+                raise BenchmarkGenerationError(
+                    "The benchmark was saved but its creation log could not be saved."
+                ) from error
+
         yield {
             "type": "result",
             "message": "Benchmark JSON is ready.",
             "filename": filename,
             "characters": len(content),
+            "log_filename": log_filename,
         }
 
 
