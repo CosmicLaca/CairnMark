@@ -23,14 +23,16 @@
 }
 
 html {
+    height: 100%;
     min-width: 320px;
     background: var(--paper);
 }
 
 body {
-    min-height: 100vh;
+    height: 100%;
+    min-height: 100%;
     margin: 0;
-    overflow-x: hidden;
+    overflow: hidden;
     color: var(--ink);
     background:
         radial-gradient(circle at 86% 14%, rgba(111, 214, 195, 0.16), transparent 27rem),
@@ -42,6 +44,54 @@ body {
 
 body.sidebar-collapsed {
     --sidebar-width: var(--sidebar-collapsed-width);
+}
+
+/* Keep the application shell visually stable during same-origin navigation. */
+@view-transition {
+    navigation: auto;
+}
+
+.sidebar {
+    view-transition-name: application-sidebar;
+}
+
+.workspace-bar {
+    view-transition-name: application-workspace-bar;
+}
+
+.workspace-canvas {
+    view-transition-name: application-workspace-page;
+}
+
+::view-transition-old(root),
+::view-transition-new(root),
+::view-transition-old(application-sidebar),
+::view-transition-new(application-sidebar),
+::view-transition-old(application-workspace-bar),
+::view-transition-new(application-workspace-bar) {
+    animation: none;
+}
+
+::view-transition-old(application-workspace-page) {
+    animation: workspace-page-out 90ms ease-in both;
+}
+
+::view-transition-new(application-workspace-page) {
+    animation: workspace-page-in 180ms ease-out both;
+}
+
+@keyframes workspace-page-out {
+    to {
+        opacity: 0;
+        transform: translateY(-3px);
+    }
+}
+
+@keyframes workspace-page-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
 }
 
 button,
@@ -453,15 +503,21 @@ body.is-resizing .main-content {
 }
 
 .main-content {
+    display: grid;
     width: calc(100% - var(--sidebar-width));
+    height: 100vh;
+    height: 100dvh;
     min-height: 100vh;
+    grid-template-rows: auto minmax(0, 1fr);
     margin-left: var(--sidebar-width);
+    overflow: hidden;
     transition: margin-left var(--motion), width var(--motion);
 }
 
 .workspace-bar {
-    position: relative;
+    position: sticky;
     z-index: 4;
+    top: 0;
     display: flex;
     min-height: 52px;
     align-items: center;
@@ -545,21 +601,12 @@ body.is-resizing .main-content {
 .workspace-canvas {
     position: relative;
     width: 100%;
-    min-height: calc(100vh - 52px);
+    min-height: 0;
     padding: clamp(28px, 3.5vw, 84px) clamp(24px, 4vw, 112px);
-}
-
-.workspace-canvas::after {
-    position: absolute;
-    z-index: -1;
-    top: 35px;
-    right: 42px;
-    width: 96px;
-    height: 96px;
-    border: 1px solid rgba(23, 32, 30, 0.09);
-    border-radius: 50%;
-    content: "";
-    box-shadow: 0 0 0 14px rgba(23, 32, 30, 0.025), 0 0 0 29px rgba(23, 32, 30, 0.018);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
 }
 
 .breadcrumb {
@@ -785,5 +832,10 @@ body.sidebar-collapsed .sidebar-resizer {
     *::after {
         scroll-behavior: auto !important;
         transition-duration: 0.01ms !important;
+    }
+
+    ::view-transition-old(application-workspace-page),
+    ::view-transition-new(application-workspace-page) {
+        animation: none;
     }
 }
