@@ -27,6 +27,7 @@ class Config:
     LOG_LEVEL = os.environ.get("CAIRNMARK_LOG_LEVEL", "INFO").upper()
     # Enabled by the --dev launcher flag; public launches hide unfinished pages.
     DEV_MODE = False
+    UPDATE_CHECK_ENABLED = True
 
 
 class DevelopmentConfig(Config):
@@ -45,6 +46,7 @@ class TestingConfig(Config):
     """Automated-test settings."""
 
     TESTING = True
+    UPDATE_CHECK_ENABLED = False
 
 
 CONFIGS = {

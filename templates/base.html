@@ -86,7 +86,22 @@
             <span class="workspace-route">
                 CM / {{ (request.endpoint or 'error')|replace('_', ' ')|upper }}
             </span>
-            <span class="workspace-status"><i aria-hidden="true"></i> Local workspace</span>
+            <div class="workspace-status-group">
+                <span class="workspace-status"><i aria-hidden="true"></i> Local workspace</span>
+                {% if application_update is defined and application_update.update_available %}
+                <button
+                    class="workspace-update-button"
+                    type="button"
+                    data-application-update
+                    data-update-url="{{ url_for('application_update_start') }}"
+                    data-update-status-url="{{ url_for('application_update_status') }}"
+                    title="Update CairnMark to commit {{ application_update.remote_commit[:12] }}"
+                >
+                    <span aria-hidden="true">↻</span>
+                    <span data-update-label>Update</span>
+                </button>
+                {% endif %}
+            </div>
         </header>
         <div class="workspace-canvas">
             {% block content %}{% endblock %}
@@ -94,6 +109,7 @@
     </main>
 
     <script src="{{ url_for('static', filename='js/sidebar.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/application_update.js') }}" defer></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

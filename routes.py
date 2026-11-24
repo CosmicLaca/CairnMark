@@ -14,6 +14,8 @@ from controllers.index_controller import (
     index_controller,
 )
 from controllers.provider_controller import provider_controller
+from controllers.update_controller import update_controller
+from services.application_updates import APPLICATION_UPDATES
 
 RUN_BENCHMARK_PAGE = next(page for page in PAGES if page["endpoint"] == "run_benchmark")
 CREATE_BENCHMARK_PAGE = next(
@@ -21,6 +23,18 @@ CREATE_BENCHMARK_PAGE = next(
 )
 
 APPLICATION_ROUTES = (
+    (
+        "/application/update/status",
+        "application_update_status",
+        update_controller.status,
+        ("GET",),
+    ),
+    (
+        "/application/update",
+        "application_update_start",
+        update_controller.start,
+        ("POST",),
+    ),
     (
         "/tool-setup.md",
         "tool_setup_manual",
@@ -466,7 +480,13 @@ def init_routes(app):
     @app.context_processor
     def inject_navigation():
         """Make the launch-mode page catalog available to every template."""
-        return {"navigation": navigation_pages}
+        update_status = APPLICATION_UPDATES.daily_status(
+            enabled=app.config.get("UPDATE_CHECK_ENABLED", True)
+        )
+        return {
+            "navigation": navigation_pages,
+            "application_update": update_status,
+        }
 
     @app.errorhandler(404)
     def not_found_error(_error):
