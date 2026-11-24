@@ -151,6 +151,45 @@ chat; the user remains responsible for managing that folder.
 
 ---
 
+## Generated document downloads and previews
+
+When an MCP tool creates a recognized file under `Generated-documents/`, its
+assistant response displays a document card with the filename and download
+action. The card remains associated with the response after a browser reload,
+saved-chat loading, export, and import. In an assistant bubble, all response
+content and document cards appear above a separator; the **Raw** and **Copy**
+actions remain below that line.
+
+Hover over a supported document card to open a floating preview. Generated
+documents listed under **Documents** in the **Chat attachments** accordion use
+the same preview. The panel can grow to 480 pixels wide and 600 pixels high,
+subject to the available browser viewport. Move the pointer from the filename
+into the panel to keep it open and scroll the document. The preview closes
+automatically after the pointer leaves both the filename and preview area, so
+only one document preview can remain open.
+
+PDF previews use the original file directly from `Generated-documents/`; no
+duplicate PDF is created. Browsers cannot display DOCX or ODT files directly,
+so CairnMark creates a safe, lightweight HTML representation containing their
+readable headings, text formatting, lists, and tables. Text, Markdown, JSON,
+and CSV files use the same HTML preview path. These generated previews are
+stored under `instance/document-previews/` with an added `.html` suffix, for
+example:
+
+```text
+Generated-documents/renewable-report.docx
+instance/document-previews/renewable-report.docx.html
+```
+
+The cached preview is reused until the source document changes or CairnMark's
+preview format is updated. Preview generation uses Python's standard library
+and does not start LibreOffice or call the MCP service that created the file.
+The HTML view is intended for quick reading; download the original document to
+inspect exact pagination, embedded media, advanced styles, or unsupported
+legacy formats such as `.doc`.
+
+---
+
 ## Images, audio, and video in answers
 
 Direct public image URLs can appear as previews while retaining the original
