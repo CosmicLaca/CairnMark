@@ -15,6 +15,7 @@ from flask import (
 )
 
 from models.benchmark_metadata import BENCHMARK_METADATA
+from models.run_benchmark_settings import RUN_BENCHMARK_SETTINGS
 from services.benchmark_categories import (
     UNCATEGORIZED,
     category_names,
@@ -29,6 +30,7 @@ from services.benchmark_documents import (
     has_model_answers,
     read_prompt_template,
 )
+from services.chat_requests import ChatRequestWorkflow
 from services.model_providers import (
     ModelProviderService,
     ProviderOfflineError,
@@ -44,10 +46,17 @@ MAX_MODEL_NAME_LENGTH = 200
 class BenchmarkController:
     """Organize benchmark files and render their saved metadata."""
 
-    def __init__(self, service=None, repository=None, metadata_repository=None):
+    def __init__(
+        self,
+        service=None,
+        repository=None,
+        metadata_repository=None,
+        settings_repository=None,
+    ):
         self.service = service or ModelProviderService()
         self.repository = repository or BenchmarkRepository()
         self.metadata = metadata_repository or BENCHMARK_METADATA
+        self.settings = settings_repository or RUN_BENCHMARK_SETTINGS
 
     def list_files(self):
         """Return prompt JSON filenames in stable display order."""
@@ -73,10 +82,57 @@ class BenchmarkController:
     def selection_context(self):
         """Build categorized benchmark data for the selection page."""
         benchmark_files = self.list_files()
-        return self._catalog_context(
+        context = self._catalog_context(
             benchmark_files,
             "run_benchmark-SYSTEM.md",
         )
+        context["run_benchmark_settings"] = self.settings.get()
+        return context
+
+    @staticmethod
+    def _validate_generation_parameters(parameters):
+        """Validate the run page's allowlisted sampling parameters."""
+        ranges = {
+            "temperature": (0, 2),
+            "top_p": (0, 1),
+            "top_k": (0, 200),
+            "min_p": (0, 1),
+            "seed": (-1, 4294967295),
+        }
+        cleaned = {}
+        for name, (minimum, maximum) in ranges.items():
+            value = parameters.get(name)
+            if value in (None, ""):
+                cleaned[name] = None
+                continue
+            converter = int if name in {"top_k", "seed"} else float
+            try:
+                value = converter(value)
+            except (TypeError, ValueError) as error:
+                raise ValueError(
+                    f"{name.replace('_', ' ').title()} must be a valid number."
+                ) from error
+            if value < minimum or value > maximum:
+                raise ValueError(
+                    f"{name.replace('_', ' ').title()} must be between "
+                    f"{minimum} and {maximum}."
+                )
+            cleaned[name] = value
+        return cleaned
+
+    def save_generation_settings(self):
+        """Persist settings used only while running benchmark JSON files."""
+        data = request.get_json(silent=True) or {}
+        try:
+            saved = {
+                **self._validate_generation_parameters(data),
+                "randomize_seed": bool(data.get("randomize_seed", False)),
+                "create_log": bool(data.get("create_log", False)),
+            }
+            saved = self.settings.save(saved)
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
+        return jsonify(saved)
 
     def _has_model_answers(self, filename):
         """Return True when a benchmark file contains runnable model answers."""
@@ -213,6 +269,14 @@ class BenchmarkController:
         subcategory = data.get("subcategory") or ""
         request_text = data.get("request") or ""
 
+        try:
+            parameters = self._validate_generation_parameters(data)
+            extra_parameters = ChatRequestWorkflow.model_parameters(
+                data.get("model_params")
+            )
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
+
         if not model_spec or "::" not in model_spec:
             return jsonify({"error": "Model is required."}), 400
 
@@ -227,8 +291,13 @@ class BenchmarkController:
 
         started = time.monotonic()
         try:
-            content = self.service.chat_completion(
-                provider, model, prompt, request_text
+            content = self.service.benchmark_run_completion(
+                provider,
+                model,
+                prompt,
+                request_text,
+                **parameters,
+                extra_parameters=extra_parameters,
             )
         except Exception as error:  # noqa: BLE001
             current_app.logger.exception(

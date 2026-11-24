@@ -739,6 +739,9 @@
 
     // Capture phase catches scrolling inside the chat history container too.
     window.addEventListener("scroll", hideHoverPreview, true);
+    document.addEventListener("cairnmark:navigation-before", () => {
+        window.removeEventListener("scroll", hideHoverPreview, true);
+    }, { once: true });
 
     // Server-rendered preview thumbnails (initial page load) do not get the
     // per-element hover listeners attached by appendMessage, so delegate.

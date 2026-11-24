@@ -1,4 +1,9 @@
-document.addEventListener('DOMContentLoaded', () => {
+(() => {
+    const initializeSetupModels = () => {
+    const navigationListeners = new AbortController();
+    document.addEventListener('cairnmark:navigation-before', () => {
+        navigationListeners.abort();
+    }, {once: true});
     const api = window.CairnmarkApi;
     const setupButtons = [...document.querySelectorAll('[data-provider-setup]')];
     const providerFilterButtons = [
@@ -722,5 +727,12 @@ document.addEventListener('DOMContentLoaded', () => {
             currentModelSettings = null;
         }
         document.body.classList.remove('modal-open');
-    });
-});
+    }, {signal: navigationListeners.signal});
+    };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeSetupModels, {once: true});
+    } else {
+        initializeSetupModels();
+    }
+})();

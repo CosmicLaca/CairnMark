@@ -276,6 +276,12 @@ APPLICATION_ROUTES = (
         ("POST",),
     ),
     (
+        "/run_benchmark/settings",
+        "run_benchmark_settings",
+        benchmark_controller.save_generation_settings,
+        ("POST",),
+    ),
+    (
         "/run_benchmark/<filename>",
         "run_benchmark_select",
         partial(benchmark_controller.select, page=RUN_BENCHMARK_PAGE),

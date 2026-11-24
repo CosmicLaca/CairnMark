@@ -500,6 +500,8 @@
             return;
         }
         const systemPrompt = systemPromptTextarea?.value || "";
+        const generationSettings =
+            window.CairnmarkRunBenchmarkSetup?.requestValues?.() || {};
 
         if (runButton) runButton.disabled = true;
         setRunStatus("Loading benchmark JSON…", false, true);
@@ -559,6 +561,7 @@
                                     system_prompt: systemPrompt,
                                     subcategory,
                                     request: item.request,
+                                    ...generationSettings,
                                 },
                             }
                         );
@@ -582,7 +585,7 @@
         // Save result.
         setRunStatus("Saving benchmark JSON…", false, true);
         try {
-            const createLog = document.querySelector("[data-create-log]")?.checked || false;
+            const createLog = Boolean(generationSettings.create_log);
             const saveResult = await api.json(
                 `/run_benchmark/${encodeURIComponent(filename)}/save_result`,
                 {

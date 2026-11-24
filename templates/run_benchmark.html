@@ -1,8 +1,22 @@
 {% extends "base.html" %}
 
+{% macro run_parameter(id, label, help, key, value, step, minimum, maximum) -%}
+<div class="field-group">
+  <div class="chat-parameter-label">
+    <label for="{{ id }}">{{ label }}</label>
+    <button type="button" class="chat-info" data-parameter-help-key="{{ key }}">
+      <span aria-hidden="true">i</span>
+      <span class="chat-info-tooltip" role="tooltip">{{ help }}</span>
+    </button>
+  </div>
+  <input id="{{ id }}" type="number" step="{{ step }}" min="{{ minimum }}" max="{{ maximum }}" value="{{ value if value is not none else '' }}" data-run-benchmark-{{ key|replace('_', '-') }}>
+</div>
+{%- endmacro %}
+
 {% block styles %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/workspace-components.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/benchmark-common.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/benchmark-browser.css') }}">
 {% endblock %}
 
@@ -180,71 +194,134 @@
       Close setup
     </button>
   </header>
-  <div class="benchmark-preview-body" data-create-benchmark-body>
-    <div class="benchmark-setup-fields">
-      <div class="field-group">
-        <label for="create-benchmark-model">Model</label>
-        <span class="field-hint">Selected model will process all requests.</span>
-        {% if active_models %}
-        <div class="model-provider-filter" data-model-provider-filter>
-          <button type="button" class="model-provider-filter-button is-active" data-provider-filter="all">All</button>
-          {% for provider in active_models|map(attribute='provider')|unique %}
-            {% set provider_model = active_models|selectattr('provider', 'equalto', provider)|first %}
-            <button type="button" class="model-provider-filter-button" data-provider-filter="{{ provider }}">{{ provider_model.provider_label }}</button>
-          {% endfor %}
-        </div>
-        <div class="select-shell">
-          <select id="create-benchmark-model" name="model" data-model-filter>
-              {% for model in active_models %}
-                <option value="{{ model.provider }}::{{ model.model }}">{{ model.label }}{% if model.modalities and model.modalities.vision %} 📷{% endif %}{% if model.modalities and model.modalities.video %} 🎥{% endif %}{% if model.modalities and model.modalities.audio %} 🎤{% endif %}{% if model.chat_template_caps and (model.chat_template_caps.supports_tools or model.chat_template_caps.supports_tool_calls) %} 🔧{% endif %}</option>
+  <div class="benchmark-create-layout">
+    <div class="benchmark-create-main">
+      <div class="benchmark-preview-body" data-create-benchmark-body>
+        <div class="benchmark-setup-fields">
+          <div class="field-group">
+            <label for="create-benchmark-model">Model</label>
+            <span class="field-hint">Selected model will process all requests.</span>
+            {% if active_models %}
+            <div class="model-provider-filter" data-model-provider-filter>
+              <button type="button" class="model-provider-filter-button is-active" data-provider-filter="all">All</button>
+              {% for provider in active_models|map(attribute='provider')|unique %}
+                {% set provider_model = active_models|selectattr('provider', 'equalto', provider)|first %}
+                <button type="button" class="model-provider-filter-button" data-provider-filter="{{ provider }}">{{ provider_model.provider_label }}</button>
               {% endfor %}
-            </select>
+            </div>
+            <div class="select-shell">
+              <select id="create-benchmark-model" name="model" data-model-filter>
+                {% for model in active_models %}
+                  <option value="{{ model.provider }}::{{ model.model }}">{{ model.label }}{% if model.modalities and model.modalities.vision %} 📷{% endif %}{% if model.modalities and model.modalities.video %} 🎥{% endif %}{% if model.modalities and model.modalities.audio %} 🎤{% endif %}{% if model.chat_template_caps and (model.chat_template_caps.supports_tools or model.chat_template_caps.supports_tool_calls) %} 🔧{% endif %}</option>
+                {% endfor %}
+              </select>
+            </div>
+            {% else %}
+            <div class="model-selector-empty">
+              <span aria-hidden="true">◇</span>
+              <strong>No active models</strong>
+              <small>Turn on a provider and enable at least one model in <a href="{{ url_for('setup_models') }}">Setup models</a>.</small>
+            </div>
+            {% endif %}
           </div>
-        {% else %}
-          <div class="model-selector-empty">
-            <span aria-hidden="true">◇</span>
-            <strong>No active models</strong>
-            <small>Turn on a provider and enable at least one model in <a href="{{ url_for('setup_models') }}">Setup models</a>.</small>
-          </div>
-        {% endif %}
+
+          <hr class="create-benchmark-separator">
+
+          <fieldset class="field-group prompt-field" data-prompts>
+            <legend>Optional customization</legend>
+            <span class="field-hint">Optional. Leave empty to use the built-in default prompts.</span>
+
+            <div class="field-group">
+              <label for="create-benchmark-system-prompt">System prompt</label>
+              <span class="field-hint">Instructions that shape the tone and behavior of the generated benchmark JSON.</span>
+              <textarea
+                id="create-benchmark-system-prompt"
+                name="system_prompt"
+                maxlength="4000"
+                autocomplete="off"
+                placeholder="e.g. You are a careful benchmark author. Produce varied, realistic request-response pairs."
+                data-system-prompt
+              >{{ run_system_prompt }}</textarea>
+            </div>
+          </fieldset>
+        </div>
       </div>
+      <footer class="benchmark-preview-footer">
+        <button class="save-metadata-button" type="button" data-run-benchmark>
+          <span aria-hidden="true">▶</span>
+          Run benchmark
+        </button>
+      </footer>
+    </div>
 
-      <hr class="create-benchmark-separator">
-
-      <fieldset class="field-group prompt-field" data-prompts>
-        <legend>Optional customization</legend>
-        <span class="field-hint">Optional. Leave empty to use the built-in default prompts.</span>
-
+    <aside class="chat-setup content benchmark-run-setup" aria-labelledby="run-benchmark-generation-title">
+      <header class="chat-setup-header">
         <div class="field-group">
-          <label for="create-benchmark-system-prompt">System prompt</label>
-          <span class="field-hint">Instructions that shape the tone and behavior of the generated benchmark JSON.</span>
-          <textarea
-            id="create-benchmark-system-prompt"
-            name="system_prompt"
-            maxlength="4000"
-            autocomplete="off"
-            placeholder="e.g. You are a careful benchmark author. Produce varied, realistic request-response pairs."
-            data-system-prompt
-          >{{ run_system_prompt }}</textarea>
+          <span class="panel-kicker">Benchmark setup</span>
+          <h2 id="run-benchmark-generation-title">Benchmark setup</h2>
+        </div>
+      </header>
+      <p class="chat-setup-lede">Used only while running benchmark JSON. Empty fields are omitted.</p>
+
+      <fieldset class="field-group chat-parameters-field">
+        <legend>Generation parameters</legend>
+        <span class="field-hint">Fine-tune how the selected model answers each benchmark request.</span>
+        <div class="chat-parameter-grid">
+          {{ run_parameter("run-benchmark-temperature", "Temperature", "Controls randomness. Lower is more focused; higher is more varied.", "temperature", run_benchmark_settings.temperature, "0.1", "0", "2") }}
+          {{ run_parameter("run-benchmark-top-p", "Top P", "Nucleus sampling threshold. 1.0 considers all tokens.", "top_p", run_benchmark_settings.top_p, "0.05", "0", "1") }}
+          {{ run_parameter("run-benchmark-top-k", "Top K", "Limits sampling to the K most likely tokens. 0 disables the limit.", "top_k", run_benchmark_settings.top_k, "1", "0", "200") }}
+          <div class="field-group">
+            <div class="chat-parameter-label"><label for="run-benchmark-seed">Seed</label></div>
+            <div class="chat-seed-control">
+              <button type="button" class="chat-toggle-switch" data-run-benchmark-seed-switch role="switch" aria-checked="{{ 'true' if run_benchmark_settings.randomize_seed else 'false' }}" title="Randomize seed">
+                <span class="chat-toggle-switch-track" aria-hidden="true"><span class="chat-toggle-switch-knob"></span></span>
+                <span class="chat-toggle-switch-tooltip" role="tooltip">Randomize seed</span>
+              </button>
+              <input id="run-benchmark-seed" type="number" step="1" min="-1" max="4294967295" value="{{ run_benchmark_settings.seed if run_benchmark_settings.seed is not none else '' }}" data-run-benchmark-seed>
+            </div>
+          </div>
+          {{ run_parameter("run-benchmark-min-p", "Min P", "Minimum relative probability threshold; a common range is 0.0–0.1.", "min_p", run_benchmark_settings.min_p, "0.01", "0", "1") }}
         </div>
       </fieldset>
-    </div>
+
+      <label class="benchmark-run-log-toggle">
+        <input type="checkbox" data-run-benchmark-create-log{% if run_benchmark_settings.create_log %} checked{% endif %}>
+        <span><strong>Create log</strong><small>Save request bodies and JSON responses under Benchmark-prompts/logs.</small></span>
+      </label>
+
+      <div class="chat-setup-bottom-actions">
+        <div class="chat-more-params-row">
+          <button class="save-metadata-button chat-more-params-button" type="button" data-run-benchmark-more-params disabled>
+            <span aria-hidden="true"></span>Set more parameters
+            <span class="more-params-state-sign" data-run-benchmark-more-state hidden>UNSET</span>
+          </button>
+        </div>
+        <div class="chat-setup-actions">
+          <button class="save-metadata-button" type="button" data-run-benchmark-save-settings>
+            <span aria-hidden="true">◆</span> Save setup
+          </button>
+        </div>
+      </div>
+      <p class="field-hint benchmark-run-setup-message" data-run-benchmark-setup-message role="status"></p>
+    </aside>
   </div>
-  <footer class="benchmark-preview-footer">
-    <label class="create-log-toggle">
-      <input type="checkbox" data-create-log>
-      <span>Create log</span>
-    </label>
-    <button class="save-metadata-button" type="button" data-run-benchmark>
-      <span aria-hidden="true">▶</span>
-      Run benchmark
-    </button>
-  </footer>
 </section>
+
+<div class="modal more-params-modal" data-run-benchmark-more-modal hidden role="dialog" aria-modal="true" aria-labelledby="run-benchmark-more-title">
+  <div class="modal-content">
+    <header class="modal-header"><h2 id="run-benchmark-more-title">Additional model parameters</h2><button type="button" class="close-modal-button" data-run-benchmark-more-unset aria-label="Close">&times;</button></header>
+    <div class="modal-body"><div data-more-params-content data-run-benchmark-more-content></div></div>
+    <footer class="modal-footer more-params-footer">
+      <button type="button" class="modal-cancel-button" data-run-benchmark-more-unset>Unset</button>
+      <button type="button" class="modal-save-button" data-run-benchmark-more-set><span aria-hidden="true">✓</span> Set</button>
+    </footer>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
   <script src="{{ url_for('static', filename='js/api_client.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/model_select_filter.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/run_benchmark_setup.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/benchmark_browser.js') }}" defer></script>
 {% endblock %}

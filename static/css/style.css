@@ -46,6 +46,14 @@ body.sidebar-collapsed {
     --sidebar-width: var(--sidebar-collapsed-width);
 }
 
+html.is-workspace-navigating .workspace-canvas {
+    pointer-events: none;
+}
+
+html.is-workspace-navigating .menu-item {
+    cursor: progress;
+}
+
 /* Keep the application shell visually stable during same-origin navigation. */
 @view-transition {
     navigation: auto;

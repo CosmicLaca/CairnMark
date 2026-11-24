@@ -1,6 +1,11 @@
 (() => {
     "use strict";
 
+    const navigationListeners = new AbortController();
+    document.addEventListener("cairnmark:navigation-before", () => {
+        navigationListeners.abort();
+    }, { once: true });
+
     class SearchableModelSelect {
         static instances = [];
 
@@ -131,10 +136,12 @@
                     this.instances.push(new SearchableModelSelect(select));
                 }
             });
-            document.addEventListener("click", () => this.closeAll());
+            document.addEventListener("click", () => this.closeAll(), {
+                signal: navigationListeners.signal,
+            });
             document.addEventListener("keydown", (event) => {
                 if (event.key === "Escape") this.closeAll();
-            });
+            }, { signal: navigationListeners.signal });
             window.CairnmarkModelSelects = this.instances;
             this.initProviderFilters();
         }
@@ -204,7 +211,11 @@
     }
 
     if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", () => SearchableModelSelect.init());
+        document.addEventListener(
+            "DOMContentLoaded",
+            () => SearchableModelSelect.init(),
+            { once: true, signal: navigationListeners.signal }
+        );
     } else {
         SearchableModelSelect.init();
     }

@@ -11,6 +11,7 @@ def init_storage(app):
     from models.media_storage import MEDIA_STORE
     from models.model_storage import STORE as model_store
     from models.parameter_storage import STORE as parameter_store
+    from models.run_benchmark_settings import STORE as runner_settings_store
     from models.update_storage import STORE as update_store
 
     benchmark_store.configure(app)
@@ -21,4 +22,5 @@ def init_storage(app):
     MEDIA_STORE.configure(app)
     mcp_settings_store.configure(app)
     parameter_store.configure(app, create=False)
+    runner_settings_store.configure(app)
     update_store.configure(app)

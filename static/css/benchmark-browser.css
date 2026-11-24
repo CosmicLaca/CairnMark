@@ -482,6 +482,120 @@
     gap: 10px;
 }
 
+.benchmark-create-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr);
+    align-items: start;
+    gap: 20px;
+}
+
+.benchmark-create-main,
+.benchmark-run-setup {
+    min-width: 0;
+}
+
+.benchmark-create-main .benchmark-preview-footer {
+    justify-content: flex-end;
+}
+
+.benchmark-run-setup {
+    width: auto;
+}
+
+.benchmark-run-log-toggle {
+    display: flex;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.35);
+    cursor: pointer;
+}
+
+.benchmark-run-log-toggle input {
+    margin-top: 3px;
+}
+
+.benchmark-run-log-toggle span {
+    display: grid;
+    gap: 3px;
+}
+
+.benchmark-run-log-toggle small {
+    color: #6f7c77;
+    line-height: 1.4;
+}
+
+.benchmark-run-setup .chat-setup-actions,
+.benchmark-run-setup .chat-setup-actions .save-metadata-button {
+    width: 100%;
+}
+
+.benchmark-run-setup .chat-setup-actions .save-metadata-button {
+    justify-content: center;
+}
+
+.benchmark-run-setup-message {
+    min-height: 1.2em;
+    margin: 0;
+}
+
+.benchmark-create-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr);
+    align-items: start;
+    gap: 20px;
+}
+
+.benchmark-create-main,
+.benchmark-run-setup {
+    min-width: 0;
+}
+
+.benchmark-create-main .benchmark-preview-footer {
+    justify-content: flex-end;
+}
+
+.benchmark-run-setup {
+    width: auto;
+}
+
+.benchmark-run-log-toggle {
+    display: flex;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.35);
+    cursor: pointer;
+}
+
+.benchmark-run-log-toggle input {
+    margin-top: 3px;
+}
+
+.benchmark-run-log-toggle span {
+    display: grid;
+    gap: 3px;
+}
+
+.benchmark-run-log-toggle small {
+    color: #6f7c77;
+    line-height: 1.4;
+}
+
+.benchmark-run-setup .chat-setup-actions,
+.benchmark-run-setup .chat-setup-actions .save-metadata-button {
+    width: 100%;
+}
+
+.benchmark-run-setup .chat-setup-actions .save-metadata-button {
+    justify-content: center;
+}
+
+.benchmark-run-setup-message {
+    min-height: 1.2em;
+    margin: 0;
+}
+
 .preview-message {
     margin: 0;
     padding: 22px;
@@ -826,5 +940,17 @@
         padding: 13px 0 0;
         border-top: 1px solid var(--line);
         border-left: 0;
+    }
+}
+
+@media (max-width: 1100px) {
+    .benchmark-create-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 1100px) {
+    .benchmark-create-layout {
+        grid-template-columns: 1fr;
     }
 }

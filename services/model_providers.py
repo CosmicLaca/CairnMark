@@ -2279,6 +2279,37 @@ class ModelProviderService:
             timeout=timeout,
         )
 
+    def benchmark_run_completion(
+        self,
+        provider,
+        model,
+        system_prompt,
+        user_prompt,
+        *,
+        temperature=None,
+        top_p=None,
+        top_k=None,
+        min_p=None,
+        seed=None,
+        extra_parameters=None,
+        timeout=300,
+    ):
+        """Run one stateless, tool-free benchmark request with page settings."""
+        messages = self._stateless_prompt_messages(system_prompt, user_prompt)
+        content, _usage = self.chat_completion_with_params(
+            provider,
+            model,
+            messages,
+            temperature,
+            top_p,
+            top_k,
+            min_p=min_p,
+            seed=seed,
+            extra_parameters=extra_parameters,
+            timeout=timeout,
+        )
+        return content
+
     @staticmethod
     def _sampling_parameters(
         temperature,
