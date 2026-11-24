@@ -16,7 +16,32 @@ stay available on the local machine.
 
 ---
 
+> ### Why is it special?
+>
+> - Durable failed responses
+> - Per-response request body inspection
+> - llama.cpp and CairnMark-managed MCP side by side
+> - Optional MCP import and update from OpenCode
+> - Stateful stdio MCP sessions
+> - Generated-document download cards
+> - Manual and auto context compaction
+> - Per-model capability flags (media and tools)
+> - Video FPS control and separated audio analysis
+> - Local (or remote) MinerU document processing
+> - Chat attachments accordion with media index
+> - Reverse image search shortcuts
+> - Webpage link screenshots
+> - Inline image, audio and video previews
+> - Per-service provider filter in model selector lists
+> - AI-generated benchmark JSON
+> - Benchmark runs keep expected answers local
+> - Localhost-only binding, local SQLite and JSON data
+
+---
+
 ## Main features
+
+---
 
 ### Model setup
 
