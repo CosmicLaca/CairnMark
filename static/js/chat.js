@@ -3282,6 +3282,7 @@
         const initialValue = hasSavedValue
             ? savedValues[key]
             : (hasDefaultValue ? definition.default : undefined);
+        const fieldType = String(definition.type || "").toLowerCase();
         if (
             definition.type === "list"
             && definition.multiple === true
@@ -3325,7 +3326,7 @@
         }
         label.setAttribute("for", inputId);
         let input;
-        if (definition.type === "list" && Array.isArray(definition.values)) {
+        if (fieldType === "list" && Array.isArray(definition.values)) {
             input = document.createElement("select");
             definition.values.forEach((value) => {
                 const option = document.createElement("option");
@@ -3341,11 +3342,22 @@
             input.type = definition.type === "integer"
                 ? "number"
                 : (definition.type === "password" ? "password" : "text");
-            if (definition.type === "integer") input.step = "1";
+            if (fieldType === "boolean") input.type = "checkbox";
+            if (fieldType === "integer") input.step = "1";
+            if (fieldType === "boolean") {
+                field.classList.add("mcp-tool-field--boolean");
+                input.setAttribute("role", "switch");
+                input.checked = initialValue === true
+                    || String(initialValue).toLowerCase() === "true";
+            }
         }
         input.id = inputId;
         input.setAttribute("data-mcp-tool-setting", key);
-        if (initialValue !== undefined && initialValue !== null) {
+        if (
+            fieldType !== "boolean"
+            && initialValue !== undefined
+            && initialValue !== null
+        ) {
             input.value = String(initialValue);
         }
         if (
@@ -3475,7 +3487,7 @@
         try {
             const setupUrl = toolSetupUrlTemplate.replace(
                 "__SERVICE__",
-                encodeURIComponent(name)
+                encodeURIComponent(String(name).trim().toLowerCase())
             );
             const payload = await api.request(setupUrl);
             if (payload && typeof payload === "object" && !Array.isArray(payload)) {
@@ -4382,9 +4394,11 @@
         accordion?.querySelectorAll("[data-mcp-tool-setting]").forEach((input) => {
             const key = input.getAttribute("data-mcp-tool-setting");
             if (!key) return;
-            settings[key] = input.type === "number" && input.value !== ""
-                ? Number.parseInt(input.value, 10)
-                : input.value;
+            settings[key] = input.type === "checkbox"
+                ? input.checked
+                : (input.type === "number" && input.value !== ""
+                    ? Number.parseInt(input.value, 10)
+                    : input.value);
         });
         accordion?.querySelectorAll("[data-mcp-connection-setting]").forEach((input) => {
             const key = input.getAttribute("data-mcp-connection-setting");

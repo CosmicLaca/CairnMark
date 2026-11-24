@@ -1232,6 +1232,7 @@ class ChatController:
             else (name, "default")
         )
         for setup_name in setup_names:
+            setup_name = str(setup_name).strip().lower()
             setup_path = (
                 Path(current_app.static_folder)
                 / f"tool-setup-{setup_name}.json"

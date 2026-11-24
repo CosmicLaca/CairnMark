@@ -84,8 +84,11 @@ and subtool switches limit what a capable model can call. Global execution
 limits, policies, runtime guidance, and webpage-preview controls are saved
 locally; used tools remain identifiable on their response bubbles.
 
-> Details:
-> ### **[MCP tool handling →](manual/mcp-tools.md)** **[Local SearXNG setup and direct tests →](./manual/tool-setup.md)**
+> ### Details and examples:
+> #### **[MCP tool handling →](manual/mcp-tools.md)** 
+> #### **[Local SearXNG setup and direct tests →](./manual/tool-setup.md)**
+> #### **[Weather, Stock, AntV Chart, LibreOffice →](./manual/mcp-tools-examples.md)**
+> #### **[Wikipedia and Yahoo Finance examples →](./manual/mcp-tools-examples-2.md)**
 
 ---
 
@@ -175,6 +178,7 @@ privacy policy.
 > ### - [Chat workspace](./manual/chat.md)
 > ### - [MCP tool handling](./manual/mcp-tools.md)
 > ### - [MCP tool and local SearXNG setup](./manual/tool-setup.md)
+> ### - [Wikipedia and Yahoo Finance MCP examples](./manual/mcp-tools-examples-2.md)
 > ### - [Benchmark workflow](./manual/benchmarks.md)
 
 ---

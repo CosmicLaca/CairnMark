@@ -1,0 +1,85 @@
+{
+  "period": {
+    "name": "Default history period",
+    "type": "list",
+    "values": [
+      {"value": "1d", "label": "1 day"},
+      {"value": "5d", "label": "5 days"},
+      {"value": "1mo", "label": "1 month"},
+      {"value": "3mo", "label": "3 months"},
+      {"value": "6mo", "label": "6 months"},
+      {"value": "1y", "label": "1 year"},
+      {"value": "2y", "label": "2 years"},
+      {"value": "5y", "label": "5 years"},
+      {"value": "10y", "label": "10 years"},
+      {"value": "ytd", "label": "Year to date"},
+      {"value": "max", "label": "Maximum history"}
+    ],
+    "default": "1mo"
+  },
+  "interval": {
+    "name": "Default price interval",
+    "type": "list",
+    "values": [
+      {"value": "1m", "label": "1 minute"},
+      {"value": "2m", "label": "2 minutes"},
+      {"value": "5m", "label": "5 minutes"},
+      {"value": "15m", "label": "15 minutes"},
+      {"value": "30m", "label": "30 minutes"},
+      {"value": "60m", "label": "60 minutes"},
+      {"value": "90m", "label": "90 minutes"},
+      {"value": "1h", "label": "1 hour"},
+      {"value": "1d", "label": "1 day"},
+      {"value": "5d", "label": "5 days"},
+      {"value": "1wk", "label": "1 week"},
+      {"value": "1mo", "label": "1 month"},
+      {"value": "3mo", "label": "3 months"}
+    ],
+    "default": "1d"
+  },
+  "prepost": {
+    "name": "Include pre/post-market data",
+    "type": "boolean",
+    "default": false
+  },
+  "frequency": {
+    "name": "Default financial frequency",
+    "type": "list",
+    "values": [
+      {"value": "annual", "label": "Annual"},
+      {"value": "quarterly", "label": "Quarterly"},
+      {"value": "ttm", "label": "Trailing 12 months"}
+    ],
+    "default": "annual"
+  },
+  "option_type": {
+    "name": "Default option type",
+    "type": "list",
+    "values": [
+      {"value": "all", "label": "Calls and puts"},
+      {"value": "calls", "label": "Calls"},
+      {"value": "puts", "label": "Puts"}
+    ],
+    "default": "all"
+  },
+  "search_type": {
+    "name": "Default search result type",
+    "type": "list",
+    "values": [
+      {"value": "all", "label": "Quotes and news"},
+      {"value": "quotes", "label": "Quotes only"},
+      {"value": "news", "label": "News only"}
+    ],
+    "default": "all"
+  },
+  "top_n": {
+    "name": "Default top-result count",
+    "type": "integer",
+    "default": 10
+  },
+  "region": {
+    "name": "Default screener region",
+    "type": "text",
+    "default": "us"
+  }
+}

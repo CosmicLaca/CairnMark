@@ -1,0 +1,89 @@
+{
+  "period": {
+    "name": "Default history period",
+    "type": "list",
+    "values": [
+      {"value": "1d", "label": "1 day"},
+      {"value": "5d", "label": "5 days"},
+      {"value": "1mo", "label": "1 month"},
+      {"value": "3mo", "label": "3 months"},
+      {"value": "6mo", "label": "6 months"},
+      {"value": "1y", "label": "1 year"},
+      {"value": "2y", "label": "2 years"},
+      {"value": "5y", "label": "5 years"},
+      {"value": "10y", "label": "10 years"},
+      {"value": "ytd", "label": "Year to date"},
+      {"value": "max", "label": "Maximum history"}
+    ],
+    "default": "1mo"
+  },
+  "interval": {
+    "name": "Default price interval",
+    "type": "list",
+    "values": [
+      {"value": "1m", "label": "1 minute"},
+      {"value": "2m", "label": "2 minutes"},
+      {"value": "5m", "label": "5 minutes"},
+      {"value": "15m", "label": "15 minutes"},
+      {"value": "30m", "label": "30 minutes"},
+      {"value": "60m", "label": "60 minutes"},
+      {"value": "90m", "label": "90 minutes"},
+      {"value": "1h", "label": "1 hour"},
+      {"value": "1d", "label": "1 day"},
+      {"value": "5d", "label": "5 days"},
+      {"value": "1wk", "label": "1 week"},
+      {"value": "1mo", "label": "1 month"},
+      {"value": "3mo", "label": "3 months"}
+    ],
+    "default": "1d"
+  },
+  "financial_type": {
+    "name": "Default financial statement",
+    "type": "list",
+    "values": [
+      {"value": "income_stmt", "label": "Annual income statement"},
+      {"value": "quarterly_income_stmt", "label": "Quarterly income statement"},
+      {"value": "balance_sheet", "label": "Annual balance sheet"},
+      {"value": "quarterly_balance_sheet", "label": "Quarterly balance sheet"},
+      {"value": "cashflow", "label": "Annual cash flow"},
+      {"value": "quarterly_cashflow", "label": "Quarterly cash flow"}
+    ],
+    "default": "income_stmt"
+  },
+  "holder_type": {
+    "name": "Default holder information",
+    "type": "list",
+    "values": [
+      {"value": "major_holders", "label": "Major holders"},
+      {"value": "institutional_holders", "label": "Institutional holders"},
+      {"value": "mutualfund_holders", "label": "Mutual-fund holders"},
+      {"value": "insider_transactions", "label": "Insider transactions"},
+      {"value": "insider_purchases", "label": "Insider purchases"},
+      {"value": "insider_roster_holders", "label": "Insider roster"}
+    ],
+    "default": "institutional_holders"
+  },
+  "option_type": {
+    "name": "Default option type",
+    "type": "list",
+    "values": [
+      {"value": "calls", "label": "Calls"},
+      {"value": "puts", "label": "Puts"}
+    ],
+    "default": "calls"
+  },
+  "recommendation_type": {
+    "name": "Default recommendation type",
+    "type": "list",
+    "values": [
+      {"value": "recommendations", "label": "Recommendations"},
+      {"value": "upgrades_downgrades", "label": "Upgrades and downgrades"}
+    ],
+    "default": "recommendations"
+  },
+  "months_back": {
+    "name": "Recommendation history (months)",
+    "type": "integer",
+    "default": 12
+  }
+}

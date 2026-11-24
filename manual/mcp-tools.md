@@ -49,8 +49,9 @@ main application database.
 ## Service-specific setup forms
 
 Optional schemas named `static/tool-setup-[service].json` define setup controls
-for a service. CairnMark supports text, password, integer, list, and endpoint
-fields. Current endpoint schemas include SearXNG, PostgreSQL, and ComfyUI.
+for a service. CairnMark supports text, password, integer, list, boolean-switch,
+and endpoint fields. Current schemas include SearXNG, PostgreSQL, ComfyUI,
+Wikipedia, `yfmcp`, and `yahoo-finance-mcp-server`.
 
 Every field declared as `type: password` is encrypted in `instance/tools.db`
 using the Fernet key in `.secret/`. Password values are decrypted only for
@@ -156,6 +157,11 @@ audio, and video search examples, and troubleshooting, follow the complete
 For detailed app-level installation, form values, test prompts, output handling,
 and troubleshooting for the included Weather and Stock examples, AntV Chart,
 and LibreOffice, follow **[Custom MCP tool examples](./mcp-tools-examples.md)**.
+
+For application-local Wikipedia and two key-free Yahoo Finance alternatives,
+including PowerShell installation, schema-controlled defaults, test prompts,
+and upgrade instructions, follow
+**[Wikipedia and Yahoo Finance MCP examples](./mcp-tools-examples-2.md)**.
 
 ---
 

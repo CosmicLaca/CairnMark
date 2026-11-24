@@ -353,6 +353,7 @@ class McpServiceRegistry:
         endpoint=None,
         user="",
         password="",
+        settings=None,
     ):
         """Check a proposed local MCP service without persisting it."""
         name, declaration = self._local_server_declaration(
@@ -368,6 +369,7 @@ class McpServiceRegistry:
             timeout_ms,
             user,
             password,
+            settings,
         )
 
     @staticmethod
@@ -495,9 +497,53 @@ class McpServiceRegistry:
         endpoint="",
         user="",
         password="",
+        settings=None,
     ):
-        """Pass saved connection settings only to that service process."""
+        """Apply saved environment and schema-declared CLI settings."""
         configured = dict(details)
+        arguments = [str(argument) for argument in details.get("args", [])]
+        settings = settings if isinstance(settings, dict) else {}
+        for option, value in settings.items():
+            if not isinstance(option, str) or not option.startswith("--"):
+                continue
+            if (
+                not isinstance(value, (bool, str, int, float, list))
+                and value is not None
+            ):
+                continue
+
+            consumes_value = not isinstance(value, bool)
+            filtered = []
+            index = 0
+            while index < len(arguments):
+                argument = arguments[index]
+                if argument == option:
+                    index += 1
+                    if (
+                        consumes_value
+                        and index < len(arguments)
+                        and not arguments[index].startswith("--")
+                    ):
+                        index += 1
+                    continue
+                if argument.startswith(f"{option}="):
+                    index += 1
+                    continue
+                filtered.append(argument)
+                index += 1
+            arguments = filtered
+
+            if isinstance(value, bool):
+                if value:
+                    arguments.append(option)
+            elif isinstance(value, list):
+                for item in value:
+                    if item not in (None, ""):
+                        arguments.extend((option, str(item)))
+            elif value not in (None, ""):
+                arguments.extend((option, str(value)))
+        configured["args"] = arguments
+
         environment = details.get("environment")
         environment = dict(environment) if isinstance(environment, dict) else {}
         for key, value in (
@@ -774,6 +820,7 @@ class McpServiceRegistry:
             endpoint,
             settings.get("user", ""),
             settings.get("password", ""),
+            settings,
         )
         try:
             if self._uses_http_transport(details):
@@ -820,6 +867,7 @@ class McpServiceRegistry:
         timeout_ms=None,
         user="",
         password="",
+        settings=None,
     ):
         """Check one MCP declaration and any required local endpoint."""
         if details.get("disabled") is True:
@@ -849,6 +897,7 @@ class McpServiceRegistry:
             configured_endpoint,
             user,
             password,
+            settings,
         )
 
         if self._uses_http_transport(details):
@@ -875,6 +924,7 @@ class McpServiceRegistry:
         timeout_ms=None,
         user="",
         password="",
+        settings=None,
     ):
         """Check one registered service and any required local endpoint."""
         services = self.services()
@@ -887,6 +937,7 @@ class McpServiceRegistry:
             timeout_ms,
             user,
             password,
+            settings,
         )
 
     def discover_tools(
@@ -896,6 +947,7 @@ class McpServiceRegistry:
         timeout_ms=None,
         user="",
         password="",
+        settings=None,
     ):
         """Read full tool definitions from one accessible Custom MCP service."""
         services = self.services()
@@ -939,6 +991,7 @@ class McpServiceRegistry:
             configured_endpoint,
             user,
             password,
+            settings,
         )
 
         tools = self._discover_transport(

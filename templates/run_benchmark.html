@@ -183,7 +183,8 @@
   <div class="benchmark-preview-body" data-preview-body></div>
 </section>
 
-<section class="benchmark-preview" id="create-benchmark-setup" data-create-benchmark-setup hidden aria-live="polite">
+<div class="chat-layout benchmark-run-create-layout" id="create-benchmark-setup" data-create-benchmark-setup hidden aria-live="polite">
+<section class="benchmark-preview chat-main content benchmark-create-main" aria-label="Create benchmark setup">
   <header class="benchmark-preview-header">
     <div>
       <span class="panel-kicker">Create benchmark setup</span>
@@ -194,8 +195,6 @@
       Close setup
     </button>
   </header>
-  <div class="benchmark-create-layout">
-    <div class="benchmark-create-main">
       <div class="benchmark-preview-body" data-create-benchmark-body>
         <div class="benchmark-setup-fields">
           <div class="field-group">
@@ -252,7 +251,7 @@
           Run benchmark
         </button>
       </footer>
-    </div>
+  </section>
 
     <aside class="chat-setup content benchmark-run-setup" aria-labelledby="run-benchmark-generation-title">
       <header class="chat-setup-header">
@@ -304,8 +303,7 @@
       </div>
       <p class="field-hint benchmark-run-setup-message" data-run-benchmark-setup-message role="status"></p>
     </aside>
-  </div>
-</section>
+</div>
 
 <div class="modal more-params-modal" data-run-benchmark-more-modal hidden role="dialog" aria-modal="true" aria-labelledby="run-benchmark-more-title">
   <div class="modal-content">

@@ -1,0 +1,30 @@
+{
+  "--language": {
+    "name": "Wikipedia language",
+    "type": "list",
+    "values": [
+      {"value": "en", "label": "English"},
+      {"value": "hu", "label": "Hungarian (Magyar)"},
+      {"value": "de", "label": "German (Deutsch)"},
+      {"value": "fr", "label": "French (Français)"},
+      {"value": "es", "label": "Spanish (Español)"},
+      {"value": "it", "label": "Italian (Italiano)"},
+      {"value": "nl", "label": "Dutch (Nederlands)"},
+      {"value": "pl", "label": "Polish (Polski)"},
+      {"value": "pt", "label": "Portuguese (Português)"},
+      {"value": "ro", "label": "Romanian (Română)"},
+      {"value": "ru", "label": "Russian (Русский)"},
+      {"value": "uk", "label": "Ukrainian (Українська)"},
+      {"value": "ja", "label": "Japanese (日本語)"},
+      {"value": "ko", "label": "Korean (한국어)"},
+      {"value": "zh-hans", "label": "Chinese, Simplified (简体中文)"},
+      {"value": "zh-hant", "label": "Chinese, Traditional (繁體中文)"}
+    ],
+    "default": "en"
+  },
+  "--enable-cache": {
+    "name": "Enable response cache",
+    "type": "boolean",
+    "default": true
+  }
+}
