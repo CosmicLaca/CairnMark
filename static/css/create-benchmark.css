@@ -28,6 +28,12 @@
     gap: 10px;
 }
 
+#create-benchmark-status.is-error {
+    border-color: rgba(176, 74, 57, 0.3);
+    border-left-color: #b04a39;
+    background: rgba(176, 74, 57, 0.07);
+}
+
 #create-benchmark-status[hidden] {
     display: none;
 }
@@ -46,6 +52,35 @@
     line-height: inherit;
 }
 
+#create-benchmark-status .status-text {
+    min-width: 0;
+    flex: 1;
+}
+
+.status-abort-button {
+    margin-left: auto;
+    padding: 6px 12px;
+    border: 1px solid rgba(176, 74, 57, 0.55);
+    color: #73382e;
+    background: rgba(255, 255, 255, 0.58);
+    cursor: pointer;
+    flex: none;
+    font: inherit;
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
+.status-abort-button:hover,
+.status-abort-button:focus-visible {
+    color: #fff;
+    background: #b04a39;
+}
+
+.status-abort-button:disabled {
+    cursor: wait;
+    opacity: 0.65;
+}
+
 #create-benchmark-status .status-icon {
     display: inline-grid;
     width: 21px;
@@ -59,6 +94,10 @@
     flex: none;
 }
 
+#create-benchmark-status .status-icon--error {
+    background: #b04a39;
+}
+
 /* The generic span reset above outranks a bare class selector, so the
    spinner must be scoped to keep its own size. */
 #create-benchmark-status .status-spinner {
@@ -70,6 +109,11 @@
     border-radius: 50%;
     animation: create-benchmark-spin 0.8s linear infinite;
     flex: none;
+}
+
+#create-benchmark-status.is-error .status-spinner {
+    border-color: rgba(176, 74, 57, 0.25);
+    border-top-color: #b04a39;
 }
 
 @keyframes create-benchmark-spin {

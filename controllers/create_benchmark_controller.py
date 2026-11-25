@@ -2,6 +2,7 @@
 
 import json
 import re
+import secrets
 from datetime import datetime
 
 from flask import (
@@ -28,12 +29,22 @@ from services.benchmark_documents import (
     BenchmarkRepository,
     read_prompt_template,
 )
-from services.benchmark_progress import BenchmarkStreamParser
 from services.chat_requests import ChatRequestWorkflow
 from services.model_providers import (
     ModelProviderService,
     ProviderOfflineError,
     ProviderValidationError,
+)
+
+
+PAIR_GENERATION_ATTEMPTS = 3
+BENCHMARK_PAIR_FIELDS = (
+    "request",
+    "response",
+    "answer_type",
+    "accepted_answers",
+    "numeric_tolerance",
+    "key_points",
 )
 
 
@@ -229,23 +240,68 @@ class CreateBenchmarkController:
         return cleaned
 
     @staticmethod
-    def _topic_log(topics, request_body, parsed):
-        """Group one creation request and its JSON response by main topic."""
-        sections = {}
-        if isinstance(parsed, list):
-            for section in parsed:
-                if isinstance(section, dict):
-                    sections.update(section)
-        elif isinstance(parsed, dict):
-            sections.update(parsed)
-        folded = {str(key).casefold(): value for key, value in sections.items()}
-        return {
-            topic["name"]: {
-                "request_body": request_body,
-                "raw_response": folded.get(topic["name"].casefold()),
-            }
-            for topic in topics
-        }
+    def _render_pair_prompt(
+        template,
+        category,
+        difficulty,
+        topic,
+    ):
+        """Render the user prompt for one model-generated benchmark pair."""
+        return (
+            template.replace("{{category}}", category)
+            .replace("{{difficulty_level}}", difficulty)
+            .replace("{{user_topics}}", topic)
+        )
+
+    @staticmethod
+    def _pair_target(topic):
+        """Return the validated pair count, including the form default."""
+        raw = topic.get("pairs")
+        return 5 if raw is None or str(raw).strip() == "" else int(raw)
+
+    @staticmethod
+    def _is_benchmark_pair(value):
+        """Return whether model output has the required pair-object shape."""
+        return (
+            isinstance(value, dict)
+            and set(value) == set(BENCHMARK_PAIR_FIELDS)
+        )
+
+    @staticmethod
+    def _pair_shape_error(value):
+        """Describe the model's structural mistake for the retry prompt."""
+        if value is None:
+            return "The response was not valid JSON."
+        if isinstance(value, list):
+            return "The response was a JSON array instead of one JSON object."
+        if not isinstance(value, dict):
+            return "The response was not a JSON object."
+
+        required = set(BENCHMARK_PAIR_FIELDS)
+        actual = set(value)
+        details = []
+        missing = sorted(required - actual)
+        extra = sorted(actual - required)
+        if missing:
+            details.append(f"missing keys: {', '.join(missing)}")
+        if extra:
+            details.append(f"extra keys: {', '.join(extra)}")
+        return "The JSON object had " + "; ".join(details) + "."
+
+    @staticmethod
+    def _repair_pair_prompt(base_prompt, attempt, failure):
+        """Add a compact structural correction after an invalid response."""
+        schema = (
+            '{"request":"...","response":"...","answer_type":"exact",'
+            '"accepted_answers":[],"numeric_tolerance":null,'
+            '"key_points":[]}'
+        )
+        return (
+            f"{base_prompt}\n\nFORMAT CORRECTION (attempt {attempt}/"
+            f"{PAIR_GENERATION_ATTEMPTS}): {failure} Discard the previous "
+            "output. Return one object only, with exactly these keys and no "
+            f"wrapper: {schema}"
+        )
 
     def generate(self):
         """Generate a benchmark JSON via the selected model."""
@@ -260,6 +316,7 @@ class CreateBenchmarkController:
         model_spec = (data.get("model") or "").strip()
         system_prompt = data.get("system_prompt") or ""
         user_prompt = data.get("user_prompt") or ""
+        user_prompt_template = data.get("user_prompt_template") or user_prompt
 
         try:
             parameters = self._validate_parameters(data)
@@ -269,6 +326,7 @@ class CreateBenchmarkController:
         except ValueError as error:
             return jsonify({"error": str(error)}), 400
         create_log = bool(data.get("create_log", False))
+        randomize_seed = data.get("randomize_seed", False)
 
         topics = data.get("topics") or []
         filled_topics = [
@@ -285,6 +343,8 @@ class CreateBenchmarkController:
             errors.append("Model is required.")
         if not filled_topics:
             errors.append("At least one main topic is required.")
+        if not isinstance(randomize_seed, bool):
+            errors.append("Randomize seed must be true or false.")
         for topic in filled_topics:
             topic_name = topic["name"]
             pairs = (topic.get("pairs") or "").strip()
@@ -320,10 +380,12 @@ class CreateBenchmarkController:
             "model": model,
             "system_prompt": system_prompt,
             "user_prompt": user_prompt,
+            "user_prompt_template": user_prompt_template,
             "topics": filled_topics,
             "parameters": parameters,
             "extra_parameters": extra_parameters,
             "create_log": create_log,
+            "randomize_seed": randomize_seed,
         }
 
         stream_requested = (
@@ -367,49 +429,131 @@ class CreateBenchmarkController:
         model,
         system_prompt,
         user_prompt,
+        user_prompt_template,
         topics,
         parameters,
         extra_parameters,
         create_log,
+        randomize_seed,
     ):
-        """Yield topic progress while the model writes, then the saved result."""
-        parser = BenchmarkStreamParser(topics)
-        content = ""
-        last_progress = None
-        try:
-            for event in self.service.benchmark_generation_stream(
-                provider,
-                model,
-                system_prompt,
-                user_prompt,
-                **parameters,
-                extra_parameters=extra_parameters,
-            ):
-                if event.get("type") != "chunk":
-                    continue
-                text = event.get("text") or ""
-                if not text:
-                    continue
-                content += text
-                state = parser.feed(text)
-                if not state:
-                    continue
-                progress = (state["topic"], state["pairs"])
-                if progress == last_progress:
-                    continue
-                last_progress = progress
-                yield {"type": "progress", **state}
-        except Exception as error:  # noqa: BLE001 - surface provider errors
-            current_app.logger.exception(
-                "Benchmark generation failed for provider=%s model=%s",
-                provider,
-                model,
-            )
-            raise BenchmarkGenerationError(str(error)) from error
+        """Generate individual pairs and assemble the final benchmark JSON."""
+        document = []
+        creation_log = {}
+        character_count = 0
+        topics_done = 0
 
-        parsed = self._extract_json(content)
-        if parsed is None:
-            raise BenchmarkGenerationError("The model did not return valid JSON.")
+        for topic in topics:
+            topic_name = topic["name"].strip()
+            expected = self._pair_target(topic)
+            benchmarks = []
+            generations = []
+
+            for pair_number in range(1, expected + 1):
+                pair_prompt = self._render_pair_prompt(
+                    user_prompt_template,
+                    category,
+                    difficulty,
+                    topic_name,
+                )
+                parsed = None
+                attempt_prompt = pair_prompt
+                for attempt in range(1, PAIR_GENERATION_ATTEMPTS + 1):
+                    content = ""
+                    activity_characters = 0
+                    round_parameters = dict(parameters)
+                    if attempt > 1 or (randomize_seed and pair_number > 1):
+                        round_parameters["seed"] = secrets.randbelow(4294967296)
+                    try:
+                        for event in self.service.benchmark_generation_stream(
+                            provider,
+                            model,
+                            system_prompt,
+                            attempt_prompt,
+                            **round_parameters,
+                            extra_parameters=extra_parameters,
+                        ):
+                            if event.get("type") == "chunk":
+                                text = event.get("text") or ""
+                                if not text:
+                                    continue
+                                first_chunk = not content
+                                content += text
+                                activity_characters += len(text)
+                                if first_chunk or activity_characters >= 128:
+                                    activity_characters = 0
+                                    yield {"type": "activity"}
+                    except Exception as error:  # noqa: BLE001 - provider boundary
+                        current_app.logger.exception(
+                            "Benchmark generation failed for provider=%s model=%s",
+                            provider,
+                            model,
+                        )
+                        raise BenchmarkGenerationError(str(error)) from error
+
+                    character_count += len(content)
+                    parsed = self._extract_json(content)
+                    if self._is_benchmark_pair(parsed):
+                        break
+
+                    failure = self._pair_shape_error(parsed)
+                    yield {
+                        "type": "retry",
+                        "topic": topic_name,
+                        "pair": pair_number,
+                        "expected": expected,
+                        "attempt": attempt,
+                        "max_attempts": PAIR_GENERATION_ATTEMPTS,
+                        "error": failure,
+                    }
+                    if attempt == PAIR_GENERATION_ATTEMPTS:
+                        raise BenchmarkGenerationError(
+                            f"{failure} Aborted after "
+                            f"{PAIR_GENERATION_ATTEMPTS} failed attempts for "
+                            f"'{topic_name}' pair {pair_number} of {expected}."
+                        )
+                    attempt_prompt = self._repair_pair_prompt(
+                        pair_prompt,
+                        attempt + 1,
+                        failure,
+                    )
+
+                benchmarks.append(parsed)
+
+                if create_log:
+                    request_body = {
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": attempt_prompt},
+                        ],
+                        **{
+                            name: value
+                            for name, value in round_parameters.items()
+                            if value is not None
+                        },
+                        **self.service.local_extra_parameters(
+                            provider, extra_parameters
+                        ),
+                    }
+                    generations.append(
+                        {
+                            "request_body": request_body,
+                            "raw_response": parsed,
+                        }
+                    )
+
+                yield {
+                    "type": "progress",
+                    "topic": topic_name,
+                    "pairs": pair_number,
+                    "expected": expected,
+                    "topics_done": topics_done,
+                }
+
+            document.append({topic_name: {"benchmarks": benchmarks}})
+            if create_log:
+                creation_log[topic_name] = {"generations": generations}
+            topics_done += 1
 
         # The model uses INSERT OR IGNORE and returns the canonical spelling.
         create_category(category)
@@ -420,7 +564,7 @@ class CreateBenchmarkController:
             f"Benchamrk-prompts-{timestamp}-{safe_category}-{difficulty}"
         )
         try:
-            self.repository.create(filename, parsed)
+            self.repository.create(filename, document)
         except OSError as error:
             current_app.logger.exception("Could not save generated benchmark")
             raise BenchmarkGenerationError(
@@ -440,26 +584,11 @@ class CreateBenchmarkController:
 
         log_filename = None
         if create_log:
-            request_body = {
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                **{
-                    name: value
-                    for name, value in parameters.items()
-                    if value is not None
-                },
-                **self.service.local_extra_parameters(
-                    provider, extra_parameters
-                ),
-            }
             log_filename = f"{filename.rsplit('.', 1)[0]}-creation.json"
             try:
                 self.repository.save_json_log(
                     log_filename,
-                    self._topic_log(topics, request_body, parsed),
+                    creation_log,
                 )
             except OSError as error:
                 current_app.logger.exception(
@@ -473,7 +602,7 @@ class CreateBenchmarkController:
             "type": "result",
             "message": "Benchmark JSON is ready.",
             "filename": filename,
-            "characters": len(content),
+            "characters": character_count,
             "log_filename": log_filename,
         }
 

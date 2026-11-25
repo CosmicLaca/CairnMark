@@ -30,7 +30,7 @@
         return Number.isFinite(value) ? value : null;
     };
 
-    const values = (forRequest = false) => {
+    const values = () => {
         const result = {};
         Object.entries(fields).forEach(([name, input]) => {
             result[name] = numberValue(input);
@@ -38,10 +38,6 @@
         const randomize = seedSwitch?.getAttribute("aria-checked") === "true";
         result.randomize_seed = randomize;
         result.create_log = Boolean(createLog?.checked);
-        if (forRequest && randomize) {
-            result.seed = Math.floor(Math.random() * 4294967296);
-            if (fields.seed) fields.seed.value = String(result.seed);
-        }
         return result;
     };
 
@@ -186,6 +182,6 @@
     updateMoreButton();
 
     window.CairnmarkBenchmarkSetup = {
-        requestValues: () => ({ ...values(true), model_params: extraParameters }),
+        requestValues: () => ({ ...values(), model_params: extraParameters }),
     };
 })();

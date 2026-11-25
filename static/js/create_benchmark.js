@@ -17,6 +17,7 @@
     const systemPromptTextarea = document.querySelector("[data-system-prompt]");
     const userPromptTextarea = document.querySelector("[data-request-response-details]");
     const statusEl = document.getElementById("create-benchmark-status");
+    let activeGenerationController = null;
 
     const getSelectedDifficulty = () => {
         const checked = document.querySelector('input[name="difficulty"]:checked');
@@ -94,13 +95,9 @@
         if (!statusEl) return;
         statusEl.hidden = false;
         statusEl.classList.toggle("is-running", !!isRunning);
-        if (isError) {
-            statusEl.classList.remove("save-confirmation");
-            statusEl.classList.add("form-errors");
-        } else {
-            statusEl.classList.remove("form-errors");
-            statusEl.classList.add("save-confirmation");
-        }
+        statusEl.classList.toggle("is-error", !!isError);
+        statusEl.classList.add("save-confirmation");
+        statusEl.classList.remove("form-errors");
         // Render message with an optional spinner while running.
         statusEl.textContent = "";
         if (isRunning) {
@@ -108,18 +105,40 @@
             spinner.className = "status-spinner";
             spinner.setAttribute("aria-hidden", "true");
             statusEl.appendChild(spinner);
-        } else if (!isError) {
+        } else {
             const icon = document.createElement("span");
-            icon.className = "status-icon";
+            icon.className = isError
+                ? "status-icon status-icon--error"
+                : "status-icon";
             icon.setAttribute("aria-hidden", "true");
-            icon.textContent = "✓";
+            icon.textContent = isError ? "!" : "✓";
             statusEl.appendChild(icon);
         }
         const text = document.createElement("span");
         text.className = "status-text";
         text.textContent = message;
         statusEl.appendChild(text);
+        if (isRunning && activeGenerationController) {
+            const abortButton = document.createElement("button");
+            abortButton.className = "status-abort-button";
+            abortButton.type = "button";
+            abortButton.textContent = "Abort";
+            abortButton.addEventListener("click", () => {
+                abortButton.disabled = true;
+                abortButton.textContent = "Aborting...";
+                activeGenerationController?.abort();
+            }, { once: true });
+            statusEl.appendChild(abortButton);
+        }
     };
+
+    const abortableDelay = (milliseconds, signal) => new Promise((resolve, reject) => {
+        const timeout = window.setTimeout(resolve, milliseconds);
+        signal.addEventListener("abort", () => {
+            window.clearTimeout(timeout);
+            reject(new DOMException("Generation aborted.", "AbortError"));
+        }, { once: true });
+    });
 
     const hideStatus = () => {
         if (!statusEl) return;
@@ -174,14 +193,8 @@
         // Disable the multiline inputs so they stay readable but not editable.
         disablePromptInputs(true);
         if (createButton) createButton.disabled = true;
-
-        setStatus("Validating configuration...", false, true);
-
-        // Small delay so the user sees the state transition.
-        await new Promise((resolve) => setTimeout(resolve, 150));
-
-        setStatus("Checking model server status...", false, true);
-        await new Promise((resolve) => setTimeout(resolve, 150));
+        const generationController = new AbortController();
+        activeGenerationController = generationController;
 
         // The server streams the model output and reports the topic and the
         // number of finished pairs it has actually parsed so far.
@@ -192,15 +205,24 @@
             return `Model is running, please wait... ${state.topic} ${count}`;
         };
 
-        setStatus(
-            `Model is running, please wait... Preparing the ${categoryName} benchmark`,
-            false,
-            true
-        );
-
         try {
+            setStatus("Validating configuration...", false, true);
+
+            // Small delay so the user sees the state transition.
+            await abortableDelay(150, generationController.signal);
+
+            setStatus("Checking model server status...", false, true);
+            await abortableDelay(150, generationController.signal);
+
+            setStatus(
+                `Model is running, please wait... Preparing the ${categoryName} benchmark`,
+                false,
+                true
+            );
+
             const events = api.eventStream("/create_benchmark/generate?stream=1", {
                 method: "POST",
+                signal: generationController.signal,
                 headers: {
                     "Content-Type": "application/json",
                 },
@@ -211,6 +233,7 @@
                     model: modelSelect?.value || "",
                     system_prompt: systemPromptTextarea?.value || "",
                     user_prompt: userPromptTextarea?.value || "",
+                    user_prompt_template: templates.user || "",
                     topics: topics,
                     ...(window.CairnmarkBenchmarkSetup?.requestValues?.() || {}),
                 }),
@@ -221,6 +244,18 @@
             for await (const message of events) {
                 if (message.type === "progress") {
                     setStatus(progressMessage(message), false, true);
+                } else if (message.type === "retry") {
+                    const attempt = message.attempt || 1;
+                    const maximum = message.max_attempts || 3;
+                    const pair = message.pair || 1;
+                    const expected = message.expected || "?";
+                    const detail = message.error || "Invalid model response.";
+                    const action = attempt < maximum ? " Retrying..." : " Aborting...";
+                    setStatus(
+                        `${detail} ${message.topic} pair ${pair} / ${expected}, failed attempt ${attempt} / ${maximum}.${action}`,
+                        true,
+                        attempt < maximum
+                    );
                 } else if (message.type === "result") {
                     result = message;
                 } else if (message.type === "error") {
@@ -244,14 +279,22 @@
             if (typeof window.resetBenchmarkTopics === "function") {
                 window.resetBenchmarkTopics();
             }
-            if (createButton) createButton.disabled = false;
         } catch (error) {
+            if (generationController.signal.aborted || error?.name === "AbortError") {
+                setStatus("Generation aborted.", true, false);
+                disablePromptInputs(false);
+                return;
+            }
             const message = error && error.message
                 ? error.message
                 : `Request failed: ${error}`;
             setStatus(message, true, false);
             window.alert(message);
             disablePromptInputs(false);
+        } finally {
+            if (activeGenerationController === generationController) {
+                activeGenerationController = null;
+            }
             if (createButton) createButton.disabled = false;
         }
     };
