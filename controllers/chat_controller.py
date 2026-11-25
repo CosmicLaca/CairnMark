@@ -1337,6 +1337,7 @@ class ChatController:
                 settings.get("endpoint"),
                 settings.get("user", ""),
                 settings.get("password", ""),
+                settings=settings,
             )
             if not availability.get("online"):
                 return jsonify(

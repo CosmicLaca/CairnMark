@@ -4422,23 +4422,81 @@
         setupHeading.append(setupTitle, setupHint);
         const setupGrid = document.createElement("div");
         setupGrid.className = "mcp-tool-setup-grid";
-        Object.entries(definitions || {}).forEach(([key, definition]) => {
-            if (!definition || typeof definition !== "object") return;
-            const field = createMcpToolField(
-                "default",
-                key,
-                definition,
-                {},
-                "external"
-            );
-            const testButton = field.querySelector("[data-mcp-endpoint-test]");
-            if (testButton) {
-                testButton.disabled = true;
-                testButton.title = "Save the service before testing access.";
-            }
-            setupGrid.appendChild(field);
-        });
         setup.append(setupHeading, setupGrid);
+
+        let setupRequestSequence = 0;
+        const renderCustomSetup = (
+            schemaName,
+            displayName,
+            setupDefinitions,
+            savedValues = {}
+        ) => {
+            setup.setAttribute("data-mcp-custom-tool-setup", schemaName);
+            setupTitle.textContent = schemaName === "default"
+                ? "Default setup"
+                : `${displayName} setup`;
+            setupGrid.replaceChildren();
+            Object.entries(setupDefinitions || {}).forEach(
+                ([key, definition]) => {
+                    if (!definition || typeof definition !== "object") return;
+                    const field = createMcpToolField(
+                        schemaName,
+                        key,
+                        definition,
+                        savedValues,
+                        "external"
+                    );
+                    const testButton = field.querySelector(
+                        "[data-mcp-endpoint-test]"
+                    );
+                    if (testButton) {
+                        testButton.disabled = true;
+                        testButton.title = (
+                            "Save the service before testing access."
+                        );
+                    }
+                    setupGrid.appendChild(field);
+                }
+            );
+        };
+        renderCustomSetup("default", "default", definitions);
+
+        const refreshCustomSetup = async () => {
+            const nameInput = form.querySelector(
+                '[data-mcp-custom-setting="name"]'
+            );
+            const displayName = nameInput?.value?.trim() || "";
+            const schemaName = displayName.toLowerCase() || "default";
+            if (
+                setup.getAttribute("data-mcp-custom-tool-setup")
+                === schemaName
+            ) return;
+
+            const savedValues = readMcpAccordionSettings(setup, {});
+            const currentSequence = ++setupRequestSequence;
+            setupHint.textContent = "Reading service-specific settings…";
+            const setupDefinitions = await loadMcpSetupDefinitions(schemaName);
+            if (currentSequence !== setupRequestSequence) return;
+            const usesDefault = schemaName !== "default"
+                && setupDefinitions === definitions;
+            renderCustomSetup(
+                schemaName,
+                usesDefault ? "default" : displayName,
+                setupDefinitions,
+                savedValues
+            );
+            setupTitle.textContent = usesDefault
+                ? "Default setup"
+                : `${displayName} setup`;
+            setupHint.textContent = "Service-specific settings";
+        };
+        form.refreshCustomSetup = refreshCustomSetup;
+        grid.querySelector('[data-mcp-custom-setting="name"]')
+            ?.addEventListener("change", () => {
+                refreshCustomSetup().catch((error) => {
+                    setupHint.textContent = `Could not read setup: ${error}`;
+                });
+            });
 
         const addButton = document.createElement("button");
         addButton.type = "button";
@@ -4448,6 +4506,7 @@
             addButton.disabled = true;
             addButton.textContent = "Checking…";
             try {
+                await refreshCustomSetup();
                 const saved = await saveFirstCustomMcpService(form, true);
                 if (!saved) return;
                 if (requestSequence !== mcpSettingsSequence) return;
@@ -4630,6 +4689,9 @@
         const form = customForm
             || mcpServiceList?.querySelector(".mcp-custom-server");
         if (!form) return;
+        if (typeof form.refreshCustomSetup === "function") {
+            await form.refreshCustomSetup();
+        }
         if (requireEntry) {
             const invalidInput = Array.from(
                 form.querySelectorAll("input, select")

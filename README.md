@@ -89,6 +89,7 @@ locally; used tools remain identifiable on their response bubbles.
 > #### **[Local SearXNG setup and direct tests →](./manual/tool-setup.md)**
 > #### **[Weather, Stock, AntV Chart, LibreOffice →](./manual/mcp-tools-examples.md)**
 > #### **[Wikipedia and Yahoo Finance examples →](./manual/mcp-tools-examples-2.md)**
+> #### **[Official Time MCP example →](./manual/mcp-tools-examples-3.md)**
 
 ---
 
@@ -179,6 +180,7 @@ privacy policy.
 > ### - [MCP tool handling](./manual/mcp-tools.md)
 > ### - [MCP tool and local SearXNG setup](./manual/tool-setup.md)
 > ### - [Wikipedia and Yahoo Finance MCP examples](./manual/mcp-tools-examples-2.md)
+> ### - [Official Time MCP example](./manual/mcp-tools-examples-3.md)
 > ### - [Benchmark workflow](./manual/benchmarks.md)
 
 ---
