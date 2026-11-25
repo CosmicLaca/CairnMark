@@ -52,6 +52,7 @@ DEFAULT_TOOL_GLOBAL_SETTINGS = {
     "max_consecutive_failures": 2,
     "max_result_chars": 20_000,
     "tool_policy": "automatic",
+    "automatic_tool_scope": False,
     "guidance_enabled": True,
     "guidance_template": DEFAULT_TOOL_GUIDANCE,
     "capture_webpage_preview": True,
@@ -383,6 +384,14 @@ class McpSettingsRepository:
         if policy not in TOOL_POLICY_VALUES:
             raise ValueError("Tool policy must be automatic, ask, or manual.")
         validated["tool_policy"] = policy
+
+        automatic_tool_scope = settings.get(
+            "automatic_tool_scope",
+            DEFAULT_TOOL_GLOBAL_SETTINGS["automatic_tool_scope"],
+        )
+        if not isinstance(automatic_tool_scope, bool):
+            raise ValueError("Automatic tool scope state must be a boolean.")
+        validated["automatic_tool_scope"] = automatic_tool_scope
 
         guidance_enabled = settings.get(
             "guidance_enabled",

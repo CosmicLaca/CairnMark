@@ -97,6 +97,9 @@
         "[data-tool-global-settings-modal]"
     );
     const toolGlobalSwitch = document.querySelector("[data-tool-global-switch]");
+    const toolAutomaticScopeSwitch = document.querySelector(
+        "[data-tool-automatic-scope-switch]"
+    );
     const toolMaxRoundsInput = document.querySelector("[data-tool-max-rounds]");
     const toolMaxTotalCallsInput = document.querySelector(
         "[data-tool-max-total-calls]"
@@ -576,6 +579,7 @@
         max_consecutive_failures: 2,
         max_result_chars: 20000,
         tool_policy: "automatic",
+        automatic_tool_scope: false,
         guidance_enabled: true,
         guidance_template: "",
         capture_webpage_preview: true,
@@ -2935,6 +2939,10 @@
         globalToolSettings = {...globalToolSettings, ...settings};
         globalToolSettingsLoaded = true;
         setMcpSwitch(toolGlobalSwitch, globalToolsEnabled === true);
+        setMcpSwitch(
+            toolAutomaticScopeSwitch,
+            globalToolSettings.automatic_tool_scope === true
+        );
         setMcpSwitch(toolGuidanceSwitch, globalToolSettings.guidance_enabled === true);
         setMcpSwitch(
             toolWebpagePreviewSwitch,
@@ -3012,6 +3020,9 @@
                     10
                 ),
                 tool_policy: toolUsePolicySelect?.value || "automatic",
+                automatic_tool_scope: toolAutomaticScopeSwitch?.getAttribute(
+                    "aria-checked"
+                ) === "true",
                 guidance_enabled: toolGuidanceSwitch?.getAttribute("aria-checked") === "true",
                 guidance_template: toolGuidanceTemplate?.value || "",
                 capture_webpage_preview: toolWebpagePreviewSwitch?.getAttribute(
@@ -6206,6 +6217,12 @@
         bindGeneratedDocumentPreview(
             link,
             link.dataset.generatedDocumentName || ""
+        );
+    });
+    toolAutomaticScopeSwitch?.addEventListener("click", () => {
+        setMcpSwitch(
+            toolAutomaticScopeSwitch,
+            toolAutomaticScopeSwitch.getAttribute("aria-checked") !== "true"
         );
     });
     if (!modelStateInitialized) setTimeout(updateMoreParamsButtonState, 0);

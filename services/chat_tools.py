@@ -192,6 +192,61 @@ class ChatToolService:
         normalized = str(user_message or "").lstrip().lower()
         return normalized.startswith(("/tool ", "/tools "))
 
+    def scope_bindings(self, bindings, user_message):
+        """Narrow tools only when the prompt explicitly names MCP services."""
+        if not self.global_settings().get("automatic_tool_scope", False):
+            return bindings
+        message = str(user_message or "")
+        if not message.strip():
+            return bindings
+
+        services = {
+            binding.service.casefold(): binding.service
+            for binding in bindings
+            if binding.service
+        }
+        selected = set()
+        separators = r"[`'\"\s]+"
+        for normalized_name, service_name in services.items():
+            escaped_name = re.escape(service_name)
+            boundary_name = (
+                rf"(?<![A-Za-z0-9_-]){escaped_name}"
+                rf"(?![A-Za-z0-9_-])"
+            )
+            direct_pattern = (
+                boundary_name
+                + separators
+                + rf"(?:mcp{separators})?"
+                + r"(?:tools?|services?|server)\b"
+            )
+            if re.search(direct_pattern, message, flags=re.IGNORECASE):
+                selected.add(normalized_name)
+
+        directive_pattern = re.compile(
+            r"\b(?:use|using)\s+(?:only\s+)?"
+            r"(?P<scope>.{1,200}?)\s+mcp\s+(?:tools?|services?)\b",
+            flags=re.IGNORECASE,
+        )
+        for match in directive_pattern.finditer(message):
+            scope_text = match.group("scope")
+            for normalized_name, service_name in services.items():
+                escaped_name = re.escape(service_name)
+                if re.search(
+                    rf"(?<![A-Za-z0-9_-]){escaped_name}"
+                    rf"(?![A-Za-z0-9_-])",
+                    scope_text,
+                    flags=re.IGNORECASE,
+                ):
+                    selected.add(normalized_name)
+
+        if not selected:
+            return bindings
+        return [
+            binding
+            for binding in bindings
+            if binding.service.casefold() in selected
+        ]
+
     def system_prompt(self, system_prompt, bindings):
         """Append runtime-only tool guidance for the enabled bindings."""
         settings = self.global_settings()

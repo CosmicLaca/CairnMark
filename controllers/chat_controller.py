@@ -335,6 +335,12 @@ class ChatController:
             chat_request.user_message,
         ):
             tool_bindings = []
+        scope_bindings = getattr(tool_service, "scope_bindings", None)
+        if tool_bindings and callable(scope_bindings):
+            tool_bindings = scope_bindings(
+                tool_bindings,
+                chat_request.user_message,
+            )
         effective_system_prompt = chat_request.system_prompt
         prompt_builder = getattr(tool_service, "system_prompt", None)
         if tool_bindings and callable(prompt_builder):

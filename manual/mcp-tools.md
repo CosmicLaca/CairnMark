@@ -85,6 +85,7 @@ settings apply to every MCP source and are saved in `instance/tools.db` when
 | Setting | Default | Purpose |
 | --- | ---: | --- |
 | Enable/Disable tools | Off | Pauses or permits all saved tool services without changing their individual switches |
+| Automatic tool scope | Off | Sends only explicitly named MCP services for the current request while preserving all saved switches |
 | Maximum tool-call rounds | 15 | Limits model-to-tool continuation rounds per response; range 1–20 |
 | Maximum total tool calls | 30 | Limits all calls in one response, including parallel calls; range 1–100 |
 | Stop after consecutive failures | 2 | Ends tool execution after repeated failures; range 1–10 |
@@ -100,6 +101,40 @@ settings apply to every MCP source and are saved in `instance/tools.db` when
 The global switch does not rewrite service or subtool choices. Turning it off
 temporarily pauses them; turning it on restores the previously selected set.
 
+### Automatic tool scope
+
+Tool definitions consume input context and are sent again during each model
+continuation round. When many services are enabled, their schemas can therefore
+use substantially more input tokens than the user prompt itself.
+
+Enable **Automatic tool scope** to narrow the model-visible definitions when a
+request explicitly names one or more MCP services. For example:
+
+> Use only the Time MCP tools. Get the current time in Europe/Budapest.
+
+This request sends only the enabled tools belonging to the `Time` service.
+Multiple services can be selected in one request:
+
+> Use Time and Wikipedia MCP tools to report the current time and find an
+> article about Budapest.
+
+Service names are matched case-insensitively. Forms such as “Time MCP tools”
+and “use only `yfmcp` tools” are recognized. The matching service and its
+required subtools must still be enabled in **MCP settings**.
+
+Automatic scoping is deliberately conservative:
+
+- it does not change or save different service or subtool switches;
+- it filters only the current request, including its runtime tool guidance;
+- ordinary words such as “time” do not select a service unless the wording
+  clearly refers to MCP tools or services; and
+- if no enabled service is identified, CairnMark sends the complete enabled
+  tool set as a safe fallback.
+
+Turn the switch off to retain the previous behavior for every request. No
+additional Python package, MCP server, or routing model is required; CairnMark
+performs this explicit-name filtering before sending the API request.
+
 The tool-use policies behave as follows:
 
 - **Automatic** lets the model choose enabled tools when useful.
@@ -110,17 +145,17 @@ The tool-use policies behave as follows:
 
 Tool guidance is appended to the outgoing system prompt only at request time;
 it does not overwrite the visible or saved system prompt. If a custom template
-omits `{tools}`, CairnMark appends the available-tool list automatically.
+omits `{tools}`, CairnMark appends the request-visible tool list automatically.
 
 ---
 
 ## Tool execution
 
-When all three switch levels are enabled, CairnMark sends only those enabled
-definitions to the model. The model selects a tool, CairnMark validates and
-executes it, appends the result to the model transcript, and asks the model to
-continue. Same-named tools from different sources receive distinct internal
-aliases.
+When all three switch levels are enabled, CairnMark sends those enabled
+definitions to the model, optionally narrowed by **Automatic tool scope**. The
+model selects a visible tool, CairnMark validates and executes it, appends the
+result to the model transcript, and asks the model to continue. Same-named
+tools from different sources receive distinct internal aliases.
 
 Execution stops at the configured round, total-call, or consecutive-failure
 limit. CairnMark then removes tool definitions and asks the model for a final
