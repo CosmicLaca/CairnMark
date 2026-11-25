@@ -275,16 +275,6 @@
     {{ benchmark_parameter("benchmark-temperature", "Temperature", "Controls randomness. Lower is more focused; higher is more varied.", "temperature", benchmark_settings.temperature, "0.1", "0", "2") }}
     {{ benchmark_parameter("benchmark-top-p", "Top P", "Nucleus sampling threshold. 1.0 considers all tokens.", "top_p", benchmark_settings.top_p, "0.05", "0", "1") }}
     {{ benchmark_parameter("benchmark-top-k", "Top K", "Limits sampling to the K most likely tokens. 0 disables the limit.", "top_k", benchmark_settings.top_k, "1", "0", "200") }}
-    <div class="field-group">
-      <div class="chat-parameter-label"><label for="benchmark-seed">Seed</label></div>
-      <div class="chat-seed-control">
-        <button type="button" class="chat-toggle-switch" data-benchmark-seed-switch role="switch" aria-checked="{{ 'true' if benchmark_settings.randomize_seed else 'false' }}" title="Randomize seed">
-          <span class="chat-toggle-switch-track" aria-hidden="true"><span class="chat-toggle-switch-knob"></span></span>
-          <span class="chat-toggle-switch-tooltip" role="tooltip">Randomize seed</span>
-        </button>
-        <input id="benchmark-seed" type="number" step="1" min="-1" max="4294967295" value="{{ benchmark_settings.seed if benchmark_settings.seed is not none else '' }}" data-benchmark-seed>
-      </div>
-    </div>
     {{ benchmark_parameter("benchmark-min-p", "Min P", "Minimum relative probability threshold; a common range is 0.0–0.1.", "min_p", benchmark_settings.min_p, "0.01", "0", "1") }}
   </div>
   </fieldset>

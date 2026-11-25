@@ -2,18 +2,18 @@ Create one benchmark question and its reference answer for the category, topic, 
 Prompts (questions) and their reference answers must not be too long; they should be of easy-to-moderate difficulty. If the topic is subjective or creative, the response should be one possible good answer. In scientific topics such as math, the year of an event, numerical or programming-related requests, the response must be the only exact value or exact answer.
 All API responses must contain only the raw answer: no comments, no text that suggests or thinks about the answer, no additional questions or ideas. Just the finished raw answer.
 
-## Output format
+---
 
-| Key | JSON type        | Meaning                                                                      |
-|---|------------------|------------------------------------------------------------------------------|
-| `benchmarks` | list             | The list of 1 benchmark reference data.                                      |
-| `request` | string           | The question prompt. It must be self-contained and unambiguous.              |
-| `response` | string           | One good reference answer.                                                   |
-| `answer_type` | string           | Exactly one of `"exact"`, `"numeric"`, `"open"`.                             |
-| `accepted_answers` | array of strings | Other correct ways to write the same answer. `[]` if none or not applicable. |
-| `numeric_tolerance` | number or `null` | Maximum allowed relative error. Only for `"numeric"`, otherwise `null`.      |
-| `key_points` | array of strings | Statements a correct answer must contain. Only for `"open"`, otherwise `[]`. |
+## Output format:
 
+Key: `request` | Type: `string` | Meaning: The question prompt. It must be self-contained and unambiguous
+Key: `response` | Type:  `string` | Meaning: One good reference answer
+Key: `answer_type` | Type:  `string` | Meaning: Exactly one of `"exact"`, `"numeric"`, `"open"`
+Key: `accepted_answers` | Type:  array of strings | Meaning: Other correct ways to write the same answer. `[]` if none or not applicable
+Key: `numeric_tolerance` | Type:  `number` or `null` | Meaning: Maximum allowed relative error. Only for `"numeric"`, otherwise `null`
+Key: `key_points` | Type: `array of strings` | Meaning: Statements a correct answer must contain. Only for `"open"`, otherwise `[]`
+
+---
 
 Return only one valid JSON object. Do not return markdown, explanations, an array, a topic key, or a `benchmarks` key. Use exactly these six keys:
 
@@ -38,7 +38,7 @@ Never use `open` for a value, name, date, calculation, or count. Use `open` when
 
 Use double quotes and valid JSON. `request` and `response` are strings. `accepted_answers` and `key_points` are arrays of strings. `numeric_tolerance` is a JSON number or `null`, never a string. Do not omit or add keys.
 
-## Exact example — never reuse its content
+## if answer_type `exact` example — never reuse its content:
 
 ```json
 {
@@ -51,7 +51,9 @@ Use double quotes and valid JSON. `request` and `response` are strings. `accepte
 }
 ```
 
-## Numeric example — never reuse its content
+---
+
+## if answer_type `numeric` example — never reuse its content:
 
 ```json
 {
@@ -64,7 +66,9 @@ Use double quotes and valid JSON. `request` and `response` are strings. `accepte
 }
 ```
 
-## Open example — never reuse its content
+---
+
+## if answer_type `open` example — never reuse its content:
 
 ```json
 {

@@ -7,10 +7,8 @@
         temperature: document.querySelector("[data-benchmark-temperature]"),
         top_p: document.querySelector("[data-benchmark-top-p]"),
         top_k: document.querySelector("[data-benchmark-top-k]"),
-        seed: document.querySelector("[data-benchmark-seed]"),
         min_p: document.querySelector("[data-benchmark-min-p]"),
     };
-    const seedSwitch = document.querySelector("[data-benchmark-seed-switch]");
     const createLog = document.querySelector("[data-benchmark-create-log]");
     const saveButton = document.querySelector("[data-benchmark-save-settings]");
     const message = document.querySelector("[data-benchmark-setup-message]");
@@ -35,8 +33,6 @@
         Object.entries(fields).forEach(([name, input]) => {
             result[name] = numberValue(input);
         });
-        const randomize = seedSwitch?.getAttribute("aria-checked") === "true";
-        result.randomize_seed = randomize;
         result.create_log = Boolean(createLog?.checked);
         return result;
     };
@@ -149,10 +145,6 @@
         return collected;
     };
 
-    seedSwitch?.addEventListener("click", () => {
-        const enabled = seedSwitch.getAttribute("aria-checked") !== "true";
-        seedSwitch.setAttribute("aria-checked", String(enabled));
-    });
     saveButton?.addEventListener("click", async () => {
         saveButton.disabled = true;
         try {

@@ -2981,6 +2981,60 @@
         });
     };
 
+    const createMcpProviderAccordion = (key, label) => {
+        const section = document.createElement("section");
+        section.className = "mcp-provider-group";
+        section.setAttribute("data-mcp-provider-group", key);
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "mcp-provider-group-toggle";
+        button.setAttribute("aria-expanded", "false");
+        const title = document.createElement("strong");
+        title.textContent = label;
+        const hint = document.createElement("span");
+        hint.textContent = "Services and setup";
+        const status = document.createElement("span");
+        status.className = "mcp-provider-group-status";
+        status.hidden = true;
+        const marker = document.createElement("span");
+        marker.className = "mcp-provider-group-marker";
+        marker.setAttribute("aria-hidden", "true");
+        marker.textContent = "▼";
+        button.append(title, hint, status, marker);
+
+        const content = document.createElement("div");
+        content.className = "mcp-provider-group-content";
+        content.hidden = true;
+        button.addEventListener("click", () => {
+            const opening = button.getAttribute("aria-expanded") !== "true";
+            mcpServiceList.querySelectorAll("[data-mcp-provider-group]").forEach(
+                (group) => {
+                    const toggle = group.querySelector(".mcp-provider-group-toggle");
+                    const body = group.querySelector(".mcp-provider-group-content");
+                    toggle?.setAttribute("aria-expanded", "false");
+                    if (body) body.hidden = true;
+                }
+            );
+            button.setAttribute("aria-expanded", opening ? "true" : "false");
+            content.hidden = !opening;
+        });
+        section.append(button, content);
+        return {
+            section,
+            content,
+            setStatus(value, tone = "") {
+                const label = String(value || "").trim();
+                status.textContent = label;
+                status.hidden = !label;
+                status.classList.toggle(
+                    "mcp-provider-group-status--offline",
+                    tone === "offline"
+                );
+            },
+        };
+    };
+
     const createCustomMcpToolRow = (serviceName, cachedTool) => {
         const toolName = String(cachedTool.tool || "").trim();
         const definition = cachedTool.definition && typeof cachedTool.definition === "object"
@@ -4105,26 +4159,20 @@
         return service;
     };
 
-    const renderLlamaManagedTools = async (requestSequence) => {
-        const provider = (modelSelect?.value || "").split("::")[0].trim();
-        if (provider !== "llama.cpp") return 0;
+    const renderLlamaManagedTools = async (
+        requestSequence,
+        target,
+        providerGroup
+    ) => {
+        const provider = "llama.cpp";
 
         const loading = document.createElement("p");
         loading.className = "mcp-settings-loading llama-managed-loading";
         loading.textContent = `Checking ${provider} managed services…`;
-        mcpServiceList.appendChild(loading);
+        target.appendChild(loading);
 
         try {
-            const hasEnabledService = Array.from(
-                savedLlamaServiceStates.values()
-            ).some(Boolean);
-            const payload = hasEnabledService
-                ? await api.request(llamaManagedToolsUrl)
-                : {
-                    configured: knownLlamaTools.size > 0,
-                    online: true,
-                    tools: Array.from(knownLlamaTools.values()),
-                };
+            const payload = await api.request(llamaManagedToolsUrl);
             if (requestSequence !== mcpSettingsSequence) return 0;
             const providerOnline = Boolean(payload && payload.online);
             const tools = Array.isArray(payload && payload.tools)
@@ -4132,6 +4180,10 @@
                     (tool) => tool && tool.type === "mcp" && llamaToolName(tool)
                 )
                 : [];
+            providerGroup?.setStatus(
+                providerOnline && tools.length ? "" : "Offline",
+                "offline"
+            );
             const currentNames = new Set(tools.map(llamaToolName));
             tools.forEach((tool) => knownLlamaTools.set(llamaToolName(tool), tool));
             if (providerOnline) persistKnownLlamaTools();
@@ -4173,6 +4225,7 @@
             return providerOnline ? tools.length : 0;
         } catch (error) {
             if (requestSequence !== mcpSettingsSequence) return 0;
+            providerGroup?.setStatus("Offline", "offline");
             const notice = document.createElement("div");
             notice.className = "llama-managed-status-row";
             const title = document.createElement("strong");
@@ -4185,7 +4238,7 @@
         }
     };
 
-    const renderMcpImportPanel = (config, requestSequence) => {
+    const renderMcpImportPanel = (config, requestSequence, target) => {
         if (!config || !config.opencode_import_available) return;
         const importPanel = document.createElement("section");
         importPanel.className = "mcp-import-panel";
@@ -4218,10 +4271,10 @@
             }
         });
         importPanel.append(importCopy, importButton);
-        mcpServiceList.appendChild(importPanel);
+        target.appendChild(importPanel);
     };
 
-    const renderMcpCustomForm = (definitions, requestSequence) => {
+    const renderMcpCustomForm = (definitions, requestSequence, target) => {
         const form = document.createElement("section");
         form.className = "mcp-custom-server";
         const heading = document.createElement("div");
@@ -4300,7 +4353,7 @@
                 applyCustomMcpServiceState(row, true);
                 form.before(row);
                 form.remove();
-                renderMcpCustomForm(definitions, requestSequence);
+                renderMcpCustomForm(definitions, requestSequence, target);
             } catch (error) {
                 window.alert(String(error));
             } finally {
@@ -4311,7 +4364,7 @@
             }
         });
         form.append(heading, grid, setup, addButton);
-        mcpServiceList.appendChild(form);
+        target.appendChild(form);
     };
 
     const openMcpSettings = async () => {
@@ -4346,11 +4399,32 @@
                 ? Object.keys(servers)
                 : [];
             mcpServiceList.replaceChildren();
-            const managedTools = renderLlamaManagedTools(requestSequence);
-            renderMcpImportPanel(config || {}, requestSequence);
+            const groups = {
+                opencode: createMcpProviderAccordion("opencode", "OpenCode"),
+                custom: createMcpProviderAccordion("custom", "Custom"),
+                llama: createMcpProviderAccordion("llama", "llama.cpp"),
+            };
+            mcpServiceList.append(
+                groups.opencode.section,
+                groups.custom.section,
+                groups.llama.section
+            );
+            const managedTools = renderLlamaManagedTools(
+                requestSequence,
+                groups.llama.content,
+                groups.llama
+            );
+            renderMcpImportPanel(
+                config || {},
+                requestSequence,
+                groups.opencode.content
+            );
             const checks = names.map((name) => {
                 const row = createMcpServiceRow(name, servers[name]);
-                mcpServiceList.appendChild(row);
+                const target = servers[name]?.source === "opencode"
+                    ? groups.opencode.content
+                    : groups.custom.content;
+                target.appendChild(row);
                 if (!savedMcpStates.get(name)) {
                     showSavedDisabledMcpService(row);
                     return Promise.resolve();
@@ -4360,7 +4434,11 @@
             await Promise.all([...checks, managedTools]);
             const defaultSetupDefinitions = await loadMcpSetupDefinitions("default");
             if (requestSequence !== mcpSettingsSequence) return;
-            renderMcpCustomForm(defaultSetupDefinitions, requestSequence);
+            renderMcpCustomForm(
+                defaultSetupDefinitions,
+                requestSequence,
+                groups.custom.content
+            );
             if (
                 requestSequence === mcpSettingsSequence
                 && mcpSettingsSaveBtn

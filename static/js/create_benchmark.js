@@ -114,15 +114,6 @@
         }
     };
 
-    const buildUserTopics = (topics) => {
-        return topics
-            .map((topic) => {
-                const pairs = topic.pairs === "" ? 5 : Number(topic.pairs);
-                return `- \`${topic.name}\`, create ${pairs} request-response pairs for this topic`;
-            })
-            .join("\n");
-    };
-
     const setStatus = (message, isError, isRunning) => {
         if (!statusEl) return;
         statusEl.hidden = false;
@@ -209,7 +200,7 @@
 
         const categoryName = resolveCategoryName();
         const difficulty = getSelectedDifficulty();
-        const userTopics = buildUserTopics(topics);
+        const firstTopic = topics[0].name;
 
         if (systemPromptTextarea) {
             systemPromptTextarea.value = templates.system || "";
@@ -218,7 +209,7 @@
             let userPrompt = templates.user || "";
             userPrompt = userPrompt.replace(/\{\{category\}\}/g, categoryName);
             userPrompt = userPrompt.replace(/\{\{difficulty_level\}\}/g, difficulty);
-            userPrompt = userPrompt.replace(/\{\{user_topics\}\}/g, userTopics);
+            userPrompt = userPrompt.replace(/\{\{user_topics\}\}/g, firstTopic);
             userPromptTextarea.value = userPrompt;
         }
 

@@ -254,13 +254,21 @@ class McpServiceRegistry:
 
     def client_configuration(self):
         """Return the modal configuration without unnecessary discovery."""
-        existing = self.services() if self.configured() else {}
-        discovered = self.opencode_services()
+        configured = self.configured()
+        existing = self.services() if configured else {}
+        discovered = {}
+        try:
+            discovered = self.opencode_services()
+        except (OSError, json.JSONDecodeError, ValueError):
+            LOGGER.warning(
+                "Could not read optional OpenCode MCP configuration",
+                exc_info=True,
+            )
         new_servers = [
             name for name in discovered if name not in existing
         ]
         return {
-            "configured": self.configured(),
+            "configured": configured,
             "default_timeout_ms": DEFAULT_MCP_TIMEOUT_MS,
             "mcpServers": existing,
             "opencode_import_available": bool(new_servers),

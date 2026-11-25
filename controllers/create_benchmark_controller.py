@@ -129,7 +129,6 @@ class CreateBenchmarkController:
         try:
             saved = {
                 **self._validate_parameters(data),
-                "randomize_seed": bool(data.get("randomize_seed", False)),
                 "create_log": bool(data.get("create_log", False)),
             }
             saved = self.settings.save(saved)
@@ -231,7 +230,6 @@ class CreateBenchmarkController:
             "top_p": (0, 1),
             "top_k": (0, 200),
             "min_p": (0, 1),
-            "seed": (-1, 4294967295),
         }
         cleaned = {}
         for name, (minimum, maximum) in ranges.items():
@@ -239,7 +237,7 @@ class CreateBenchmarkController:
             if value in (None, ""):
                 cleaned[name] = None
                 continue
-            converter = int if name in {"top_k", "seed"} else float
+            converter = int if name == "top_k" else float
             try:
                 value = converter(value)
             except (TypeError, ValueError) as error:
@@ -341,7 +339,6 @@ class CreateBenchmarkController:
         except ValueError as error:
             return jsonify({"error": str(error)}), 400
         create_log = bool(data.get("create_log", False))
-        randomize_seed = data.get("randomize_seed", False)
 
         topics = data.get("topics") or []
         filled_topics = [
@@ -358,8 +355,6 @@ class CreateBenchmarkController:
             errors.append("Model is required.")
         if not filled_topics:
             errors.append("At least one main topic is required.")
-        if not isinstance(randomize_seed, bool):
-            errors.append("Randomize seed must be true or false.")
         for topic in filled_topics:
             topic_name = topic["name"]
             pairs = (topic.get("pairs") or "").strip()
@@ -403,7 +398,6 @@ class CreateBenchmarkController:
             "parameters": parameters,
             "extra_parameters": extra_parameters,
             "create_log": create_log,
-            "randomize_seed": randomize_seed,
         }
 
         stream_requested = (
@@ -452,7 +446,6 @@ class CreateBenchmarkController:
         parameters,
         extra_parameters,
         create_log,
-        randomize_seed,
     ):
         """Generate individual pairs and assemble the final benchmark JSON."""
         document = []
@@ -479,8 +472,7 @@ class CreateBenchmarkController:
                     content = ""
                     activity_characters = 0
                     round_parameters = dict(parameters)
-                    if attempt > 1 or (randomize_seed and pair_number > 1):
-                        round_parameters["seed"] = secrets.randbelow(4294967296)
+                    round_parameters["seed"] = secrets.randbelow(4294967296)
                     try:
                         for event in self.service.benchmark_generation_stream(
                             provider,

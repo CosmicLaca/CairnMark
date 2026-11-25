@@ -1,6 +1,6 @@
 Category: {{category}}
 Difficulty: {{difficulty_level}}
 
-{{user_topics}}
+Benchmark topic: {{user_topics}}
 
-Create only this one benchmark pair. Return only the six-field JSON object defined by the system instructions.
+Create only one question-answer benchmark pair for this topic only. Return only the six-field JSON object defined by the system instructions.
