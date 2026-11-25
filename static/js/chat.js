@@ -2438,21 +2438,138 @@
         if (promptModal) promptModal.hidden = true;
     };
 
+    const appendRequestBodyInlineCode = (container, text) => {
+        const pattern = /`([^`\r\n]+)`/g;
+        let offset = 0;
+        let match;
+        while ((match = pattern.exec(text)) !== null) {
+            container.appendChild(document.createTextNode(
+                text.slice(offset, match.index)
+            ));
+            const code = document.createElement("code");
+            code.className = "request-body-inline-code";
+            code.textContent = match[1];
+            container.appendChild(code);
+            offset = pattern.lastIndex;
+        }
+        container.appendChild(document.createTextNode(text.slice(offset)));
+    };
+
+    const appendRequestBodyString = (container, value) => {
+        const normalized = String(value).replace(/\r\n|\r/g, "\n");
+        const pattern = /```([^`\r\n]*)\n([\s\S]*?)```/g;
+        let offset = 0;
+        let match;
+        while ((match = pattern.exec(normalized)) !== null) {
+            appendRequestBodyInlineCode(
+                container,
+                normalized.slice(offset, match.index)
+            );
+            const block = document.createElement("span");
+            block.className = "request-body-code-block";
+            const language = match[1].trim();
+            if (language) {
+                const label = document.createElement("span");
+                label.className = "request-body-code-language";
+                label.textContent = language;
+                block.appendChild(label);
+            }
+            const code = document.createElement("code");
+            code.textContent = match[2].replace(/\n$/, "");
+            block.appendChild(code);
+            container.appendChild(block);
+            offset = pattern.lastIndex;
+        }
+        appendRequestBodyInlineCode(container, normalized.slice(offset));
+    };
+
+    const appendRequestBodyJsonValue = (container, value, depth = 0) => {
+        const indent = (level) => "  ".repeat(level);
+        if (typeof value === "string") {
+            container.appendChild(document.createTextNode('"'));
+            appendRequestBodyString(container, value);
+            container.appendChild(document.createTextNode('"'));
+            return;
+        }
+        if (Array.isArray(value)) {
+            if (!value.length) {
+                container.appendChild(document.createTextNode("[]"));
+                return;
+            }
+            container.appendChild(document.createTextNode("[\n"));
+            value.forEach((item, index) => {
+                container.appendChild(document.createTextNode(indent(depth + 1)));
+                appendRequestBodyJsonValue(container, item, depth + 1);
+                container.appendChild(document.createTextNode(
+                    `${index < value.length - 1 ? "," : ""}\n`
+                ));
+            });
+            container.appendChild(document.createTextNode(`${indent(depth)}]`));
+            return;
+        }
+        if (value && typeof value === "object") {
+            const entries = Object.entries(value);
+            if (!entries.length) {
+                container.appendChild(document.createTextNode("{}"));
+                return;
+            }
+            container.appendChild(document.createTextNode("{\n"));
+            entries.forEach(([key, item], index) => {
+                container.appendChild(document.createTextNode(
+                    `${indent(depth + 1)}${JSON.stringify(key)}: `
+                ));
+                appendRequestBodyJsonValue(container, item, depth + 1);
+                container.appendChild(document.createTextNode(
+                    `${index < entries.length - 1 ? "," : ""}\n`
+                ));
+            });
+            container.appendChild(document.createTextNode(`${indent(depth)}}`));
+            return;
+        }
+        const serialized = JSON.stringify(value);
+        container.appendChild(document.createTextNode(
+            serialized === undefined ? String(value ?? "") : serialized
+        ));
+    };
+
+    const appendRequestBodyJson = (container, value, title = "") => {
+        const section = document.createElement("section");
+        section.className = "request-body-json-section";
+        if (title) {
+            const heading = document.createElement("h3");
+            heading.className = "request-body-json-title";
+            heading.textContent = title;
+            section.appendChild(heading);
+        }
+        const pre = document.createElement("pre");
+        pre.className = "request-body-json-block";
+        appendRequestBodyJsonValue(pre, value);
+        section.appendChild(pre);
+        container.appendChild(section);
+    };
+
     const openRequestBodyModal = (body) => {
         if (requestBodyModal) {
             requestBodyModal.hidden = false;
             if (requestBodyText) {
+                requestBodyText.replaceChildren();
                 if (body && typeof body === 'object' && !Array.isArray(body) && (body.video_request || body.audio_request)) {
-                    let html = '';
                     if (body.video_request) {
-                        html += `### Video request\n\n\`\`\`json\n${JSON.stringify(body.video_request, null, 2)}\n\`\`\`\n\n`;
+                        appendRequestBodyJson(
+                            requestBodyText,
+                            body.video_request,
+                            "Video request"
+                        );
                     }
                     if (body.audio_request) {
-                        html += `### Audio request\n\n\`\`\`json\n${JSON.stringify(body.audio_request, null, 2)}\n\`\`\`\n`;
+                        appendRequestBodyJson(
+                            requestBodyText,
+                            body.audio_request,
+                            "Audio request"
+                        );
                     }
-                    requestBodyText.innerHTML = renderMarkdown(html);
                 } else {
-                    requestBodyText.innerHTML = renderMarkdown("```json\n" + JSON.stringify(body, null, 2) + "\n```");
+                    appendRequestBodyJson(requestBodyText, body);
                 }
             }
         }

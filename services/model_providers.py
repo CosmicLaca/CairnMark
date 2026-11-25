@@ -1,5 +1,6 @@
 """Provider catalog access and provider-configuration business rules."""
 
+import inspect
 import json
 import re
 import urllib.error
@@ -710,6 +711,34 @@ class ProviderSdkClient:
             if parameters.get(source) is not None
         }
 
+    @staticmethod
+    def _supported_kwargs(callable_object, kwargs):
+        """Drop optional fields rejected by the installed SDK method."""
+        if not kwargs:
+            return {}
+        try:
+            parameters = inspect.signature(callable_object).parameters.values()
+        except (TypeError, ValueError):
+            return dict(kwargs)
+        if any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters
+        ):
+            return dict(kwargs)
+        accepted = {
+            parameter.name
+            for parameter in parameters
+            if parameter.kind in {
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                inspect.Parameter.KEYWORD_ONLY,
+            }
+        }
+        return {
+            name: value
+            for name, value in kwargs.items()
+            if name in accepted
+        }
+
     @classmethod
     def _extra_body(cls, spec, parameters):
         return cls._provided_parameters(
@@ -754,6 +783,10 @@ class ProviderSdkClient:
             timeout=timeout,
             default_headers=dict(spec.catalog_headers) or None,
         ) as client:
+            kwargs = self._supported_kwargs(
+                client.chat.completions.create,
+                kwargs,
+            )
             response = client.chat.completions.create(
                 model=model,
                 messages=messages,
@@ -786,6 +819,7 @@ class ProviderSdkClient:
             api_key=api_key,
             timeout_ms=int(timeout * 1000),
         ) as client:
+            kwargs = self._supported_kwargs(client.chat.complete, kwargs)
             response = client.chat.complete(
                 model=model,
                 messages=messages,
@@ -820,6 +854,7 @@ class ProviderSdkClient:
             api_key=api_key,
             timeout=timeout,
         ) as client:
+            kwargs = self._supported_kwargs(client.messages.create, kwargs)
             response = client.messages.create(
                 model=model,
                 max_tokens=8192 if max_tokens is None else max_tokens,
@@ -885,6 +920,7 @@ class ProviderSdkClient:
             api_key=api_key,
             timeout_ms=int(timeout * 1000),
         ) as client:
+            kwargs = self._supported_kwargs(client.chat.send, kwargs)
             response = client.chat.send(
                 model=model,
                 messages=messages,
@@ -925,6 +961,7 @@ class ProviderSdkClient:
         )
         client = self.xai_factory(api_key=api_key, timeout=timeout)
         try:
+            kwargs = self._supported_kwargs(client.chat.create, kwargs)
             chat = client.chat.create(
                 model=model,
                 messages=native_messages,
@@ -2456,6 +2493,10 @@ class ModelProviderService:
             timeout=timeout,
             default_headers=dict(spec.catalog_headers) or None,
         ) as client:
+            kwargs = sdk._supported_kwargs(
+                client.chat.completions.create,
+                kwargs,
+            )
             response = client.chat.completions.create(
                 model=model,
                 messages=messages,
@@ -2579,6 +2620,10 @@ class ModelProviderService:
                 ) as client:
                     usage = {"prompt_tokens": 0, "completion_tokens": 0}
                     stream = None
+                    kwargs = self.catalog_client.sdk_client._supported_kwargs(
+                        client.chat.completions.create,
+                        kwargs,
+                    )
                     try:
                         stream = client.chat.completions.create(
                             model=model,
@@ -2643,6 +2688,10 @@ class ModelProviderService:
                                 conversation, attachments
                             )
                         )
+                    kwargs = self.catalog_client.sdk_client._supported_kwargs(
+                        client.messages.stream,
+                        kwargs,
+                    )
                     with client.messages.stream(
                         model=model,
                         max_tokens=8192 if max_tokens is None else max_tokens,
@@ -2749,6 +2798,10 @@ class ModelProviderService:
                     api_key=api_key,
                     timeout_ms=int(timeout * 1000),
                 ) as client:
+                    kwargs = self.catalog_client.sdk_client._supported_kwargs(
+                        client.chat.stream,
+                        kwargs,
+                    )
                     for chunk in client.chat.stream(
                         model=model,
                         messages=messages,
@@ -2801,6 +2854,10 @@ class ModelProviderService:
                     api_key=api_key,
                     timeout_ms=int(timeout * 1000),
                 ) as client:
+                    kwargs = self.catalog_client.sdk_client._supported_kwargs(
+                        client.chat.send,
+                        kwargs,
+                    )
                     response = client.chat.send(
                         model=model,
                         messages=messages,
@@ -2859,6 +2916,10 @@ class ModelProviderService:
                     api_key=api_key, timeout=timeout
                 )
                 try:
+                    kwargs = self.catalog_client.sdk_client._supported_kwargs(
+                        client.chat.create,
+                        kwargs,
+                    )
                     chat = client.chat.create(
                         model=model,
                         messages=native_messages,
