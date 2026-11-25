@@ -270,6 +270,12 @@ APPLICATION_ROUTES = (
         ("POST",),
     ),
     (
+        "/create_benchmark/topics",
+        "create_benchmark_topics",
+        create_benchmark_controller.saved_topics,
+        ("GET",),
+    ),
+    (
         "/create_benchmark/generate",
         "create_benchmark_generate",
         create_benchmark_controller.generate,

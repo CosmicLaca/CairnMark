@@ -1,4 +1,6 @@
-"""SQLite persistence for benchmark-creator generation settings."""
+"""SQLite persistence for benchmark-creator form settings."""
+
+import json
 
 from config import PROJECT_ROOT
 from models.sqlite_store import SQLiteStore
@@ -31,6 +33,12 @@ CREATE TABLE IF NOT EXISTS create_benchmark_settings (
     min_p REAL,
     randomize_seed INTEGER NOT NULL DEFAULT 0,
     create_log INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS create_benchmark_topics (
+    category TEXT PRIMARY KEY COLLATE NOCASE,
+    topics_json TEXT NOT NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 """
@@ -111,4 +119,50 @@ class CreateBenchmarkSettingsRepository:
         return saved
 
 
+class CreateBenchmarkTopicsRepository:
+    """Store the latest benchmark topic rows for each category."""
+
+    def __init__(self, store=STORE):
+        self.store = store
+
+    def get(self, category):
+        """Return saved topic rows for a category, if any."""
+        row = self.store.fetch(
+            """
+            SELECT topics_json
+            FROM create_benchmark_topics
+            WHERE category = ? COLLATE NOCASE
+            """,
+            (category,),
+            one=True,
+        )
+        if not row:
+            return None
+        topics = json.loads(row[0])
+        return topics if isinstance(topics, list) else None
+
+    def save(self, category, topics):
+        """Insert or replace a category's ordered topic rows."""
+        saved = [
+            {
+                "name": str(topic.get("name") or "").strip(),
+                "pairs": str(topic.get("pairs") or "").strip(),
+            }
+            for topic in topics
+        ]
+        self.store.execute(
+            """
+            INSERT INTO create_benchmark_topics (category, topics_json)
+            VALUES (?, ?)
+            ON CONFLICT(category) DO UPDATE SET
+                category = excluded.category,
+                topics_json = excluded.topics_json,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (category, json.dumps(saved, ensure_ascii=False)),
+        )
+        return saved
+
+
 CREATE_BENCHMARK_SETTINGS = CreateBenchmarkSettingsRepository()
+CREATE_BENCHMARK_TOPICS = CreateBenchmarkTopicsRepository()

@@ -17,7 +17,10 @@ from flask import (
 )
 
 from models.benchmark_metadata import BENCHMARK_METADATA
-from models.create_benchmark_settings import CREATE_BENCHMARK_SETTINGS
+from models.create_benchmark_settings import (
+    CREATE_BENCHMARK_SETTINGS,
+    CREATE_BENCHMARK_TOPICS,
+)
 from services.benchmark_categories import (
     UNCATEGORIZED,
     category_names,
@@ -65,11 +68,13 @@ class CreateBenchmarkController:
         repository=None,
         metadata_repository=None,
         settings_repository=None,
+        topics_repository=None,
     ):
         self.service = service or ModelProviderService()
         self.repository = repository or BenchmarkRepository()
         self.metadata = metadata_repository or BENCHMARK_METADATA
         self.settings = settings_repository or CREATE_BENCHMARK_SETTINGS
+        self.topics = topics_repository or CREATE_BENCHMARK_TOPICS
 
     def context(self):
         """Return selector options and the current category selection."""
@@ -131,6 +136,16 @@ class CreateBenchmarkController:
         except ValueError as error:
             return jsonify({"error": str(error)}), 400
         return jsonify({"settings": saved})
+
+    def saved_topics(self):
+        """Return the latest topic rows saved for one category."""
+        category = (request.args.get("category") or "").strip()
+        if not category:
+            return jsonify({"error": "Category is required."}), 400
+        if category.casefold() == UNCATEGORIZED.casefold():
+            return jsonify({"saved": False, "topics": []})
+        topics = self.topics.get(category)
+        return jsonify({"saved": topics is not None, "topics": topics or []})
 
     def save_category(self, page):
         """Create a category from the creator form and return to the page."""
@@ -364,6 +379,9 @@ class CreateBenchmarkController:
 
         if errors:
             return jsonify({"error": errors[0]}), 400
+
+        if category.casefold() != UNCATEGORIZED.casefold():
+            self.topics.save(category, filled_topics)
 
         try:
             provider, model = self.service.resolve_online_model(model_spec)

@@ -75,6 +75,24 @@
             this.list.innerHTML = this.initialHTML;
             this.update();
         }
+
+        replace(topics) {
+            const template = this.root.querySelector("[data-topic-template]");
+            if (!template || !Array.isArray(topics) || topics.length === 0) return;
+            const rows = topics.map((topic, index) => {
+                const fragment = document.importNode(template.content, true);
+                const row = fragment.querySelector("[data-topic-row]");
+                const name = row?.querySelector("[data-topic-name]");
+                const pairs = row?.querySelector("[data-topic-pairs]");
+                const remove = row?.querySelector("[data-topic-remove]");
+                if (name) name.value = String(topic.name || "");
+                if (pairs) pairs.value = String(topic.pairs ?? "");
+                if (remove) remove.disabled = index === 0;
+                return fragment;
+            });
+            this.list.replaceChildren(...rows);
+            this.update();
+        }
     }
 
     const root = document.querySelector("[data-topics]");

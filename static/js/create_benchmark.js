@@ -18,6 +18,7 @@
     const userPromptTextarea = document.querySelector("[data-request-response-details]");
     const statusEl = document.getElementById("create-benchmark-status");
     let activeGenerationController = null;
+    let topicLoadSequence = 0;
 
     const getSelectedDifficulty = () => {
         const checked = document.querySelector('input[name="difficulty"]:checked');
@@ -80,6 +81,37 @@
             return newCategoryInput?.value?.trim() || "";
         }
         return value;
+    };
+
+    const loadSavedTopics = async () => {
+        const sequence = ++topicLoadSequence;
+        const category = categorySelect?.value || "";
+        if (!category || category === "__new__") {
+            window.CairnmarkBenchmarkTopics?.reset();
+            return;
+        }
+        try {
+            const payload = await api.request(
+                `/create_benchmark/topics?category=${encodeURIComponent(category)}`
+            );
+            if (
+                sequence === topicLoadSequence
+                && categorySelect?.value === category
+            ) {
+                if (payload?.saved) {
+                    window.CairnmarkBenchmarkTopics?.replace(payload.topics);
+                } else {
+                    window.CairnmarkBenchmarkTopics?.reset();
+                }
+            }
+        } catch (_error) {
+            if (
+                sequence === topicLoadSequence
+                && categorySelect?.value === category
+            ) {
+                window.CairnmarkBenchmarkTopics?.reset();
+            }
+        }
     };
 
     const buildUserTopics = (topics) => {
@@ -274,11 +306,8 @@
                 false
             );
 
-            // Reset all inputs to their default empty state.
+            // Reset generated prompt text while preserving the current topics.
             resetPromptInputs();
-            if (typeof window.resetBenchmarkTopics === "function") {
-                window.resetBenchmarkTopics();
-            }
         } catch (error) {
             if (generationController.signal.aborted || error?.name === "AbortError") {
                 setStatus("Generation aborted.", true, false);
@@ -302,4 +331,6 @@
     if (createButton) {
         createButton.addEventListener("click", handleCreate);
     }
+    categorySelect?.addEventListener("change", loadSavedTopics);
+    loadSavedTopics();
 })();
