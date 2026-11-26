@@ -40,9 +40,7 @@
             const limit = rawLimit ? Number.parseInt(rawLimit, 10) : Number.NaN;
             if (allPrevious || !Number.isFinite(limit) || limit < 0) return active;
             if (active.length === 0 || limit <= 0) return [];
-            const current = active.slice(-1);
-            const previous = active.slice(0, -1);
-            return previous.slice(Math.max(0, previous.length - (limit * 2))).concat(current);
+            return active.slice(Math.max(0, active.length - (limit * 2)));
         }
 
         usage(selection) {
