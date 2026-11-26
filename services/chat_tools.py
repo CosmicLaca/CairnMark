@@ -13,6 +13,8 @@ from services.mcp_services import McpServiceRegistry
 MAX_TOOL_ROUNDS = DEFAULT_TOOL_GLOBAL_SETTINGS["max_rounds"]
 MAX_TOOL_CALLS = DEFAULT_TOOL_GLOBAL_SETTINGS["max_total_calls"]
 MAX_TOOL_RESULT_CHARS = DEFAULT_TOOL_GLOBAL_SETTINGS["max_result_chars"]
+TOOL_COMPLETION_TIMEOUT_SECONDS = 300
+LOCAL_TOOL_COMPLETION_TIMEOUT_SECONDS = 900
 CONNECTION_SETTING_KEYS = {
     "endpoint",
     "password",
@@ -181,6 +183,13 @@ class ChatToolService:
         if callable(getter):
             return getter()
         return dict(DEFAULT_TOOL_GLOBAL_SETTINGS)
+
+    @staticmethod
+    def completion_timeout(provider):
+        """Allow slow local reasoning models to finish tool-call rounds."""
+        if provider in {"llama.cpp", "vllm"}:
+            return LOCAL_TOOL_COMPLETION_TIMEOUT_SECONDS
+        return TOOL_COMPLETION_TIMEOUT_SECONDS
 
     def request_allows_tools(self, raw_request, user_message):
         """Enforce the saved automatic, confirmation, or manual policy."""
@@ -470,6 +479,7 @@ class ChatToolService:
         max_total_calls = global_settings["max_total_calls"]
         max_failures = global_settings["max_consecutive_failures"]
         max_result_chars = global_settings["max_result_chars"]
+        completion_timeout = self.completion_timeout(provider)
         tool_round_count = 0
         tool_call_count = 0
         consecutive_failures = 0
@@ -482,6 +492,7 @@ class ChatToolService:
                     transcript,
                     tools,
                     **request_parameters,
+                    timeout=completion_timeout,
                     extra_parameters=extra_parameters,
                     attachments=attachments,
                     documents=documents,
@@ -586,6 +597,7 @@ class ChatToolService:
                     model,
                     transcript,
                     **request_parameters,
+                    timeout=completion_timeout,
                     extra_parameters=extra_parameters,
                     attachments=attachments,
                     documents=documents,

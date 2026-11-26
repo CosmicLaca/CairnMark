@@ -2487,11 +2487,16 @@ class ModelProviderService:
             )
         if body_parameters:
             kwargs["extra_body"] = body_parameters
+        client_options = {
+            "api_key": configuration.get("api_key") or "not-needed",
+            "base_url": base_url,
+            "timeout": timeout,
+            "default_headers": dict(spec.catalog_headers) or None,
+        }
+        if spec.local:
+            client_options["max_retries"] = 0
         with sdk.openai_factory(
-            api_key=configuration.get("api_key") or "not-needed",
-            base_url=base_url,
-            timeout=timeout,
-            default_headers=dict(spec.catalog_headers) or None,
+            **client_options,
         ) as client:
             kwargs = sdk._supported_kwargs(
                 client.chat.completions.create,
