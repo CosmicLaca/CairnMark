@@ -5,6 +5,18 @@
     "default": "http://127.0.0.1:8000",
     "required": true
   },
+  "dependency_start_command": {
+    "name": "API start command",
+    "type": "text",
+    "default": "D:/Software/AI/mineru/start.bat",
+    "required": false
+  },
+  "dependency_stop_command": {
+    "name": "API stop command",
+    "type": "text",
+    "default": "",
+    "required": false
+  },
   "env:MINERU_API_KEY": {
     "name": "MinerU API key (current releases)",
     "type": "password",

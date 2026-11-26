@@ -10,6 +10,7 @@ import os
 import re
 import socket
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -20,15 +21,32 @@ from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamablehttp_client
 
 from config import PROJECT_ROOT
+from services.mcp_dependencies import MCP_DEPENDENCIES, START_COMMAND_KEY
 
 
 DEFAULT_MCP_TIMEOUT_MS = 10000
+DEPENDENCY_HEALTH_TIMEOUT_MS = 3000
+DEPENDENCY_START_TIMEOUT_SECONDS = 60
 MCP_CONFIG_PATH = PROJECT_ROOT / "services" / "mcp.json"
 OPENCODE_CONFIG_PATH = Path.home() / ".config" / "opencode" / "opencode.json"
 MCP_DEFAULT_ENDPOINTS = {
     "searxng": "http://127.0.0.1:8888",
     "comfyui": "http://127.0.0.1:8188",
     "postgres": "postgresql://127.0.0.1:5432",
+}
+MCP_HTTP_DEPENDENCIES = {
+    "mineru-selfhosted-mcp": {
+        "endpoint_key": "env:MINERU_BASE_URL",
+        "health_path": "/v1/health",
+    },
+    "mineru-mcp": {
+        "endpoint_key": "env:LOCAL_MINERU_API_BASE",
+        "health_path": "/v1/health",
+    },
+    "mineru-fastmcp-wrapper": {
+        "endpoint_key": "env:MINERU_BASE_URL",
+        "health_path": "/v1/health",
+    },
 }
 MCP_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 LOGGER = logging.getLogger(__name__)
@@ -120,10 +138,12 @@ class McpServiceRegistry:
         config_path=MCP_CONFIG_PATH,
         opencode_path=OPENCODE_CONFIG_PATH,
         opener=None,
+        dependency_manager=None,
     ):
         self.config_path = Path(config_path)
         self.opencode_path = Path(opencode_path)
         self.opener = opener or urllib.request.urlopen
+        self.dependency_manager = dependency_manager or MCP_DEPENDENCIES
         self._stdio_session_scope = contextvars.ContextVar(
             f"mcp_stdio_sessions_{id(self)}",
             default=None,
@@ -147,6 +167,98 @@ class McpServiceRegistry:
                     registry._stdio_session_scope.reset(self.token)
 
         return SessionScope()
+
+    def dependency_status(self, name, settings=None):
+        """Return bounded health for an API required by an MCP service."""
+        settings = settings if isinstance(settings, dict) else {}
+        normalized_name = str(name or "").strip().lower()
+        timeout_ms = settings.get("timeout_ms", DEPENDENCY_HEALTH_TIMEOUT_MS)
+        try:
+            timeout_ms = min(
+                self._timeout_ms({}, timeout_ms),
+                DEPENDENCY_HEALTH_TIMEOUT_MS,
+            )
+        except ValueError:
+            timeout_ms = DEPENDENCY_HEALTH_TIMEOUT_MS
+
+        if normalized_name == "searxng":
+            endpoint = settings.get("endpoint") or MCP_DEFAULT_ENDPOINTS["searxng"]
+            online, status_code = self._check_http_endpoint(
+                "searxng",
+                endpoint,
+                timeout_ms,
+            )
+            return {
+                "required": True,
+                "online": online,
+                "status_code": status_code,
+            }
+
+        specification = MCP_HTTP_DEPENDENCIES.get(normalized_name)
+        if specification is None:
+            return {"required": False, "online": True, "status_code": None}
+        endpoint = str(
+            settings.get(specification["endpoint_key"]) or ""
+        ).strip().rstrip("/")
+        parsed = urllib.parse.urlsplit(endpoint)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return {"required": True, "online": False, "status_code": None}
+
+        headers = {"Accept": "application/json"}
+        token = str(
+            settings.get("env:MINERU_API_KEY")
+            or settings.get("env:MINERU_API_TOKEN")
+            or ""
+        ).strip()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        health_request = urllib.request.Request(
+            f"{endpoint}{specification['health_path']}",
+            headers=headers,
+        )
+        try:
+            with self.opener(
+                health_request,
+                timeout=timeout_ms / 1000,
+            ) as response:
+                status_code = int(getattr(response, "status", 0) or 0)
+        except (OSError, TimeoutError, urllib.error.URLError):
+            return {"required": True, "online": False, "status_code": None}
+        return {
+            "required": True,
+            "online": 200 <= status_code < 400,
+            "status_code": status_code,
+        }
+
+    def dependency_online(self, name, settings=None):
+        """Report whether an MCP service's required API is reachable."""
+        return self.dependency_status(name, settings)["online"]
+
+    @staticmethod
+    def dependency_managed(settings=None):
+        """Return whether CairnMark has a command for starting the API."""
+        settings = settings if isinstance(settings, dict) else {}
+        return bool(str(settings.get(START_COMMAND_KEY) or "").strip())
+
+    def ensure_dependency(self, name, settings=None):
+        """Start a configured offline dependency and wait for bounded health."""
+        status = self.dependency_status(name, settings)
+        if not status["required"] or status["online"]:
+            return status
+        if not self.dependency_manager.start(name, settings or {}):
+            return status
+        deadline = time.monotonic() + DEPENDENCY_START_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
+            status = self.dependency_status(name, settings)
+            if status["online"]:
+                return status
+            time.sleep(0.25)
+        self.dependency_manager.stop(name, settings or {})
+        return status
+
+    def stop_dependency(self, name, settings=None):
+        """Stop a dependency previously launched by this CairnMark process."""
+        return self.dependency_manager.stop(name, settings or {})
 
     def configured(self):
         """Return whether the CairnMark MCP configuration already exists."""
@@ -891,6 +1003,14 @@ class McpServiceRegistry:
         """Check one MCP declaration and any required local endpoint."""
         if details.get("disabled") is True:
             return {"name": name, "online": False, "status_code": None}
+        if not self.dependency_managed(settings):
+            dependency = self.dependency_status(name, settings)
+            if dependency["required"] and not dependency["online"]:
+                return {
+                    "name": name,
+                    "online": False,
+                    "status_code": dependency["status_code"],
+                }
         timeout_ms = self._timeout_ms(details, timeout_ms)
         configured_endpoint = self._configured_endpoint(name, details, endpoint)
         status_code = None
@@ -975,6 +1095,15 @@ class McpServiceRegistry:
         details = services[name]
         if details.get("disabled") is True:
             return {"name": name, "online": False, "tools": []}
+        if not self.dependency_managed(settings):
+            dependency = self.dependency_status(name, settings)
+            if dependency["required"] and not dependency["online"]:
+                return {
+                    "name": name,
+                    "online": False,
+                    "status_code": dependency["status_code"],
+                    "tools": [],
+                }
         timeout_ms = self._timeout_ms(details, timeout_ms)
         configured_endpoint = self._configured_endpoint(name, details, endpoint)
         status_code = None

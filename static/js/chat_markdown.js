@@ -170,6 +170,7 @@
             })
             .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label, href) => (
                 protect(safeLink(label, href, {
+                    previewImage: true,
                     previewAudio: audioHint,
                     embeddedVideos,
                 }))

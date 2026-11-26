@@ -107,6 +107,28 @@ class ChatToolService:
             if record["tool"]
         }
         bindings = []
+        external_availability = {}
+        dependency_check = getattr(self.registry, "dependency_online", None)
+        dependency_managed = getattr(self.registry, "dependency_managed", None)
+
+        def dependency_available(service, service_settings):
+            managed = (
+                dependency_managed(service_settings)
+                if callable(dependency_managed)
+                else bool(
+                    str(
+                        service_settings.get("dependency_start_command", "")
+                    ).strip()
+                )
+            )
+            if managed:
+                return True
+            if not callable(dependency_check):
+                return True
+            result = dependency_check(service, service_settings)
+            if isinstance(result, dict):
+                return bool(result.get("online"))
+            return bool(result)
 
         for cached in self.settings.cached_tools():
             service = cached["service"]
@@ -118,6 +140,13 @@ class ChatToolService:
             if not main or not main["enabled"] or not tool_record:
                 continue
             if not tool_record["enabled"]:
+                continue
+            if service not in external_availability:
+                external_availability[service] = dependency_available(
+                    service,
+                    dict(main.get("settings") or {}),
+                )
+            if not external_availability[service]:
                 continue
             definition = cached["definition"]
             alias = self._alias("custom", service, tool_name)
@@ -144,6 +173,7 @@ class ChatToolService:
         managed = self.provider_service.llama_managed_tools()
         if not managed.get("online"):
             return bindings
+        managed_availability = {}
         for live_tool in managed.get("tools", []):
             service, tool_name = self._managed_identity(live_tool)
             main = main_records.get(("llama_service", service))
@@ -153,6 +183,13 @@ class ChatToolService:
             if not main or not main["enabled"] or not tool_record:
                 continue
             if not tool_record["enabled"]:
+                continue
+            if service not in managed_availability:
+                managed_availability[service] = dependency_available(
+                    service,
+                    dict(main.get("settings") or {}),
+                )
+            if not managed_availability[service]:
                 continue
             live_definition = live_tool.get("definition", {})
             function = (
@@ -380,6 +417,18 @@ class ChatToolService:
         return text
 
     def _execute(self, binding, arguments, max_result_chars=MAX_TOOL_RESULT_CHARS):
+        ensure_dependency = getattr(self.registry, "ensure_dependency", None)
+        if callable(ensure_dependency):
+            dependency = ensure_dependency(binding.service, binding.settings)
+            online = (
+                dependency.get("online")
+                if isinstance(dependency, dict)
+                else dependency
+            )
+            if not online:
+                raise RuntimeError(
+                    f"Required API for {binding.service} is not available."
+                )
         arguments = self._arguments_with_defaults(binding, arguments)
         if binding.source == "llama":
             timeout = binding.settings.get("timeout_ms", 30_000)

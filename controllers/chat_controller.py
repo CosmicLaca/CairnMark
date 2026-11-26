@@ -1147,17 +1147,19 @@ class ChatController:
         timeout_ms = request.args.get("timeout_ms")
         if not name:
             return jsonify({"error": "MCP service name is required."}), 400
-        saved_settings = next(
+        saved_record = next(
             (
-                record["settings"]
+                record
                 for record in self.mcp_settings.all()
                 if record["source"] == "external" and record["service"] == name
             ),
-            {},
+            None,
         )
+        saved_settings = saved_record["settings"] if saved_record else {}
         try:
+            registry = self._mcp_registry()
             return jsonify(
-                self._mcp_registry().check(
+                registry.check(
                     name,
                     endpoint or saved_settings.get("endpoint"),
                     timeout_ms or saved_settings.get("timeout_ms"),
@@ -1433,8 +1435,75 @@ class ChatController:
             }
         )
 
+    def _enabled_mcp_service_availability(self):
+        """Return dependency availability for enabled main MCP services."""
+        provider_names = {
+            "external": "custom",
+            "llama_service": "llama",
+        }
+        registry = self._mcp_registry()
+        dependency_check = getattr(registry, "dependency_online", None)
+        dependency_managed = getattr(registry, "dependency_managed", None)
+        availability = {}
+        for record in self.mcp_settings.all():
+            source = record["source"]
+            if (
+                source not in provider_names
+                or record["tool"]
+                or not record["enabled"]
+            ):
+                continue
+            qualified_name = (
+                f"{provider_names[source]}::{record['service']}"
+            )
+            try:
+                managed = (
+                    dependency_managed(record["settings"])
+                    if callable(dependency_managed)
+                    else bool(
+                        str(
+                            record["settings"].get(
+                                "dependency_start_command",
+                                "",
+                            )
+                        ).strip()
+                    )
+                )
+                result = True if managed else (
+                    dependency_check(record["service"], record["settings"])
+                    if callable(dependency_check)
+                    else True
+                )
+                availability[qualified_name] = bool(
+                    result.get("online")
+                    if isinstance(result, dict)
+                    else result
+                )
+            except (OSError, ValueError, json.JSONDecodeError):
+                availability[qualified_name] = False
+        return availability
+
+    def _managed_mcp_services(self):
+        """Return enabled services whose API can be started on demand."""
+        provider_names = {
+            "external": "custom",
+            "llama_service": "llama",
+        }
+        return [
+            f"{provider_names[record['source']]}::{record['service']}"
+            for record in self.mcp_settings.all()
+            if (
+                record["source"] in provider_names
+                and not record["tool"]
+                and record["enabled"]
+                and str(
+                    record["settings"].get("dependency_start_command", "")
+                ).strip()
+            )
+        ]
+
     def mcp_global_state(self):
-        """Read or save global tool behavior without probing services."""
+        """Read or save global tool behavior with dependency health."""
         if request.method == "POST":
             payload = request.get_json(silent=True) or {}
             enabled = payload.get("enabled")
@@ -1454,6 +1523,10 @@ class ChatController:
                 "enabled": self.mcp_settings.tools_enabled(),
                 "enabled_services": self.mcp_settings.enabled_services(),
                 "enabled_subservices": self.mcp_settings.enabled_subservices(),
+                "service_availability": (
+                    self._enabled_mcp_service_availability()
+                ),
+                "managed_services": self._managed_mcp_services(),
                 "automatic_tool_scope_selection": (
                     self.mcp_settings.automatic_scope_selection()
                 ),
@@ -1736,6 +1809,28 @@ class ChatController:
                 (eligible if accessible else skipped).append(record)
 
         self.mcp_settings.upsert(eligible)
+        for record in normalized:
+            if (
+                record["source"] == "external"
+                and not record["tool"]
+                and not record["enabled"]
+            ):
+                try:
+                    stop_dependency = getattr(
+                        registry,
+                        "stop_dependency",
+                        None,
+                    )
+                    if callable(stop_dependency):
+                        stop_dependency(
+                            record["service"],
+                            record["settings"],
+                        )
+                except (OSError, ValueError):
+                    current_app.logger.exception(
+                        "Could not stop MCP dependency for service=%s",
+                        record["service"],
+                    )
         return jsonify(
             {
                 "saved": len(eligible),

@@ -584,6 +584,8 @@
     let globalToolsEnabled = null;
     let enabledMcpServiceNames = [];
     let enabledMcpSubservices = {};
+    const mcpServiceAvailability = new Map();
+    const managedMcpServiceNames = new Set();
     const toolSubserviceUiStates = new Map();
     let globalToolSettings = {
         max_rounds: 6,
@@ -2944,9 +2946,16 @@
                 uniqueServices.set(key, {
                     displayName,
                     subservices: new Map(),
+                    available: false,
+                    managed: false,
                 });
             }
             const entry = uniqueServices.get(key);
+            const managed = managedMcpServiceNames.has(serviceName);
+            entry.managed = entry.managed || managed;
+            entry.available = entry.available || (
+                managed || mcpServiceAvailability.get(serviceName) !== false
+            );
             const subservices = Array.isArray(enabledMcpSubservices[serviceName])
                 ? enabledMcpSubservices[serviceName]
                 : [];
@@ -2964,6 +2973,8 @@
         return [...uniqueServices.values()].map((entry) => ({
             displayName: entry.displayName,
             subservices: [...entry.subservices.values()],
+            available: entry.available,
+            managed: entry.managed,
         }));
     };
 
@@ -2985,16 +2996,22 @@
         ) !== false
     );
 
-    const updateMainServiceLed = (button, serviceName, subservices) => {
+    const updateMainServiceLed = (
+        button,
+        serviceName,
+        subservices,
+        available = true
+    ) => {
         button.classList.toggle(
             "has-enabled-subservices",
-            subservices.some((name) => subserviceIsEnabled(serviceName, name))
+            available
+                && subservices.some((name) => subserviceIsEnabled(serviceName, name))
         );
     };
 
-    const automaticToolScopeSelection = () => (
+    const automaticToolScopeSelection = (includeOffline = true) => (
         enabledToolDisplayEntries().flatMap((entry) => (
-            entry.subservices
+            (entry.available || includeOffline ? entry.subservices : [])
                 .filter((name) => subserviceIsEnabled(entry.displayName, name))
                 .map((name) => ({
                     service: entry.displayName,
@@ -3008,7 +3025,7 @@
         const hasEnabledServices = enabledMcpServiceNames.length > 0;
         const quickScopeHasTools = (
             globalToolSettings.automatic_tool_scope !== true
-            || automaticToolScopeSelection().length > 0
+            || automaticToolScopeSelection(false).length > 0
         );
         let status;
         if (!hasEnabledServices || globalToolsEnabled === null) {
@@ -3150,9 +3167,21 @@
             item.type = "button";
             item.className = "chat-tool-scope-name";
             item.textContent = entry.displayName;
-            updateMainServiceLed(item, entry.displayName, entry.subservices);
+            item.classList.toggle("is-offline", !entry.available);
+            item.classList.toggle("is-managed", entry.managed);
+            updateMainServiceLed(
+                item,
+                entry.displayName,
+                entry.subservices,
+                entry.available
+            );
             item.setAttribute("aria-expanded", "false");
-            item.disabled = entry.subservices.length === 0;
+            item.disabled = !entry.available || entry.subservices.length === 0;
+            if (!entry.available) {
+                item.title = "Service endpoint is offline";
+            } else if (entry.managed) {
+                item.title = "Service starts automatically when needed";
+            }
             item.addEventListener("click", () => {
                 toggleToolSubservices(
                     item,
@@ -3182,6 +3211,22 @@
             && typeof payload.enabled_subservices === "object"
             && !Array.isArray(payload.enabled_subservices)
         ) ? payload.enabled_subservices : {};
+        mcpServiceAvailability.clear();
+        const availability = (
+            payload?.service_availability
+            && typeof payload.service_availability === "object"
+            && !Array.isArray(payload.service_availability)
+        ) ? payload.service_availability : {};
+        Object.entries(availability).forEach(([serviceName, online]) => {
+            mcpServiceAvailability.set(serviceName, online === true);
+        });
+        managedMcpServiceNames.clear();
+        const managedServices = Array.isArray(payload?.managed_services)
+            ? payload.managed_services
+            : [];
+        managedServices.forEach((serviceName) => {
+            managedMcpServiceNames.add(String(serviceName));
+        });
         toolSubserviceUiStates.clear();
         if (Array.isArray(payload?.automatic_tool_scope_selection)) {
             const selected = new Set(
@@ -3472,10 +3517,13 @@
         const serviceSwitch = row.querySelector("[data-mcp-service-switch]");
         const serviceName = serviceSwitch?.getAttribute("data-mcp-service-switch");
         const serviceEnabled = Boolean(savedMcpStates.get(serviceName));
+        const dependencyStartCommand = String(
+            savedMcpToolSettings.get(serviceName)?.dependency_start_command || ""
+        ).trim();
         row.setAttribute("data-mcp-service-online", online ? "true" : "false");
         if (serviceSwitch) {
-            serviceSwitch.disabled = !online;
-            setMcpSwitch(serviceSwitch, online && serviceEnabled);
+            serviceSwitch.disabled = !online && !dependencyStartCommand;
+            setMcpSwitch(serviceSwitch, serviceEnabled);
         }
         row.querySelectorAll("[data-custom-mcp-tool-switch]").forEach((toolSwitch) => {
             const toolName = toolSwitch.getAttribute("data-custom-mcp-tool-switch");
@@ -3486,7 +3534,7 @@
             toolSwitch.disabled = !online || !serviceEnabled;
             setMcpSwitch(
                 toolSwitch,
-                online && Boolean(savedCustomToolStates.get(
+                Boolean(savedCustomToolStates.get(
                     customMcpToolKey(serviceName, toolName)
                 ))
             );
@@ -4042,6 +4090,16 @@
                 savedSettings.endpoint = endpointDefinition.default;
                 savedMcpToolSettings.set(name, savedSettings);
             }
+            const startDefinition = definitions.dependency_start_command;
+            if (
+                startDefinition
+                && typeof startDefinition === "object"
+                && savedSettings.dependency_start_command === undefined
+                && Object.prototype.hasOwnProperty.call(startDefinition, "default")
+            ) {
+                savedSettings.dependency_start_command = startDefinition.default;
+                savedMcpToolSettings.set(name, savedSettings);
+            }
             const query = new URLSearchParams({name});
             if (savedSettings.endpoint) {
                 query.set("endpoint", String(savedSettings.endpoint));
@@ -4059,14 +4117,12 @@
             if (statusLabel) statusLabel.textContent = online ? "Online" : "Offline";
             if (offlineTooltip) offlineTooltip.hidden = online;
             applyCustomMcpServiceState(row, online);
-            if (!online) savedMcpStates.set(name, false);
         } catch (error) {
             if (requestSequence !== mcpSettingsSequence) return;
             row.classList.add("mcp-service-row--offline");
             if (statusLabel) statusLabel.textContent = "Offline";
             if (offlineTooltip) offlineTooltip.hidden = false;
             applyCustomMcpServiceState(row, false);
-            savedMcpStates.set(name, false);
         } finally {
             if (requestSequence === mcpSettingsSequence) {
                 row.classList.remove("mcp-service-row--checking");

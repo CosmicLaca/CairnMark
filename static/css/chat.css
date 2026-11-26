@@ -1734,6 +1734,24 @@
     opacity: 0.62;
 }
 
+.chat-tool-scope-name.is-offline:disabled {
+    color: #626b6a;
+    border-color: #aeb7b6;
+    background: #d7dcdb;
+    cursor: not-allowed;
+    opacity: 1;
+}
+
+.chat-tool-scope-name.is-managed {
+    border-color: rgba(42, 91, 128, 0.3);
+    background: #b8d9e8;
+}
+
+.chat-tool-scope-name.is-managed[aria-expanded="true"] {
+    border-color: #326f92;
+    background: #a9d0e3;
+}
+
 .chat-tool-scope-name[aria-expanded="true"] {
     border-color: #246f78;
     background: #c3eff1;

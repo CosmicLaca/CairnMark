@@ -9,6 +9,18 @@
     "type": "Button",
     "access_key": "endpoint"
   },
+  "dependency_start_command": {
+    "name": "API start command",
+    "type": "text",
+    "default": "C:/Users/Primere/Apps/searxng-windows/start-searxng.cmd",
+    "required": false
+  },
+  "dependency_stop_command": {
+    "name": "API stop command",
+    "type": "text",
+    "default": "C:/Users/Primere/Apps/searxng-windows/stop-searxng.cmd",
+    "required": false
+  },
   "pageno": {
     "name": "Page Number",
     "type": "integer",
