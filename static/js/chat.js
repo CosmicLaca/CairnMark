@@ -6488,6 +6488,18 @@
             toolScopeToggle.getAttribute("aria-expanded") !== "true"
         );
     });
+    document.addEventListener("click", (event) => {
+        if (!toolSubserviceDropdown || toolSubserviceDropdown.hidden) return;
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        if (
+            toolSubserviceDropdown.contains(target)
+            || target.closest(".chat-tool-scope-name")
+        ) {
+            return;
+        }
+        closeToolSubserviceDropdown();
+    });
     toolAutomaticScopeSwitch?.addEventListener("click", () => {
         setMcpSwitch(
             toolAutomaticScopeSwitch,

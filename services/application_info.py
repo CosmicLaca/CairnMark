@@ -4,7 +4,7 @@ import os
 import subprocess
 import xml.etree.ElementTree as element_tree
 from dataclasses import dataclass
-from datetime import date
+from datetime import datetime
 from pathlib import Path
 
 from models.application_info import APPLICATION_INFO_STORAGE
@@ -56,7 +56,7 @@ class ApplicationInfoService:
             commit_hash=current_commit,
             commit_increment=commit_increment,
             metadata_date=metadata.last_update_date,
-            commit_date=date.today().isoformat(),
+            commit_date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         )
         return {
             "name": metadata.name,
