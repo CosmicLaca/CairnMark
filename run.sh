@@ -17,4 +17,4 @@ echo "Starting Cairnmark at http://127.0.0.1:${port}"
 echo "Press Ctrl+C or close this terminal to stop the server."
 echo
 
-exec "${cairnmark_python}" app.py
+exec "${cairnmark_python}" app.py "$@"

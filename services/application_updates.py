@@ -127,8 +127,6 @@ class ApplicationUpdateService:
             str(self.project_root),
             "--database",
             str(self.storage.store.path()),
-            "--python",
-            sys.executable,
         ]
         if dev_mode:
             command.append("--dev")
@@ -142,7 +140,7 @@ class ApplicationUpdateService:
         }
         if os.name == "nt":
             popen_options["creationflags"] = (
-                subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+                subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
             )
         else:
             popen_options["start_new_session"] = True

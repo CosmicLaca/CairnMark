@@ -16,5 +16,5 @@ echo Starting Cairnmark at http://127.0.0.1:%CAIRNMARK_DISPLAY_PORT%
 echo Press Ctrl+C or close this terminal to stop the server.
 echo.
 
-"%CAIRNMARK_PYTHON%" app.py
+"%CAIRNMARK_PYTHON%" app.py %*
 exit /b %ERRORLEVEL%

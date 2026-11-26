@@ -20,9 +20,18 @@ def parse_arguments():
     parser.add_argument("--parent-pid", required=True, type=int)
     parser.add_argument("--project-root", required=True)
     parser.add_argument("--database", required=True)
-    parser.add_argument("--python", required=True)
     parser.add_argument("--dev", action="store_true")
     return parser.parse_args()
+
+
+def hidden_process_options(*, new_process_group=False):
+    """Return Windows flags that prevent helper console windows."""
+    if os.name != "nt":
+        return {}
+    creationflags = subprocess.CREATE_NO_WINDOW
+    if new_process_group:
+        creationflags |= subprocess.CREATE_NEW_PROCESS_GROUP
+    return {"creationflags": creationflags}
 
 
 def stop_parent(pid):
@@ -38,6 +47,7 @@ def stop_parent(pid):
                 ["taskkill", "/PID", str(pid), "/F"],
                 check=False,
                 capture_output=True,
+                **hidden_process_options(),
             )
     for _attempt in range(50):
         try:
@@ -49,6 +59,7 @@ def stop_parent(pid):
 
 def git_pull(project_root, output):
     """Fast-forward the fixed public repository and return the new commit."""
+    run_options = hidden_process_options()
     completed = subprocess.run(
         [
             "git",
@@ -62,6 +73,7 @@ def git_pull(project_root, output):
         stderr=subprocess.STDOUT,
         text=True,
         check=False,
+        **run_options,
     )
     if completed.returncode != 0:
         raise RuntimeError("Git pull failed. See instance/application-update.log.")
@@ -73,6 +85,7 @@ def git_pull(project_root, output):
         encoding="utf-8",
         errors="replace",
         check=False,
+        **run_options,
     )
     if commit.returncode != 0:
         raise RuntimeError("The updated Git commit could not be read.")
@@ -111,9 +124,21 @@ def record_result(database, *, commit="", error=""):
             )
 
 
-def restart(project_root, python_executable, dev_mode, output):
-    """Start CairnMark again using the existing Python environment."""
-    command = [python_executable, "app.py"]
+def restart(project_root, dev_mode, output):
+    """Start CairnMark again through its platform startup script."""
+    if os.name == "nt":
+        start_script = project_root / "run.bat"
+        command = [
+            os.environ.get("COMSPEC", "cmd.exe"),
+            "/d",
+            "/c",
+            str(start_script),
+        ]
+    else:
+        start_script = project_root / "run.sh"
+        command = [str(start_script)]
+    if not start_script.is_file():
+        raise OSError(f"Startup script not found: {start_script}")
     if dev_mode:
         command.append("--dev")
     options = {
@@ -124,12 +149,10 @@ def restart(project_root, python_executable, dev_mode, output):
         "close_fds": True,
     }
     if os.name == "nt":
-        options["creationflags"] = (
-            subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-        )
+        options.update(hidden_process_options(new_process_group=True))
     else:
         options["start_new_session"] = True
-    subprocess.Popen(command, **options)
+    return subprocess.Popen(command, **options)
 
 
 def main():
@@ -156,14 +179,32 @@ def main():
             output.write(f"Could not save update status: {exc}\n")
         output.flush()
         try:
-            restart(
+            server_process = restart(
                 project_root,
-                arguments.python,
                 arguments.dev,
                 output,
             )
         except OSError as exc:
-            output.write(f"Could not restart CairnMark: {exc}\n")
+            restart_error = f"Could not restart CairnMark: {exc}"
+            output.write(f"{restart_error}\n")
+            try:
+                record_result(database, error=restart_error)
+            except sqlite3.Error as database_error:
+                output.write(f"Could not save restart failure: {database_error}\n")
+            output.flush()
+            return 1
+        time.sleep(1)
+        return_code = server_process.poll()
+        if return_code is not None:
+            restart_error = (
+                "Could not restart CairnMark: the startup script exited "
+                f"with status {return_code}."
+            )
+            output.write(f"{restart_error}\n")
+            try:
+                record_result(database, error=restart_error)
+            except sqlite3.Error as database_error:
+                output.write(f"Could not save restart failure: {database_error}\n")
             output.flush()
             return 1
     return 0
