@@ -23,11 +23,13 @@ class Config:
     DOCUMENT_PREVIEW_DIRECTORY = PROJECT_ROOT / "instance" / "document-previews"
     MANUAL_DIRECTORY = PROJECT_ROOT / "manual"
     MCP_CONFIG_PATH = PROJECT_ROOT / "services" / "mcp.json"
+    APPLICATION_INFO_PATH = PROJECT_ROOT / "info.xml"
     OPENCODE_CONFIG_PATH = Path.home() / ".config" / "opencode" / "opencode.json"
     LOG_LEVEL = os.environ.get("CAIRNMARK_LOG_LEVEL", "INFO").upper()
     # Enabled by the --dev launcher flag; public launches hide unfinished pages.
     DEV_MODE = False
     UPDATE_CHECK_ENABLED = True
+    APPLICATION_VERSION_GIT_ENABLED = True
 
 
 class DevelopmentConfig(Config):
@@ -47,6 +49,7 @@ class TestingConfig(Config):
 
     TESTING = True
     UPDATE_CHECK_ENABLED = False
+    APPLICATION_VERSION_GIT_ENABLED = False
 
 
 CONFIGS = {

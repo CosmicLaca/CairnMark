@@ -498,6 +498,7 @@ def init_routes(app):
         return {
             "navigation": navigation_pages,
             "application_update": update_status,
+            "application_info": app.extensions["application_info"],
         }
 
     @app.errorhandler(404)

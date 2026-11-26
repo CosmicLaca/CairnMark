@@ -12,6 +12,7 @@ from flask import Flask
 from config import CONFIGS
 from models import init_storage
 from routes import init_routes
+from services.application_info import initialize_application_info
 
 
 def port_is_in_use(host, port):
@@ -69,6 +70,7 @@ def create_app(config_name=None, config_overrides=None):
             )
     app.logger.setLevel(getattr(logging, app.config["LOG_LEVEL"], logging.INFO))
     init_storage(app)
+    initialize_application_info(app)
     init_routes(app)
 
     return app

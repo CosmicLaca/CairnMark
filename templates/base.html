@@ -88,6 +88,19 @@
             </span>
             <div class="workspace-status-group">
                 <span class="workspace-status"><i aria-hidden="true"></i> Local workspace</span>
+                <span class="workspace-version">
+                    {{ application_info.release }} · v{{ application_info.version }}
+                </span>
+                <a
+                    class="workspace-git-link"
+                    href="{{ application_info.repository }}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Open {{ application_info.name }} Git repository"
+                    aria-label="Open {{ application_info.name }} Git repository"
+                >
+                    <img src="{{ url_for('static', filename='git.svg') }}" alt="">
+                </a>
                 {% if application_update is defined and application_update.update_available %}
                 <button
                     class="workspace-update-button"

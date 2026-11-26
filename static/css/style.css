@@ -561,6 +561,36 @@ body.is-resizing .main-content {
     gap: 12px;
 }
 
+.workspace-version {
+    color: #596762;
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+}
+
+.workspace-git-link {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    place-items: center;
+    color: #315d54;
+    border: 1px solid rgba(49, 93, 84, 0.22);
+    border-radius: 50%;
+    background: rgba(111, 214, 195, 0.08);
+    transition: color var(--motion), border-color var(--motion), background var(--motion);
+}
+
+.workspace-git-link:hover,
+.workspace-git-link:focus-visible {
+    color: var(--ink);
+    border-color: rgba(49, 93, 84, 0.5);
+    background: rgba(111, 214, 195, 0.2);
+}
+
+.workspace-git-link img {
+    width: 16px;
+    height: 16px;
+}
+
 .workspace-update-button {
     display: inline-flex;
     min-height: 30px;
@@ -821,6 +851,10 @@ body.sidebar-collapsed .sidebar-resizer {
 
     .workspace-status {
         display: none;
+    }
+
+    .workspace-status-group {
+        gap: 8px;
     }
 
     .workspace-canvas {
