@@ -1,0 +1,35 @@
+{
+  "env:MINERU_BASE_URL": {
+    "name": "MinerU API base URL",
+    "type": "text",
+    "default": "http://127.0.0.1:8000",
+    "required": true
+  },
+  "env:MINERU_API_TOKEN": {
+    "name": "MinerU API token",
+    "type": "password",
+    "default": "",
+    "required": false
+  },
+  "env:MINERU_PARSE_PATH": {
+    "name": "Synchronous parse route",
+    "type": "list",
+    "values": [
+      {"value": "/file_parse", "label": "Legacy MinerU (/file_parse)"},
+      {"value": "/v1/file_parse", "label": "MinerU 4.x file-parse service (/v1/file_parse)"}
+    ],
+    "default": "/file_parse"
+  },
+  "env:OUTPUT_DIR": {
+    "name": "Output directory",
+    "type": "text",
+    "default": "C:/mineru-out",
+    "required": true
+  },
+  "env:MINERU_TIMEOUT": {
+    "name": "API timeout (seconds)",
+    "type": "integer",
+    "default": 1800,
+    "required": true
+  }
+}

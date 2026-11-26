@@ -1163,6 +1163,7 @@ class ChatController:
                     timeout_ms or saved_settings.get("timeout_ms"),
                     saved_settings.get("user", ""),
                     saved_settings.get("password", ""),
+                    settings=saved_settings,
                 )
             )
         except (OSError, json.JSONDecodeError):
@@ -1485,6 +1486,7 @@ class ChatController:
                     settings.get("timeout_ms"),
                     settings.get("user", ""),
                     settings.get("password", ""),
+                    settings=settings,
                 )
             except (OSError, ValueError, json.JSONDecodeError):
                 current_app.logger.exception(
@@ -1633,6 +1635,7 @@ class ChatController:
                             service_settings.get("timeout_ms"),
                             service_settings.get("user", ""),
                             service_settings.get("password", ""),
+                            settings=service_settings,
                         ).get("online")
                     )
                 except (OSError, ValueError, json.JSONDecodeError):

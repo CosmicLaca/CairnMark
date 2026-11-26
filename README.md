@@ -84,6 +84,7 @@ locally; used tools remain identifiable on their response bubbles.
 > #### **[Weather, Stock, AntV Chart, LibreOffice →](./manual/mcp-tools-examples.md)**
 > #### **[Wikipedia and Yahoo Finance examples →](./manual/mcp-tools-examples-2.md)**
 > #### **[Official Time MCP example →](./manual/mcp-tools-examples-3.md)**
+> #### **[MinerU MCP installation and tests →](./manual/mcp-tools-examples-mineru.md)**
 
 ---
 
@@ -201,6 +202,7 @@ privacy policy.
 > ### - [MCP tool and local SearXNG setup](./manual/tool-setup.md)
 > ### - [Wikipedia and Yahoo Finance MCP examples](./manual/mcp-tools-examples-2.md)
 > ### - [Official Time MCP example](./manual/mcp-tools-examples-3.md)
+> ### - [MinerU MCP installation and tests](./manual/mcp-tools-examples-mineru.md)
 > ### - [Benchmark workflow](./manual/benchmarks.md)
 
 ---

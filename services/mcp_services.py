@@ -510,8 +510,21 @@ class McpServiceRegistry:
         """Apply saved environment and schema-declared CLI settings."""
         configured = dict(details)
         arguments = [str(argument) for argument in details.get("args", [])]
+        environment = details.get("environment")
+        environment = dict(environment) if isinstance(environment, dict) else {}
         settings = settings if isinstance(settings, dict) else {}
         for option, value in settings.items():
+            if isinstance(option, str) and option.startswith("env:"):
+                variable = option.removeprefix("env:")
+                if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", variable):
+                    continue
+                if value in (None, ""):
+                    environment.pop(variable, None)
+                elif isinstance(value, bool):
+                    environment[variable] = str(value).lower()
+                elif isinstance(value, (str, int, float)):
+                    environment[variable] = str(value)
+                continue
             if not isinstance(option, str) or not option.startswith("--"):
                 continue
             if (
@@ -552,8 +565,6 @@ class McpServiceRegistry:
                 arguments.extend((option, str(value)))
         configured["args"] = arguments
 
-        environment = details.get("environment")
-        environment = dict(environment) if isinstance(environment, dict) else {}
         for key, value in (
             ("MCP_SERVICE_ENDPOINT", endpoint),
             ("MCP_SERVICE_USER", user),

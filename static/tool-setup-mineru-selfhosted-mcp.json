@@ -1,0 +1,80 @@
+{
+  "env:MINERU_BASE_URL": {
+    "name": "MinerU API base URL",
+    "type": "text",
+    "default": "http://127.0.0.1:8000",
+    "required": true
+  },
+  "env:MINERU_API_KEY": {
+    "name": "MinerU API key (current releases)",
+    "type": "password",
+    "default": "",
+    "required": false
+  },
+  "env:MINERU_API_TOKEN": {
+    "name": "MinerU API token (legacy releases)",
+    "type": "password",
+    "default": "",
+    "required": false
+  },
+  "env:MINERU_TIMEOUT": {
+    "name": "API timeout (seconds)",
+    "type": "integer",
+    "default": 1800,
+    "required": true
+  },
+  "env:MINERU_TRUST_ENV": {
+    "name": "Inherit proxy environment",
+    "type": "boolean",
+    "default": false
+  },
+  "env:MINERU_LOG_DIR": {
+    "name": "Log directory",
+    "type": "text",
+    "default": "",
+    "required": false
+  },
+  "env:MINERU_DOWNLOAD_PUBLISH_DIR": {
+    "name": "Published download directory",
+    "type": "text",
+    "default": "",
+    "required": false
+  },
+  "env:MINERU_DOWNLOAD_BASE_URL": {
+    "name": "Published download base URL",
+    "type": "text",
+    "default": "",
+    "required": false
+  },
+  "env:MINERU_ZIP_TTL_SECONDS": {
+    "name": "Temporary ZIP lifetime (seconds)",
+    "type": "integer",
+    "default": 10800,
+    "required": true
+  },
+  "env:MINERU_MCP_TRANSPORT": {
+    "name": "MCP transport",
+    "type": "list",
+    "values": [
+      {"value": "stdio", "label": "Local stdio (CairnMark)"},
+      {"value": "http", "label": "Hosted HTTP service"}
+    ],
+    "default": "stdio"
+  },
+  "env:MINERU_MCP_HOST": {
+    "name": "HTTP bind host",
+    "type": "text",
+    "default": "0.0.0.0"
+  },
+  "env:MINERU_MCP_PORT": {
+    "name": "HTTP bind port",
+    "type": "integer",
+    "default": 8001
+  },
+  "env:MINERU_UPLOAD_ROOT": {
+    "name": "Staged upload directory",
+    "type": "text",
+    "default": "",
+    "required": false
+  }
+}

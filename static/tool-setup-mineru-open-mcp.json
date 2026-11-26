@@ -1,0 +1,28 @@
+{
+  "env:MINERU_API_TOKEN": {
+    "name": "MinerU cloud API token",
+    "type": "password",
+    "default": "",
+    "required": false
+  },
+  "env:OUTPUT_DIR": {
+    "name": "Output directory",
+    "type": "text",
+    "default": "C:/mineru-out",
+    "required": true
+  },
+  "--transport": {
+    "name": "MCP transport",
+    "type": "list",
+    "values": [
+      {"value": "stdio", "label": "Local stdio (CairnMark)"},
+      {"value": "streamable-http", "label": "Hosted Streamable HTTP"}
+    ],
+    "default": "stdio"
+  },
+  "--port": {
+    "name": "HTTP transport port",
+    "type": "integer",
+    "default": 8001
+  }
+}

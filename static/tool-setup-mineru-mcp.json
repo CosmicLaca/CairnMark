@@ -1,0 +1,31 @@
+{
+  "env:USE_LOCAL_API": {
+    "name": "Use local MinerU API",
+    "type": "boolean",
+    "default": true
+  },
+  "env:LOCAL_MINERU_API_BASE": {
+    "name": "Local MinerU API base URL",
+    "type": "text",
+    "default": "http://127.0.0.1:8080",
+    "required": true
+  },
+  "env:MINERU_API_BASE": {
+    "name": "Remote MinerU API base URL",
+    "type": "text",
+    "default": "https://mineru.net",
+    "required": false
+  },
+  "env:MINERU_API_KEY": {
+    "name": "MinerU API key or local placeholder",
+    "type": "password",
+    "default": "local",
+    "required": true
+  },
+  "env:OUTPUT_DIR": {
+    "name": "Output directory",
+    "type": "text",
+    "default": "mcp_tools/mineru-mcp/output",
+    "required": true
+  }
+}
