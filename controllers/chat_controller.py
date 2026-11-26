@@ -225,6 +225,13 @@ class ChatController:
 
         if not chat_request.user_message:
             return jsonify({"error": "Message is required."}), 400
+        if "automatic_tool_scope_selection" in chat_request.raw:
+            try:
+                self.mcp_settings.set_automatic_scope_selection(
+                    chat_request.raw["automatic_tool_scope_selection"]
+                )
+            except ValueError as error:
+                return jsonify({"error": str(error)}), 400
         if "auto_compact" in chat_request.raw:
             auto_compact = chat_request.raw["auto_compact"]
             if not isinstance(auto_compact, bool):
@@ -335,18 +342,18 @@ class ChatController:
             chat_request.user_message,
         ):
             tool_bindings = []
-        scope_bindings = getattr(tool_service, "scope_bindings", None)
-        if tool_bindings and callable(scope_bindings):
-            tool_bindings = scope_bindings(
-                tool_bindings,
-                chat_request.user_message,
-            )
         effective_system_prompt = chat_request.system_prompt
         prompt_builder = getattr(tool_service, "system_prompt", None)
         if tool_bindings and callable(prompt_builder):
             effective_system_prompt = prompt_builder(
                 chat_request.system_prompt,
                 tool_bindings,
+            )
+        scope_bindings = getattr(tool_service, "scope_bindings", None)
+        if tool_bindings and callable(scope_bindings):
+            tool_bindings = scope_bindings(
+                tool_bindings,
+                effective_system_prompt,
             )
         if effective_system_prompt != chat_request.system_prompt:
             chat_request = replace(
@@ -1445,6 +1452,10 @@ class ChatController:
             {
                 "enabled": self.mcp_settings.tools_enabled(),
                 "enabled_services": self.mcp_settings.enabled_services(),
+                "enabled_subservices": self.mcp_settings.enabled_subservices(),
+                "automatic_tool_scope_selection": (
+                    self.mcp_settings.automatic_scope_selection()
+                ),
                 "settings": settings,
             }
         )

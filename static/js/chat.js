@@ -93,6 +93,16 @@
     const mediaUploadsEl = document.querySelector("[data-chat-media-uploads]");
     const toolCapabilityEl = document.querySelector("[data-chat-tool-capability]");
     const toolCapabilityTooltip = document.querySelector("[data-chat-tool-tooltip]");
+    const toolCapabilityControl = document.querySelector(
+        "[data-chat-tool-capability-control]"
+    );
+    const toolScopeToggle = document.querySelector("[data-chat-tool-scope-toggle]");
+    const toolScopeAccordion = document.querySelector(
+        "[data-chat-tool-scope-accordion]"
+    );
+    const toolSubserviceDropdown = document.querySelector(
+        "[data-chat-tool-subservice-dropdown]"
+    );
     const toolGlobalSettingsModal = document.querySelector(
         "[data-tool-global-settings-modal]"
     );
@@ -573,6 +583,8 @@
     let toolCapabilityBaseLabel = "";
     let globalToolsEnabled = null;
     let enabledMcpServiceNames = [];
+    let enabledMcpSubservices = {};
+    const toolSubserviceUiStates = new Map();
     let globalToolSettings = {
         max_rounds: 6,
         max_total_calls: 12,
@@ -1968,6 +1980,11 @@
                 compactSwitch && compactSwitch.getAttribute("aria-checked") === "true"
             ),
         };
+        if (globalToolSettings.automatic_tool_scope === true) {
+            requestBody.automatic_tool_scope_selection = (
+                automaticToolScopeSelection()
+            );
+        }
         if (typeof toolsAllowed === "boolean") {
             requestBody.tools_allowed = toolsAllowed;
         }
@@ -2878,6 +2895,7 @@
 
     const renderToolCapability = (capabilities) => {
         if (!toolCapabilityEl) return;
+        if (toolCapabilityControl) toolCapabilityControl.hidden = true;
         toolCapabilityEl.hidden = true;
         toolCapabilityEl.classList.remove(
             "chat-tool-capability--full",
@@ -2904,6 +2922,173 @@
         toolCapabilityEl.classList.add(`chat-tool-capability--${state}`);
         updateToolCapabilityStatus();
         toolCapabilityEl.hidden = false;
+        if (toolCapabilityControl) toolCapabilityControl.hidden = false;
+    };
+
+    const subserviceDisplayName = (serviceName, subserviceName) => {
+        const providerFreeName = String(subserviceName).split("::").at(-1);
+        const prefix = `${serviceName}_`;
+        return providerFreeName.startsWith(prefix)
+            ? providerFreeName.slice(prefix.length)
+            : providerFreeName;
+    };
+
+    const enabledToolDisplayEntries = () => {
+        const uniqueServices = new Map();
+        enabledMcpServiceNames.forEach((serviceName) => {
+            const parts = String(serviceName).split("::").filter(Boolean);
+            const displayName = (parts.at(-1) || "").trim();
+            const key = displayName.toLocaleLowerCase();
+            if (!displayName) return;
+            if (!uniqueServices.has(key)) {
+                uniqueServices.set(key, {
+                    displayName,
+                    subservices: new Map(),
+                });
+            }
+            const entry = uniqueServices.get(key);
+            const subservices = Array.isArray(enabledMcpSubservices[serviceName])
+                ? enabledMcpSubservices[serviceName]
+                : [];
+            subservices.forEach((subserviceName) => {
+                const subservice = subserviceDisplayName(
+                    displayName,
+                    subserviceName
+                ).trim();
+                const subserviceKey = subservice.toLocaleLowerCase();
+                if (subservice && !entry.subservices.has(subserviceKey)) {
+                    entry.subservices.set(subserviceKey, subservice);
+                }
+            });
+        });
+        return [...uniqueServices.values()].map((entry) => ({
+            displayName: entry.displayName,
+            subservices: [...entry.subservices.values()],
+        }));
+    };
+
+    const closeToolSubserviceDropdown = () => {
+        if (!toolScopeAccordion || !toolSubserviceDropdown) return;
+        toolScopeAccordion.querySelectorAll(".chat-tool-scope-name")
+            .forEach((button) => button.setAttribute("aria-expanded", "false"));
+        toolSubserviceDropdown.replaceChildren();
+        toolSubserviceDropdown.hidden = true;
+    };
+
+    const subserviceUiStateKey = (serviceName, subserviceName) => (
+        `${serviceName}\u0000${subserviceName}`.toLocaleLowerCase()
+    );
+
+    const subserviceIsEnabled = (serviceName, subserviceName) => (
+        toolSubserviceUiStates.get(
+            subserviceUiStateKey(serviceName, subserviceName)
+        ) !== false
+    );
+
+    const updateMainServiceLed = (button, serviceName, subservices) => {
+        button.classList.toggle(
+            "has-enabled-subservices",
+            subservices.some((name) => subserviceIsEnabled(serviceName, name))
+        );
+    };
+
+    const automaticToolScopeSelection = () => (
+        enabledToolDisplayEntries().flatMap((entry) => (
+            entry.subservices
+                .filter((name) => subserviceIsEnabled(entry.displayName, name))
+                .map((name) => ({
+                    service: entry.displayName,
+                    tool: name,
+                }))
+        ))
+    );
+
+    const toggleToolSubservices = (button, serviceName, subservices) => {
+        if (!toolSubserviceDropdown) return;
+        const opening = button.getAttribute("aria-expanded") !== "true";
+        closeToolSubserviceDropdown();
+        if (!opening || !subservices.length) return;
+        subservices.forEach((name) => {
+            const item = document.createElement("button");
+            item.type = "button";
+            item.className = "chat-tool-subservice-name";
+            item.textContent = name;
+            const updateLed = () => {
+                const enabled = subserviceIsEnabled(serviceName, name);
+                item.classList.toggle("is-enabled", enabled);
+                item.setAttribute("aria-pressed", enabled ? "true" : "false");
+            };
+            updateLed();
+            item.addEventListener("click", () => {
+                toolSubserviceUiStates.set(
+                    subserviceUiStateKey(serviceName, name),
+                    !subserviceIsEnabled(serviceName, name)
+                );
+                updateLed();
+                updateMainServiceLed(button, serviceName, subservices);
+            });
+            toolSubserviceDropdown.appendChild(item);
+        });
+        const controlRect = toolCapabilityControl.getBoundingClientRect();
+        const buttonRect = button.getBoundingClientRect();
+        toolSubserviceDropdown.style.setProperty(
+            "--chat-tool-subservice-left",
+            `${buttonRect.left - controlRect.left}px`
+        );
+        toolSubserviceDropdown.style.setProperty(
+            "--chat-tool-subservice-top",
+            `${buttonRect.bottom - controlRect.top}px`
+        );
+        button.setAttribute("aria-expanded", "true");
+        toolSubserviceDropdown.hidden = false;
+    };
+
+    const setToolScopeExpanded = (expanded) => {
+        if (!toolCapabilityControl || !toolScopeToggle || !toolScopeAccordion) {
+            return;
+        }
+        const allowed = globalToolSettings.automatic_tool_scope === true;
+        const nextExpanded = allowed && expanded;
+        toolCapabilityControl.classList.toggle("is-expanded", nextExpanded);
+        toolScopeToggle.setAttribute(
+            "aria-expanded",
+            nextExpanded ? "true" : "false"
+        );
+        toolScopeToggle.setAttribute(
+            "aria-label",
+            nextExpanded ? "Hide enabled tools" : "Show enabled tools"
+        );
+        toolScopeAccordion.setAttribute(
+            "aria-hidden",
+            nextExpanded ? "false" : "true"
+        );
+        if (!nextExpanded) closeToolSubserviceDropdown();
+    };
+
+    const updateToolScopeControl = () => {
+        if (!toolScopeToggle || !toolScopeAccordion) return;
+        const automaticScope = globalToolSettings.automatic_tool_scope === true;
+        toolScopeToggle.hidden = !automaticScope;
+        closeToolSubserviceDropdown();
+        toolScopeAccordion.replaceChildren();
+        enabledToolDisplayEntries().forEach((entry) => {
+            const item = document.createElement("button");
+            item.type = "button";
+            item.className = "chat-tool-scope-name";
+            item.textContent = entry.displayName;
+            updateMainServiceLed(item, entry.displayName, entry.subservices);
+            item.setAttribute("aria-expanded", "false");
+            item.disabled = entry.subservices.length === 0;
+            item.addEventListener("click", () => {
+                toggleToolSubservices(
+                    item,
+                    entry.displayName,
+                    entry.subservices
+                );
+            });
+            toolScopeAccordion.appendChild(item);
+        });
+        if (!automaticScope) setToolScopeExpanded(false);
     };
 
     const updateToolCapabilityStatus = () => {
@@ -2922,8 +3107,9 @@
             "chat-tool-capability--inactive",
             globalToolsEnabled !== true || !hasEnabledServices
         );
-        toolCapabilityEl.setAttribute("title", label);
+        toolCapabilityEl.setAttribute("aria-label", label);
         if (toolCapabilityTooltip) toolCapabilityTooltip.textContent = label;
+        updateToolScopeControl();
     };
 
     const applyToolGlobalState = (payload) => {
@@ -2933,6 +3119,25 @@
         enabledMcpServiceNames = Array.isArray(payload?.enabled_services)
             ? [...new Set(payload.enabled_services.map(String).filter(Boolean))]
             : [];
+        enabledMcpSubservices = (
+            payload?.enabled_subservices
+            && typeof payload.enabled_subservices === "object"
+            && !Array.isArray(payload.enabled_subservices)
+        ) ? payload.enabled_subservices : {};
+        toolSubserviceUiStates.clear();
+        if (Array.isArray(payload?.automatic_tool_scope_selection)) {
+            const selected = new Set(
+                payload.automatic_tool_scope_selection.map((item) => (
+                    subserviceUiStateKey(item?.service || "", item?.tool || "")
+                ))
+            );
+            enabledToolDisplayEntries().forEach((entry) => {
+                entry.subservices.forEach((name) => {
+                    const key = subserviceUiStateKey(entry.displayName, name);
+                    toolSubserviceUiStates.set(key, selected.has(key));
+                });
+            });
+        }
         const settings = payload?.settings && typeof payload.settings === "object"
             ? payload.settings
             : {};
@@ -2981,6 +3186,7 @@
         historyEl?.querySelectorAll(".chat-message--assistant .chat-content")
             .forEach(hydrateWebpagePreviews);
         updateToolCapabilityStatus();
+        updateToolScopeControl();
     };
 
     const loadToolGlobalState = async () => {
@@ -6217,6 +6423,11 @@
         bindGeneratedDocumentPreview(
             link,
             link.dataset.generatedDocumentName || ""
+        );
+    });
+    toolScopeToggle?.addEventListener("click", () => {
+        setToolScopeExpanded(
+            toolScopeToggle.getAttribute("aria-expanded") !== "true"
         );
     });
     toolAutomaticScopeSwitch?.addEventListener("click", () => {

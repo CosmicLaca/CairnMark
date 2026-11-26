@@ -332,10 +332,33 @@
                 <span class="chat-fps-value" data-chat-video-fps-value>{{ '%g'|format(chat_attachment_settings.video_fps) }}</span>
               </div>
             </div>
-            <button type="button" class="chat-tool-capability" data-chat-tool-capability hidden>
-              <span aria-hidden="true">🛠</span>
-              <span class="chat-media-tooltip" data-chat-tool-tooltip role="tooltip"></span>
-            </button>
+            <div class="chat-tool-capability-control" data-chat-tool-capability-control hidden>
+              <button type="button" class="chat-tool-capability" data-chat-tool-capability>
+                <span aria-hidden="true">🛠</span>
+                <span class="chat-media-tooltip" data-chat-tool-tooltip role="tooltip"></span>
+              </button>
+              <button
+                type="button"
+                class="chat-tool-scope-toggle"
+                data-chat-tool-scope-toggle
+                aria-expanded="false"
+                aria-controls="chat-tool-scope-accordion"
+                aria-label="Show enabled tools"
+                title="Automatic tool scope quick setup."
+                hidden
+              ><span aria-hidden="true">▶</span></button>
+              <div
+                class="chat-tool-scope-accordion"
+                id="chat-tool-scope-accordion"
+                data-chat-tool-scope-accordion
+                aria-hidden="true"
+              ></div>
+              <div
+                class="chat-tool-subservice-dropdown"
+                data-chat-tool-subservice-dropdown
+                hidden
+              ></div>
+            </div>
             <button
               type="button"
               class="chat-save-original-switch chat-stream-switch"

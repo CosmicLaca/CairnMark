@@ -439,6 +439,67 @@ class McpSettingsRepository:
         )
         return validated
 
+    @staticmethod
+    def validate_automatic_scope_selection(selection):
+        """Validate provider-free service and tool names for quick scope."""
+        if not isinstance(selection, list):
+            raise ValueError("Automatic tool scope selection must be a list.")
+        validated = []
+        seen = set()
+        for item in selection:
+            if not isinstance(item, dict):
+                raise ValueError(
+                    "Automatic tool scope entries must be objects."
+                )
+            service = str(item.get("service") or "").strip()
+            tool = str(item.get("tool") or "").strip()
+            if not service or not tool:
+                raise ValueError(
+                    "Automatic tool scope entries require service and tool."
+                )
+            if len(service) > 255 or len(tool) > 255:
+                raise ValueError("Automatic tool scope names are too long.")
+            identity = (service.casefold(), tool.casefold())
+            if identity in seen:
+                continue
+            seen.add(identity)
+            validated.append({"service": service, "tool": tool})
+        return validated
+
+    def automatic_scope_selection(self):
+        """Return the saved quick scope, or None before its first send."""
+        row = self.store.fetch(
+            "SELECT preference_value FROM mcp_preferences "
+            "WHERE preference_key = ?",
+            ("automatic_tool_scope_selection",),
+            one=True,
+        )
+        if not row:
+            return None
+        try:
+            selection = json.loads(row[0])
+            return self.validate_automatic_scope_selection(selection)
+        except (TypeError, ValueError):
+            return None
+
+    def set_automatic_scope_selection(self, selection):
+        """Persist the send-time Automatic Tool Scope quick selection."""
+        validated = self.validate_automatic_scope_selection(selection)
+        self.store.execute(
+            """
+            INSERT INTO mcp_preferences (preference_key, preference_value)
+            VALUES (?, ?)
+            ON CONFLICT(preference_key) DO UPDATE SET
+                preference_value = excluded.preference_value,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                "automatic_tool_scope_selection",
+                json.dumps(validated, ensure_ascii=False),
+            ),
+        )
+        return validated
+
     def enabled_services(self):
         """Return source-qualified enabled main services from saved rows."""
         rows = self.store.fetch(
@@ -459,6 +520,39 @@ class McpSettingsRepository:
             f"{provider_names[source]}::{service_name}"
             for source, service_name in rows
         ]
+
+    def enabled_subservices(self):
+        """Return enabled child tools grouped under enabled main services."""
+        rows = self.store.fetch(
+            """
+            SELECT source, service_name, tool_name
+            FROM mcp_settings
+            WHERE enabled = 1
+              AND source IN (
+                  'external', 'external_tool', 'llama_service', 'llama_tool'
+              )
+            ORDER BY source, service_name COLLATE NOCASE, tool_name COLLATE NOCASE
+            """
+        )
+        enabled_parents = {
+            (source, service_name)
+            for source, service_name, tool_name in rows
+            if not tool_name and source in {"external", "llama_service"}
+        }
+        source_pairs = {
+            "external_tool": ("external", "custom"),
+            "llama_tool": ("llama_service", "llama"),
+        }
+        grouped = {}
+        for source, service_name, tool_name in rows:
+            if not tool_name or source not in source_pairs:
+                continue
+            parent_source, provider_name = source_pairs[source]
+            if (parent_source, service_name) not in enabled_parents:
+                continue
+            qualified_name = f"{provider_name}::{service_name}"
+            grouped.setdefault(qualified_name, []).append(tool_name)
+        return grouped
 
     def cached_tools(self, service_name=None):
         """Return cached Custom MCP tool definitions."""

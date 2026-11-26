@@ -192,59 +192,42 @@ class ChatToolService:
         normalized = str(user_message or "").lstrip().lower()
         return normalized.startswith(("/tool ", "/tools "))
 
-    def scope_bindings(self, bindings, user_message):
-        """Narrow tools only when the prompt explicitly names MCP services."""
-        if not self.global_settings().get("automatic_tool_scope", False):
+    def _quick_scope_bindings(self, bindings):
+        """Apply the saved provider-free quick scope to enabled bindings."""
+        getter = getattr(self.settings, "automatic_scope_selection", None)
+        selection = getter() if callable(getter) else None
+        if selection is None:
             return bindings
-        message = str(user_message or "")
-        if not message.strip():
-            return bindings
-
-        services = {
-            binding.service.casefold(): binding.service
-            for binding in bindings
-            if binding.service
+        selected = {
+            (
+                str(item.get("service") or "").casefold(),
+                str(item.get("tool") or "").casefold(),
+            )
+            for item in selection
+            if isinstance(item, dict)
         }
-        selected = set()
-        separators = r"[`'\"\s]+"
-        for normalized_name, service_name in services.items():
-            escaped_name = re.escape(service_name)
-            boundary_name = (
-                rf"(?<![A-Za-z0-9_-]){escaped_name}"
-                rf"(?![A-Za-z0-9_-])"
-            )
-            direct_pattern = (
-                boundary_name
-                + separators
-                + rf"(?:mcp{separators})?"
-                + r"(?:tools?|services?|server)\b"
-            )
-            if re.search(direct_pattern, message, flags=re.IGNORECASE):
-                selected.add(normalized_name)
-
-        directive_pattern = re.compile(
-            r"\b(?:use|using)\s+(?:only\s+)?"
-            r"(?P<scope>.{1,200}?)\s+mcp\s+(?:tools?|services?)\b",
-            flags=re.IGNORECASE,
-        )
-        for match in directive_pattern.finditer(message):
-            scope_text = match.group("scope")
-            for normalized_name, service_name in services.items():
-                escaped_name = re.escape(service_name)
-                if re.search(
-                    rf"(?<![A-Za-z0-9_-]){escaped_name}"
-                    rf"(?![A-Za-z0-9_-])",
-                    scope_text,
-                    flags=re.IGNORECASE,
-                ):
-                    selected.add(normalized_name)
-
-        if not selected:
-            return bindings
         return [
             binding
             for binding in bindings
-            if binding.service.casefold() in selected
+            if (binding.service.casefold(), binding.tool.casefold()) in selected
+        ]
+
+    def scope_bindings(self, bindings, system_prompt):
+        """Use only automatic-scope tools named in the system prompt."""
+        if not self.global_settings().get("automatic_tool_scope", False):
+            return bindings
+        prompt = str(system_prompt or "")
+        candidates = self._quick_scope_bindings(bindings)
+        return [
+            binding
+            for binding in candidates
+            if re.search(
+                rf"(?<![A-Za-z0-9_-]){re.escape(binding.service)}"
+                rf"\s*:\s*{re.escape(binding.tool)}"
+                rf"(?![A-Za-z0-9_-])",
+                prompt,
+                flags=re.IGNORECASE,
+            )
         ]
 
     def system_prompt(self, system_prompt, bindings):
@@ -252,13 +235,23 @@ class ChatToolService:
         settings = self.global_settings()
         if not bindings or not settings["guidance_enabled"]:
             return system_prompt
-        names = sorted(
-            {
-                f"{binding.source}::{binding.service}::{binding.tool}"
-                for binding in bindings
-            },
-            key=str.casefold,
-        )
+        if settings.get("automatic_tool_scope", False):
+            prompt_bindings = self._quick_scope_bindings(bindings)
+            names = sorted(
+                {
+                    f"{binding.service}: {binding.tool}"
+                    for binding in prompt_bindings
+                },
+                key=str.casefold,
+            )
+        else:
+            names = sorted(
+                {
+                    f"{binding.source}::{binding.service}::{binding.tool}"
+                    for binding in bindings
+                },
+                key=str.casefold,
+            )
         tool_list = "\n".join(f"- {name}" for name in names)
         template = settings["guidance_template"].strip()
         guidance = template.replace("{tools}", tool_list)
