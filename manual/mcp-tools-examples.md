@@ -130,6 +130,8 @@ subtools, and save.
 > 
 > <img src="mcp-weather-1.jpg" width="80%" alt="CairnMark chat workspace">
 
+---
+
 ### Weather troubleshooting
 
 - A place name can be ambiguous. Add the country or region to the prompt.

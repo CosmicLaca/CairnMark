@@ -119,6 +119,8 @@ to clear them. Services with four or fewer subtools omit this bulk control.
 
 The quick scope is a request allowlist layered on top of **MCP settings**:
 
+<img src="./tool-autoscope.jpg" width="95%" alt="MCP tool global setting">
+
 - it never enables a service or subtool that is disabled in MCP settings;
 - a main service turns grey automatically when all its subtools are off;
 - when every quick-scope subtool is off, the main tool icon becomes inactive
@@ -141,6 +143,8 @@ CairnMark appends this guidance to the outgoing system prompt and exposes only
 the bindings whose `Service: tool` names match that generated list. User-prompt
 wording is not scanned for tool selection. This keeps the model-visible schemas
 and system guidance synchronized with the accordion.
+
+<img src="./auto-scope.jpg" width="95%" alt="MCP tool global setting">
 
 Turn **Automatic tool scope** off to hide the accordion and retain the complete
 enabled tool set. In that mode, `{tools}` keeps the qualified identities used

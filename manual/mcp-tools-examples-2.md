@@ -120,18 +120,20 @@ for a model to select, so leave the prefixed aliases disabled.
 
 ### Wikipedia test prompts
 
-> Use only the Wikipedia MCP tools—do not use SearXNG or prior knowledge.
 > Search for “Budapest”, retrieve its summary, extract five key facts, and
 > suggest three related Wikipedia topics. Answer in English and list the exact
 > tools you called.
+> 
+> <img src="tool-wiki.jpg" width="90%" alt="CairnMark chat workspace">
 
 <!-- Add the Wikipedia result screenshot here. -->
 
 Change the setup language to Hungarian, save it, and try:
 
-> Kizárólag a Wikipedia MCP eszközeit használd. Keress rá Bartók Béla nevére,
-> foglald össze a szócikket magyarul, sorolj fel öt fontos tényt, majd adj meg
-> három kapcsolódó témát. A végén nevezd meg a használt eszközöket.
+> Search for “Béla Bartók,” summarize the article in Hungarian, list five important facts, 
+> and then list three related topics. At the end, list the tools you used.
+> 
+> <img src="tool-wiki-02.jpg" width="90%" alt="CairnMark chat workspace">
 
 ### Wikipedia troubleshooting
 
@@ -237,19 +239,25 @@ argument explicitly chosen by the model for the current request takes priority.
 
 ### yfmcp test prompts
 
-> Use only the `yfmcp` tools. Find Toyota's US ticker, retrieve its company
+> Find Toyota's US ticker, retrieve its company
 > information, latest news, and five-day daily price history. Present the
 > prices in a Markdown table and list every tool called.
+> 
+> <img src="tool-yfmcp-01.jpg" width="90%" alt="CairnMark chat workspace">
 
 <!-- Add the yfmcp search and history result screenshot here. -->
 
-> Use only `yfmcp`. Retrieve AAPL option expiration dates, select the nearest
+> Retrieve AAPL option expiration dates, select the nearest
 > available date, and summarize both calls and puts for that date. Clearly show
 > the expiration date and identify the tools used.
+> 
+> <img src="tool-yfmcp-02.jpg" width="90%" alt="CairnMark chat workspace">
 
-> Use only `yfmcp`. Show the ten largest Technology-sector companies and then
+> Show the ten largest Technology-sector companies and then
 > retrieve detailed ticker information for the first company. State that the
 > Yahoo Finance source is unofficial.
+> 
+> <img src="tool-yfmcp-03.jpg" width="90%" alt="CairnMark chat workspace">
 
 ### yfmcp troubleshooting
 
@@ -322,19 +330,25 @@ field and the model did not already provide a value.
 
 ### Alternative-server test prompts
 
-> Use only `yahoo-finance-mcp-server`. For MSFT, retrieve stock information,
+> For MSFT, retrieve stock information,
 > one-month daily history, recent news, corporate actions, and analyst
 > recommendations from the last six months. List every tool called.
+> 
+> <img src="tool-jfmcp-01.jpg" width="90%" alt="CairnMark chat workspace">
 
 <!-- Add the alternative Yahoo Finance result screenshot here. -->
 
-> Use only `yahoo-finance-mcp-server`. Retrieve NVIDIA's quarterly income
+> Retrieve NVIDIA's quarterly income
 > statement and institutional holders. Summarize the important values without
 > presenting them as investment advice.
+> 
+> <img src="tool-jfmcp-02.jpg" width="90%" alt="CairnMark chat workspace">
 
-> Use only `yahoo-finance-mcp-server`. Find the available SPY option expiration
+> Find the available SPY option expiration
 > dates, select the nearest date, and retrieve its call option chain. State the
 > selected expiration date and the exact tools used.
+> 
+> <img src="tool-jfmcp-03.jpg" width="90%" alt="CairnMark chat workspace">
 
 ### Alternative-server troubleshooting
 
@@ -363,6 +377,8 @@ Comparison prompt:
 > and one-month daily price history. Compare their returned values, clearly
 > label which service supplied each result, report any differences, and list
 > every tool called. Do not provide investment advice.
+> 
+> <img src="tool-yfcomp.jpg" width="90%" alt="CairnMark chat workspace">
 
 <!-- Add the side-by-side Yahoo Finance result screenshot here. -->
 

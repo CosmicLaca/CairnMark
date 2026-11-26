@@ -6,7 +6,7 @@ split into creation, organization, preview/editing, and execution.
 ## Create benchmark JSON
 
 <!-- Screenshot placeholder: replace manual/create-benchmark.jpg when needed. -->
-<p align="left"><img src="create-benchmark.jpg" width="82%" alt="Create benchmark page"></p>
+<img src="create-benchmark.jpg" width="82%" alt="Create benchmark page">
 
 1. Choose an existing category or create a new one.
 2. Select Easy, Normal, or Hard.
@@ -50,13 +50,12 @@ JSON responses for the complete creation process under
 
 Every generation step is an independent model request. CairnMark sends only the
 special benchmark system prompt and the current user prompt with its
-placeholders filled. It does not send conversation history, chat tools, tool
-definitions, previous tool calls, or tool responses.
+placeholders filled. It does not send conversation history, and never call tools.
 
 ## Browse and edit files
 
 <!-- Screenshot placeholder: replace manual/view-benchmark.jpg when needed. -->
-<p align="left"><img src="view-benchmark.jpg" width="82%" alt="Benchmark browser and preview"></p>
+<img src="view-benchmark.jpg" width="82%" alt="Benchmark browser and preview">
 
 The Run benchmark page discovers `.json` files directly inside
 `Benchmark-prompts/`. Categories and difficulty filters come from saved
@@ -70,7 +69,7 @@ the database; category matching is case-insensitive.
 ## Run a benchmark
 
 <!-- Screenshot placeholder: replace manual/run-benchmark.jpg when needed. -->
-<p align="left"><img src="run-benchmark.jpg" width="82%" alt="Run benchmark page"></p>
+<img src="run-benchmark.jpg" width="82%" alt="Run benchmark page">
 
 1. Select a benchmark file and click **Create benchmark** to open its setup.
 2. Choose an enabled model in the left **Create benchmark setup** panel.

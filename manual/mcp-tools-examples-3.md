@@ -144,22 +144,26 @@ ask `get_current_time` for any valid IANA timezone.
 
 Current-time test:
 
-> Use only the Time MCP tools and do not use prior knowledge. Get the current
-> time in `Europe/Budapest` and `America/New_York`. Show both ISO timestamps,
+> Get the current time in `Europe/Budapest` and `America/New_York`. Show both ISO timestamps,
 > their UTC offsets, whether daylight saving time is active, and list the exact
 > tools you called.
+> 
+> <img src="tool-time-01.jpg" width="90%" alt="CairnMark chat workspace">
 
 Conversion test:
 
-> Use only the Time MCP tools. Convert 09:30 from `Europe/Budapest` to
-> `America/New_York`. Report the source time, converted time, and time
+> Convert 09:30 from `Europe/Budapest` to `America/New_York`. Report the source time, converted time, and time
 > difference. List the exact tool called.
+> 
+> <img src="tool-time-02.jpg" width="90%" alt="CairnMark chat workspace">
 
 Local-timezone test:
 
-> Use only the Time MCP tools. What time is it now in the configured local
+> What time is it now in the configured local
 > timezone? State the timezone name, ISO timestamp, UTC offset, and whether
 > daylight saving time is active.
+> 
+> <img src="tool-time-03.jpg" width="90%" alt="CairnMark chat workspace">
 
 Change **Local IANA timezone** to `America/New_York`, save the service, and run
 the local-timezone test again. The returned local timezone should change
