@@ -22,17 +22,17 @@ stay available on the local machine.
 > - Per-response request body inspection
 > - llama.cpp and CairnMark-managed MCP side by side
 > - Optional MCP import and update from OpenCode
-> - Stateful stdio MCP sessions
+> - Stateful stdio MCP sessions, automatic tool scope with quick settings
 > - Generated-document download cards
 > - Manual and auto context compaction
 > - Per-model capability flags (media and tools)
-> - Video FPS control and separated audio analysis
+> - Video FPS control and separated audio analysis, inline image, audio and video previews
 > - Local (or remote) MinerU document processing
 > - Chat attachments accordion with media index
 > - Reverse image search shortcuts
 > - Webpage link screenshots
-> - Inline image, audio and video previews
 > - Per-service provider filter in model selector lists
+> - Daily Git update discovery with hidden restart handling
 > - AI-generated benchmark JSON
 > - Benchmark runs keep expected answers local
 > - Localhost-only binding, local SQLite and JSON data
@@ -156,6 +156,32 @@ binds only to `127.0.0.1`.
 
 > Details:
 > ### **[Installation, backups, troubleshooting, and development →](manual/getting-started.md)**
+
+---
+
+## Version and application updates
+
+The fixed top bar displays the current release label and semantic version next
+to **Local workspace**. Select the Git icon to open the CairnMark repository.
+Tracked metadata lives in `info.xml` and includes the author, repository, last
+update date, release stage, and separate major, minor, and patch numbers.
+
+Versions use `Major.Minor.Patch`. Major and minor values are maintained
+manually in `info.xml`. The local `instance/cairnmark.db` record follows Git
+commits to advance the patch value automatically. Changing either the major or
+minor value resets patch to `0`; the initial preview version is `0.0.1000`.
+
+For installations made with `git clone`, CairnMark compares the local `main`
+commit with the public repository once per day. The **Update** button appears
+only when a newer commit is available. Selecting it performs a fast-forward
+update in a hidden helper process, stops the current server, and restarts it
+through `run.bat` on Windows or `run.sh` on Linux. A server started with
+`--dev` restarts in development mode.
+
+Automatic update is blocked when the application is not on `main`, tracked
+files contain local changes, or the installation is not a Git clone. Update
+output and restart failures are recorded in
+`instance/application-update.log`.
 
 ---
 

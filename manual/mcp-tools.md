@@ -85,14 +85,14 @@ settings apply to every MCP source and are saved in `instance/tools.db` when
 | Setting | Default | Purpose |
 | --- | ---: | --- |
 | Enable/Disable tools | Off | Pauses or permits all saved tool services without changing their individual switches |
-| Automatic tool scope | Off | Sends only explicitly named MCP services for the current request while preserving all saved switches |
+| Automatic tool scope | Off | Enables the Home-page quick scope for choosing the exact tools exposed to the model |
 | Maximum tool-call rounds | 15 | Limits model-to-tool continuation rounds per response; range 1–20 |
 | Maximum total tool calls | 30 | Limits all calls in one response, including parallel calls; range 1–100 |
 | Stop after consecutive failures | 2 | Ends tool execution after repeated failures; range 1–10 |
 | Maximum result characters | 20,000 | Truncates each tool result before returning it to the model; range 1,000–500,000 |
 | Tool-use policy | Automatic | Controls when enabled definitions may be sent to the model |
 | Add tool guidance to system prompt | On | Appends runtime-only instructions and the enabled tool names |
-| Tool guidance template | Built in | Customizes the runtime guidance; `{tools}` is replaced with qualified tool names |
+| Tool guidance template | Built in | Customizes runtime guidance; `{tools}` receives either the quick-scope list or the complete qualified tool list |
 | Capture webpage preview | On | Creates hover screenshots for ordinary public page links in assistant responses |
 | Webpage preview timeout | 2 seconds | Bounds each page capture; range 1–30 seconds |
 
@@ -107,33 +107,44 @@ Tool definitions consume input context and are sent again during each model
 continuation round. When many services are enabled, their schemas can therefore
 use substantially more input tokens than the user prompt itself.
 
-Enable **Automatic tool scope** to narrow the model-visible definitions when a
-request explicitly names one or more MCP services. For example:
+Enable **Automatic tool scope** to show its quick-setup arrow beside the tool
+icon on Home. Open the horizontal accordion to see every enabled main service.
+A red LED means that at least one of its subtools is selected; a grey LED means
+that none are selected. Select a main service name to open its subtool menu,
+then select individual subtools to toggle their red or grey state.
 
-> Use only the Time MCP tools. Get the current time in Europe/Budapest.
+When a service contains more than four subtools, the first dropdown row adds a
+small **All sub-tools** switch. Turn it on to select every listed subtool or off
+to clear them. Services with four or fewer subtools omit this bulk control.
 
-This request sends only the enabled tools belonging to the `Time` service.
-Multiple services can be selected in one request:
+The quick scope is a request allowlist layered on top of **MCP settings**:
 
-> Use Time and Wikipedia MCP tools to report the current time and find an
-> article about Budapest.
+- it never enables a service or subtool that is disabled in MCP settings;
+- a main service turns grey automatically when all its subtools are off;
+- when every quick-scope subtool is off, the main tool icon becomes inactive
+  and no tool definitions are sent;
+- changing an LED edits only the current browser state; and
+- selecting **Send** saves the current quick scope in `instance/tools.db`, so
+  the same selection is restored when Home is reloaded.
 
-Service names are matched case-insensitively. Forms such as “Time MCP tools”
-and “use only `yfmcp` tools” are recognized. The matching service and its
-required subtools must still be enabled in **MCP settings**.
+With Automatic Tool Scope enabled, `{tools}` in the guidance template receives
+only the selected provider-free names:
 
-Automatic scoping is deliberately conservative:
+```text
+Available tools:
+- Time: convert_time
+- Time: get_current_time
+- Time: get_time_ago
+```
 
-- it does not change or save different service or subtool switches;
-- it filters only the current request, including its runtime tool guidance;
-- ordinary words such as “time” do not select a service unless the wording
-  clearly refers to MCP tools or services; and
-- if no enabled service is identified, CairnMark sends the complete enabled
-  tool set as a safe fallback.
+CairnMark appends this guidance to the outgoing system prompt and exposes only
+the bindings whose `Service: tool` names match that generated list. User-prompt
+wording is not scanned for tool selection. This keeps the model-visible schemas
+and system guidance synchronized with the accordion.
 
-Turn the switch off to retain the previous behavior for every request. No
-additional Python package, MCP server, or routing model is required; CairnMark
-performs this explicit-name filtering before sending the API request.
+Turn **Automatic tool scope** off to hide the accordion and retain the complete
+enabled tool set. In that mode, `{tools}` keeps the qualified identities used
+previously, such as `custom::Time::get_current_time`.
 
 The tool-use policies behave as follows:
 
