@@ -3003,11 +3003,82 @@
         ))
     );
 
+    const updateToolCapabilityPresentation = () => {
+        if (!toolCapabilityEl || !toolCapabilityBaseLabel) return;
+        const hasEnabledServices = enabledMcpServiceNames.length > 0;
+        const quickScopeHasTools = (
+            globalToolSettings.automatic_tool_scope !== true
+            || automaticToolScopeSelection().length > 0
+        );
+        let status;
+        if (!hasEnabledServices || globalToolsEnabled === null) {
+            status = "All tools disabled";
+        } else if (globalToolsEnabled !== true || !quickScopeHasTools) {
+            status = "Disabled";
+        } else {
+            status = enabledMcpServiceNames.join(", ");
+        }
+        const label = `${toolCapabilityBaseLabel} · ${status}`;
+        toolCapabilityEl.classList.toggle(
+            "chat-tool-capability--inactive",
+            globalToolsEnabled !== true
+                || !hasEnabledServices
+                || !quickScopeHasTools
+        );
+        toolCapabilityEl.setAttribute("aria-label", label);
+        if (toolCapabilityTooltip) toolCapabilityTooltip.textContent = label;
+    };
+
     const toggleToolSubservices = (button, serviceName, subservices) => {
         if (!toolSubserviceDropdown) return;
         const opening = button.getAttribute("aria-expanded") !== "true";
         closeToolSubserviceDropdown();
         if (!opening || !subservices.length) return;
+        const itemLedUpdates = [];
+        let selectAllControl = null;
+        const updateSelectAllControl = () => {
+            if (!selectAllControl) return;
+            const allEnabled = subservices.every((name) => (
+                subserviceIsEnabled(serviceName, name)
+            ));
+            selectAllControl.setAttribute(
+                "aria-checked",
+                allEnabled ? "true" : "false"
+            );
+        };
+        if (subservices.length > 4) {
+            selectAllControl = document.createElement("button");
+            selectAllControl.type = "button";
+            selectAllControl.className = "chat-tool-subservice-select-all";
+            selectAllControl.setAttribute("role", "switch");
+            selectAllControl.setAttribute(
+                "aria-label",
+                "Select or deselect all sub-tools"
+            );
+            const selectAllLabel = document.createElement("span");
+            selectAllLabel.textContent = "All sub-tools";
+            const selectAllSwitch = document.createElement("span");
+            selectAllSwitch.className = "chat-tool-subservice-select-all-switch";
+            selectAllSwitch.setAttribute("aria-hidden", "true");
+            selectAllControl.append(selectAllLabel, selectAllSwitch);
+            selectAllControl.addEventListener("click", () => {
+                const enableAll = (
+                    selectAllControl.getAttribute("aria-checked") !== "true"
+                );
+                subservices.forEach((name) => {
+                    toolSubserviceUiStates.set(
+                        subserviceUiStateKey(serviceName, name),
+                        enableAll
+                    );
+                });
+                itemLedUpdates.forEach((updateLed) => updateLed());
+                updateSelectAllControl();
+                updateMainServiceLed(button, serviceName, subservices);
+                updateToolCapabilityPresentation();
+            });
+            updateSelectAllControl();
+            toolSubserviceDropdown.appendChild(selectAllControl);
+        }
         subservices.forEach((name) => {
             const item = document.createElement("button");
             item.type = "button";
@@ -3018,6 +3089,7 @@
                 item.classList.toggle("is-enabled", enabled);
                 item.setAttribute("aria-pressed", enabled ? "true" : "false");
             };
+            itemLedUpdates.push(updateLed);
             updateLed();
             item.addEventListener("click", () => {
                 toolSubserviceUiStates.set(
@@ -3025,7 +3097,9 @@
                     !subserviceIsEnabled(serviceName, name)
                 );
                 updateLed();
+                updateSelectAllControl();
                 updateMainServiceLed(button, serviceName, subservices);
+                updateToolCapabilityPresentation();
             });
             toolSubserviceDropdown.appendChild(item);
         });
@@ -3092,23 +3166,7 @@
     };
 
     const updateToolCapabilityStatus = () => {
-        if (!toolCapabilityEl || !toolCapabilityBaseLabel) return;
-        const hasEnabledServices = enabledMcpServiceNames.length > 0;
-        let status;
-        if (!hasEnabledServices || globalToolsEnabled === null) {
-            status = "All tools disabled";
-        } else if (globalToolsEnabled !== true) {
-            status = "Disabled";
-        } else {
-            status = enabledMcpServiceNames.join(", ");
-        }
-        const label = `${toolCapabilityBaseLabel} · ${status}`;
-        toolCapabilityEl.classList.toggle(
-            "chat-tool-capability--inactive",
-            globalToolsEnabled !== true || !hasEnabledServices
-        );
-        toolCapabilityEl.setAttribute("aria-label", label);
-        if (toolCapabilityTooltip) toolCapabilityTooltip.textContent = label;
+        updateToolCapabilityPresentation();
         updateToolScopeControl();
     };
 
