@@ -1124,6 +1124,11 @@
     background: #e4e1d7;
 }
 
+.chat-message--assistant .chat-content.markdown-content
+    tbody tr:nth-child(even) {
+    background: rgba(37, 107, 96, 0.035);
+}
+
 .chat-content.markdown-content .markdown-table-align-center,
 .prompt-modal-text.markdown-content .markdown-table-align-center {
     text-align: center;
