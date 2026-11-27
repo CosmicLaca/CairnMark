@@ -1323,7 +1323,70 @@
         });
     };
 
+    const boundedTableColumnShares = (widths) => {
+        const columnCount = widths.length;
+        if (columnCount < 2) return widths.map(() => 100);
+        const minimum = 50 / columnCount;
+        const maximum = 200 / columnCount;
+        const weights = widths.map((width) => Math.max(width, 1));
+        const totalWeight = weights.reduce((total, weight) => total + weight, 0);
+        const shares = weights.map((weight) => Math.min(
+            maximum,
+            Math.max(minimum, 100 * weight / totalWeight)
+        ));
+        let difference = 100 - shares.reduce((total, share) => total + share, 0);
+        while (Math.abs(difference) > 0.0001) {
+            const increasing = difference > 0;
+            const eligible = shares.map((_share, index) => index).filter(
+                (index) => increasing
+                    ? shares[index] < maximum
+                    : shares[index] > minimum
+            );
+            if (!eligible.length) break;
+            const eligibleWeight = eligible.reduce(
+                (total, index) => total + weights[index],
+                0
+            );
+            let applied = 0;
+            eligible.forEach((index) => {
+                const requested = Math.abs(difference) * (
+                    weights[index] / eligibleWeight
+                );
+                const capacity = increasing
+                    ? maximum - shares[index]
+                    : shares[index] - minimum;
+                const adjustment = Math.min(requested, capacity);
+                shares[index] += increasing ? adjustment : -adjustment;
+                applied += adjustment;
+            });
+            if (applied <= 0.0001) break;
+            difference += increasing ? -applied : applied;
+        }
+        return shares;
+    };
+
+    const balanceAssistantTables = (root) => {
+        root.querySelectorAll(
+            ".markdown-table-wrap table:not([data-balanced-columns])"
+        ).forEach((table) => {
+            const cells = Array.from(table.rows[0]?.cells || []);
+            if (cells.length < 2) return;
+            const widths = cells.map((cell) => cell.getBoundingClientRect().width);
+            if (!widths.every((width) => width > 0)) return;
+            const colgroup = document.createElement("colgroup");
+            boundedTableColumnShares(widths).forEach((share) => {
+                const column = document.createElement("col");
+                column.style.width = `${share.toFixed(4)}%`;
+                colgroup.appendChild(column);
+            });
+            table.prepend(colgroup);
+            table.dataset.balancedColumns = "true";
+            table.classList.add("markdown-table-balanced");
+        });
+    };
+
     const hydrateAssistantMedia = (root) => {
+        balanceAssistantTables(root);
         hydrateAssistantImages(root);
         hydrateOpaqueAssistantImages(root);
         hydrateAssistantAudio(root);

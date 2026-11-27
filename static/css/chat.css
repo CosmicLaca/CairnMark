@@ -1084,10 +1084,15 @@
     border-collapse: collapse;
 }
 
-/* Assistant tables fit the bubble and wrap long cell content onto new lines. */
+/* Let rendered content influence column widths while keeping the table in-bubble. */
 .chat-message--assistant .chat-content.markdown-content table {
     width: 100%;
     min-width: 0;
+    table-layout: auto;
+}
+
+.chat-message--assistant .chat-content.markdown-content
+    table.markdown-table-balanced {
     table-layout: fixed;
 }
 
