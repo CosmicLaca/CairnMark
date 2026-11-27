@@ -1323,16 +1323,46 @@
         });
     };
 
-    const boundedTableColumnShares = (widths) => {
+    const boundedTableColumnShares = (widths, maxTextLengths) => {
         const columnCount = widths.length;
         if (columnCount < 2) return widths.map(() => 100);
-        const minimum = 50 / columnCount;
+        const normalMinimum = 50 / columnCount;
+        const shortTextMinimum = 25 / columnCount;
         const maximum = 200 / columnCount;
+        const minimums = widths.map((_width, index) => (
+            Number(maxTextLengths[index]) <= 4
+                ? shortTextMinimum
+                : normalMinimum
+        ));
         const weights = widths.map((width) => Math.max(width, 1));
         const totalWeight = weights.reduce((total, weight) => total + weight, 0);
-        const shares = weights.map((weight) => Math.min(
+        const proportional = weights.map((weight) => 100 * weight / totalWeight);
+        const widestIndex = weights.reduce(
+            (widest, weight, index) => weight > weights[widest] ? index : widest,
+            0
+        );
+        const usesShortTextRange = proportional.some((share, index) => (
+            minimums[index] === shortTextMinimum && share < normalMinimum
+        ));
+        if (usesShortTextRange) {
+            const specialShares = proportional.map((share, index) => Math.min(
+                maximum,
+                Math.max(minimums[index], share)
+            ));
+            const remainingForWidest = 100 - specialShares.reduce(
+                (total, share, index) => (
+                    index === widestIndex ? total : total + share
+                ),
+                0
+            );
+            if (remainingForWidest >= minimums[widestIndex]) {
+                specialShares[widestIndex] = remainingForWidest;
+                return specialShares;
+            }
+        }
+        const shares = weights.map((weight, index) => Math.min(
             maximum,
-            Math.max(minimum, 100 * weight / totalWeight)
+            Math.max(minimums[index], 100 * weight / totalWeight)
         ));
         let difference = 100 - shares.reduce((total, share) => total + share, 0);
         while (Math.abs(difference) > 0.0001) {
@@ -1340,7 +1370,7 @@
             const eligible = shares.map((_share, index) => index).filter(
                 (index) => increasing
                     ? shares[index] < maximum
-                    : shares[index] > minimum
+                    : shares[index] > minimums[index]
             );
             if (!eligible.length) break;
             const eligibleWeight = eligible.reduce(
@@ -1354,7 +1384,7 @@
                 );
                 const capacity = increasing
                     ? maximum - shares[index]
-                    : shares[index] - minimum;
+                    : shares[index] - minimums[index];
                 const adjustment = Math.min(requested, capacity);
                 shares[index] += increasing ? adjustment : -adjustment;
                 applied += adjustment;
@@ -1373,8 +1403,13 @@
             if (cells.length < 2) return;
             const widths = cells.map((cell) => cell.getBoundingClientRect().width);
             if (!widths.every((width) => width > 0)) return;
+            const maxTextLengths = cells.map((_cell, columnIndex) => Math.max(
+                ...Array.from(table.rows).map((row) => (
+                    row.cells[columnIndex]?.textContent || ""
+                ).trim().length)
+            ));
             const colgroup = document.createElement("colgroup");
-            boundedTableColumnShares(widths).forEach((share) => {
+            boundedTableColumnShares(widths, maxTextLengths).forEach((share) => {
                 const column = document.createElement("col");
                 column.style.width = `${share.toFixed(4)}%`;
                 colgroup.appendChild(column);
