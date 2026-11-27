@@ -18,15 +18,15 @@ stay available on the local machine.
 
 > ### Why is it special?
 >
-> - Durable failed responses
-> - llama.cpp and CairnMark-managed MCP side by side
-> - Optional MCP import and update from OpenCode
+> - Manual history settings for low context models
+> - llama.cpp and CairnMark-managed MCP side by side, Optional MCP import and update from OpenCode
 > - Stateful stdio MCP sessions, automatic tool scope with quick settings
 > - Generated-document download cards, inline image, audio and video previews, webpage link screenshots
-> - Manual and auto context compaction
+> - Manual and auto context compaction, ctx measurement
 > - Per-model capability flags (media and tools)
-> - Video upload FPS control and separated audio analysis
-> - Local (or remote) MinerU document processing
+> - Video upload FPS control and separated audio analysis for video uploads
+> - Local (or remote) MinerU document processing, MinerU MCP supports
+> - Auto start-stop system for local MCP API endpoints
 > - Chat attachments accordion with media index and links
 > - AI-generated benchmark JSON, benchmark runs keep expected answers local
 > - Localhost-only binding, local SQLite and JSON data

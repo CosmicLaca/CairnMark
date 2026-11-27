@@ -247,6 +247,11 @@ for the other controls in that dialog.
 - **Export** writes an import-ready JSON document to `Exported-chat/`.
 - **Import** validates an exported document before replacing active history.
 
+To explore a ready-made example on a new installation, select **Import** and
+open `Exported-chat/Exported-Alpha_moonbase-2026-11-26_20-48-35.json`. The
+included Alpha moonbase conversation demonstrates the imported chat format and
+can be inspected without first creating a conversation.
+
 <img src="chat-controls-01.jpg" width="70%" alt="Chat control">
 <img src="chat-controls-02.jpg" width="70%" alt="Chat control">
 
