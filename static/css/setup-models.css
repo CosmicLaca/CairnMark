@@ -1287,6 +1287,22 @@ body.modal-open {
     line-height: 1;
 }
 
+.model-modal-content .model-list .model-reasoning-icon {
+    display: inline-flex;
+    align-items: center;
+    color: #91a8b5;
+}
+
+.model-modal-content .model-list .model-reasoning-icon svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
 .model-modal-content .model-list .single-model-state {
     width: auto;
     padding: 5px 8px;

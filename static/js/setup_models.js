@@ -74,6 +74,25 @@
         {key: 'audio', glyph: '🎤', label: 'Audio input'},
     ];
 
+    function createReasoningIcon() {
+        const icon = document.createElement('span');
+        icon.className = 'model-modality-icon model-reasoning-icon';
+        icon.title = 'Reasoning support';
+        icon.setAttribute('aria-label', 'Reasoning support');
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('aria-hidden', 'true');
+        svg.setAttribute('focusable', 'false');
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute(
+            'd',
+            'M12 5.5A3.5 3.5 0 0 0 5.5 7.3a3.5 3.5 0 0 0-.7 6.4A3.5 3.5 0 0 0 9 18.9a3 3 0 0 0 3-3V5.5Zm0 0a3.5 3.5 0 0 1 6.5 1.8 3.5 3.5 0 0 1 .7 6.4 3.5 3.5 0 0 1-4.2 5.2 3 3 0 0 1-3-3M8 8.5h1.5A2.5 2.5 0 0 1 12 11m4-2.5h-1.5A2.5 2.5 0 0 0 12 11m-4 4h1a3 3 0 0 0 3-3m4 3h-1a3 3 0 0 1-3-3',
+        );
+        svg.appendChild(path);
+        icon.appendChild(svg);
+        return icon;
+    }
+
     setupButtons.forEach((setupButton) => {
         const provider = setupButton.dataset.provider;
         const modal = document.getElementById(setupButton.dataset.modalTarget);
@@ -309,6 +328,10 @@
                     toolIcon.title = 'Tool support';
                     toolIcon.setAttribute('aria-label', 'Tool support');
                     nameShell.appendChild(toolIcon);
+                }
+                if (caps && typeof caps === 'object'
+                    && caps.supports_reasoning_effort === true) {
+                    nameShell.appendChild(createReasoningIcon());
                 }
 
                 item.appendChild(nameShell);

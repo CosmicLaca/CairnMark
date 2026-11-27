@@ -2399,6 +2399,11 @@ class ModelProviderService:
             result["chat_template_kwargs"] = {
                 "enable_thinking": extra_parameters["enable_thinking"]
             }
+        if (
+            provider == "llama.cpp"
+            and isinstance(extra_parameters.get("cache_prompt"), bool)
+        ):
+            result["cache_prompt"] = extra_parameters["cache_prompt"]
         return result
 
     def chat_completion_with_params(

@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS chat_attachment_settings (
     video_fps REAL NOT NULL DEFAULT 2,
     send_all_previous INTEGER NOT NULL DEFAULT 0,
     stream_responses INTEGER NOT NULL DEFAULT 0,
+    cache_prompt INTEGER NOT NULL DEFAULT 1,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -159,6 +160,7 @@ SETTINGS_STORE = SQLiteStore(
             "video_fps": "REAL NOT NULL DEFAULT 2",
             "send_all_previous": "INTEGER NOT NULL DEFAULT 0",
             "stream_responses": "INTEGER NOT NULL DEFAULT 0",
+            "cache_prompt": "INTEGER NOT NULL DEFAULT 1",
         },
         "chat_compact_settings": {
             "threshold": "INTEGER NOT NULL DEFAULT 75",
@@ -182,6 +184,7 @@ _SETTING_GROUPS = {
             "video_fps",
             "send_all_previous",
             "stream_responses",
+            "cache_prompt",
         ),
         "defaults": {
             "save_original_media": False,
@@ -189,6 +192,7 @@ _SETTING_GROUPS = {
             "video_fps": DEFAULT_VIDEO_FPS,
             "send_all_previous": False,
             "stream_responses": False,
+            "cache_prompt": True,
             "randomize_seed": False,
         },
         "booleans": {
@@ -196,6 +200,7 @@ _SETTING_GROUPS = {
             "attach_audio",
             "send_all_previous",
             "stream_responses",
+            "cache_prompt",
             "randomize_seed",
         },
         "choices": {"video_fps": VIDEO_FPS_VALUES},

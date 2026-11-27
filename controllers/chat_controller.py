@@ -276,8 +276,22 @@ class ChatController:
                     {"error": "stream_responses must be a boolean."}
                 ), 400
             attachment_settings["stream_responses"] = stream_responses
+        if "cache_prompt" in chat_request.raw:
+            cache_prompt = chat_request.raw["cache_prompt"]
+            if not isinstance(cache_prompt, bool):
+                return jsonify(
+                    {"error": "cache_prompt must be a boolean."}
+                ), 400
+            attachment_settings["cache_prompt"] = cache_prompt
         attachment_settings["video_fps"] = chat_request.video_fps
         CHAT_SETTINGS.group("attachments", attachment_settings)
+        chat_request = replace(
+            chat_request,
+            extra_parameters={
+                **chat_request.extra_parameters,
+                "cache_prompt": attachment_settings["cache_prompt"],
+            },
+        )
         try:
             provider, model = self.service.resolve_online_model(chat_request.model_spec)
         except ProviderValidationError as error:
@@ -1003,7 +1017,12 @@ class ChatController:
         """Persist last-used media attachment switch values."""
         data = request.get_json(silent=True) or {}
         settings = CHAT_SETTINGS.group("attachments")
-        for key in ("save_original_media", "attach_audio", "stream_responses"):
+        for key in (
+            "save_original_media",
+            "attach_audio",
+            "stream_responses",
+            "cache_prompt",
+        ):
             if key in data:
                 if not isinstance(data[key], bool):
                     return jsonify({"error": f"{key} must be a boolean."}), 400

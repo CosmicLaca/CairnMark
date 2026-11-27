@@ -405,6 +405,19 @@
                 </span>
                 <span class="chat-save-original-tooltip" role="tooltip">Stream responses</span>
               </button>
+              <button
+                type="button"
+                class="chat-save-original-switch chat-prompt-cache-switch"
+                data-chat-prompt-caching
+                role="switch"
+                aria-checked="{{ 'true' if chat_attachment_settings.cache_prompt else 'false' }}"
+                aria-label="Prompt caching"
+              >
+                <span class="chat-save-original-track" aria-hidden="true">
+                  <span class="chat-save-original-knob"></span>
+                </span>
+                <span class="chat-save-original-tooltip" role="tooltip">Prompt caching</span>
+              </button>
             </div>
           </div>
         </div>
@@ -1035,7 +1048,8 @@
       video_fps: {{ chat_attachment_settings.video_fps|tojson }},
       randomize_seed: {{ chat_seed_settings.randomize_seed|tojson }},
       send_all_previous: {{ chat_history_settings.send_all_previous|tojson }},
-      stream_responses: {{ chat_attachment_settings.stream_responses|tojson }}
+      stream_responses: {{ chat_attachment_settings.stream_responses|tojson }},
+      cache_prompt: {{ chat_attachment_settings.cache_prompt|tojson }}
     };
     window.CairnmarkSeedSettings = {
       randomize_seed: {{ chat_seed_settings.randomize_seed|tojson }}

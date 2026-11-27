@@ -150,6 +150,7 @@
     const saveOriginalSwitch = document.querySelector("[data-chat-save-original]");
     const attachAudioSwitch = document.querySelector("[data-chat-attach-audio]");
     const streamResponsesSwitch = document.querySelector("[data-chat-stream-responses]");
+    const promptCachingSwitch = document.querySelector("[data-chat-prompt-caching]");
     const reasoningControl = document.querySelector("[data-chat-reasoning-control]");
     const reasoningSwitch = document.querySelector("[data-chat-reasoning]");
     const reasoningEffort = document.querySelector("[data-chat-reasoning-effort]");
@@ -162,6 +163,12 @@
         streamResponsesSwitch.setAttribute(
             "aria-checked",
             attachmentSettings.stream_responses ? "true" : "false"
+        );
+    }
+    if (promptCachingSwitch && typeof attachmentSettings.cache_prompt === "boolean") {
+        promptCachingSwitch.setAttribute(
+            "aria-checked",
+            attachmentSettings.cache_prompt ? "true" : "false"
         );
     }
     const videoFpsValues = [0.1, 0.25, 0.5, 1, 2, 4, 8, 16];
@@ -2141,6 +2148,10 @@
             stream_responses: Boolean(
                 streamResponsesSwitch
                 && streamResponsesSwitch.getAttribute("aria-checked") === "true"
+            ),
+            cache_prompt: Boolean(
+                promptCachingSwitch
+                && promptCachingSwitch.getAttribute("aria-checked") === "true"
             ),
             auto_compact: Boolean(
                 compactSwitch && compactSwitch.getAttribute("aria-checked") === "true"
@@ -6597,6 +6608,10 @@
     streamResponsesSwitch?.addEventListener("click", () => {
         const next = streamResponsesSwitch.getAttribute("aria-checked") !== "true";
         streamResponsesSwitch.setAttribute("aria-checked", next ? "true" : "false");
+    });
+    promptCachingSwitch?.addEventListener("click", () => {
+        const next = promptCachingSwitch.getAttribute("aria-checked") !== "true";
+        promptCachingSwitch.setAttribute("aria-checked", next ? "true" : "false");
     });
     reasoningSwitch?.addEventListener("click", () => {
         const next = reasoningSwitch.getAttribute("aria-checked") !== "true";
