@@ -69,6 +69,24 @@ message. Completed assistant messages remain in history.
 
 ---
 
+## Reasoning controls
+
+For a llama.cpp model whose saved chat-template capabilities report reasoning
+effort support, a **Reasoning** switch appears beside **Stream responses**.
+Turning it on displays the effort levels advertised by that model, such as
+**low**, **medium**, or **xhigh**. CairnMark sends the selected effort with
+thinking enabled for the request.
+
+With the switch off, CairnMark requests `reasoning_effort: none` and disables
+template thinking. The switch is intentionally not saved and always starts off
+after the page is loaded. Models without saved reasoning support do not show
+either control and receive no reasoning-specific request settings.
+
+Reasoning effort controls hidden model reasoning, not the length of the visible
+answer. Use a maximum-token parameter when a strict response limit is required.
+
+---
+
 ## Conversation context
 
 The context meter estimates selected input and output tokens against the active
