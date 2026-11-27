@@ -8,7 +8,7 @@
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
 
-    const IMAGE_PATH_PATTERN = /\.(?:avif|bmp|gif|jpe?g|png|webp)$/i;
+    const IMAGE_PATH_PATTERN = /\.(?:avif|bmp|gif|jpe?g|png|svg|webp)$/i;
     const AUDIO_PATH_PATTERN = /\.(?:aac|flac|m4a|mp3|oga|ogg|opus|wav)$/i;
     const AUDIO_LABEL_PATTERN = /^\s*(?:(?:direct\s+)?(?:audio\s+)?stream|audio|listen|play|radio)(?:\s+url)?\s*$/i;
     const AUDIO_CONTEXT_PATTERN = /\b(?:(?:direct\s+)?(?:audio\s+)?stream|listen)(?:\s+url)?\s*[:=-]?\s*$/i;
@@ -168,7 +168,7 @@
                 }
                 return protect(`<code>${code}</code>`);
             })
-            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label, href) => (
+            .replace(/!?\[([^\]]+)\]\(([^)]+)\)/g, (_match, label, href) => (
                 protect(safeLink(label, href, {
                     previewImage: true,
                     previewAudio: audioHint,
