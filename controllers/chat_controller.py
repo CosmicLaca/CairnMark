@@ -314,6 +314,7 @@ class ChatController:
             self.service,
             settings=self.mcp_settings,
             registry=self._mcp_registry(),
+            preview_store=self.previews,
         )
         binding_started = time.monotonic()
         try:
@@ -456,6 +457,10 @@ class ChatController:
                 for document in document_candidates
                 if document["exists"]
             ]
+            tool_preview_records = self.media.local_preview_records(response_text)
+            tool_preview_images = [
+                record["locator"] for record in tool_preview_records
+            ]
             assistant_id = self.history.add(
                 "assistant",
                 response_text,
@@ -469,6 +474,7 @@ class ChatController:
                 request_body=json.dumps(request_body),
                 used_tools=used_tools,
                 generated_documents=generated_documents,
+                preview_images=tool_preview_images,
             )
             payload = self.requests.result_payload(
                 response_text,
@@ -484,6 +490,7 @@ class ChatController:
             self.media.add_active(
                 self.media.generated_records(transcript)
                 + self.media.external_records(response_text)
+                + tool_preview_records
             )
             payload["local_attachments"] = self.media.list()
             payload["message_id"] = assistant_id
@@ -581,6 +588,12 @@ class ChatController:
                     for document in document_candidates
                     if document["exists"]
                 ]
+                tool_preview_records = self.media.local_preview_records(
+                    response_text
+                )
+                tool_preview_images = [
+                    record["locator"] for record in tool_preview_records
+                ]
                 assistant_id = self.history.add(
                     "assistant",
                     response_text,
@@ -594,6 +607,7 @@ class ChatController:
                     request_body=json.dumps(request_body),
                     used_tools=used_tools,
                     generated_documents=generated_documents,
+                    preview_images=tool_preview_images,
                 )
                 payload = self.requests.result_payload(
                     response_text,
@@ -610,6 +624,7 @@ class ChatController:
                 self.media.add_active(
                     self.media.generated_records(transcript)
                     + self.media.external_records(response_text)
+                    + tool_preview_records
                 )
                 payload["local_attachments"] = self.media.list()
                 payload["message_id"] = assistant_id

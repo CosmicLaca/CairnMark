@@ -85,6 +85,7 @@ locally; used tools remain identifiable on their response bubbles.
 > #### **[Wikipedia and Yahoo Finance examples →](./manual/mcp-tools-examples-2.md)**
 > #### **[Official Time MCP example →](./manual/mcp-tools-examples-3.md)**
 > #### **[MinerU MCP installation and tests →](./manual/mcp-tools-examples-mineru.md)**
+> #### **[ComfyUI MCP settings and usage →](./manual/mcp-tools-examples-comfyui.md)**
 
 ---
 
@@ -203,6 +204,7 @@ privacy policy.
 > ### - [Wikipedia and Yahoo Finance MCP examples](./manual/mcp-tools-examples-2.md)
 > ### - [Official Time MCP example](./manual/mcp-tools-examples-3.md)
 > ### - [MinerU MCP installation and tests](./manual/mcp-tools-examples-mineru.md)
+> ### - [ComfyUI MCP settings and usage](./manual/mcp-tools-examples-comfyui.md)
 > ### - [Benchmark workflow](./manual/benchmarks.md)
 
 ---

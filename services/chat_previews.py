@@ -75,6 +75,30 @@ class ChatPreviewStore:
             current_app.logger.exception("Original chat attachment could not be saved")
             return None
 
+    def save_inline_image(self, data, mime_type):
+        """Persist a validated MCP image byte-for-byte for chat previewing."""
+        extensions = {
+            "image/gif": ".gif",
+            "image/jpeg": ".jpg",
+            "image/png": ".png",
+            "image/webp": ".webp",
+        }
+        extension = extensions.get(str(mime_type or "").lower())
+        if extension is None:
+            return None
+        try:
+            decoded = base64.b64decode(data, validate=True)
+            if not decoded:
+                return None
+            with Image.open(io.BytesIO(decoded)) as image:
+                image.verify()
+            filename = f"mcp-image-{uuid.uuid4().hex}{extension}"
+            (self.directory() / filename).write_bytes(decoded)
+            return filename
+        except Exception:  # noqa: BLE001
+            current_app.logger.exception("MCP image preview could not be saved")
+            return None
+
     def save_attachments(
         self,
         attachments,

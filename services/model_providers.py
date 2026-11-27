@@ -2998,6 +2998,64 @@ class ModelProviderService:
     def _raw_tool_call(content, tools):
         """Recover one llama.cpp tool call emitted as visible template text."""
         text = str(content or "").strip()
+        allowed_names = {
+            str(item.get("function", {}).get("name") or "")
+            for item in tools
+            if isinstance(item, dict)
+        }
+
+        def allowed_name(value):
+            if value in allowed_names:
+                return value
+            stable_name = re.sub(r"__[0-9a-f]{8}$", "", value)
+            matching_names = [
+                candidate
+                for candidate in allowed_names
+                if re.sub(r"__[0-9a-f]{8}$", "", candidate) == stable_name
+            ]
+            return matching_names[0] if len(matching_names) == 1 else None
+
+        xml_match = re.fullmatch(
+            r"<tool_call>\s*<function=([A-Za-z0-9_.:-]+)>"
+            r"(.*?)</function>\s*</tool_call>",
+            text,
+            flags=re.DOTALL,
+        )
+        if xml_match:
+            name = allowed_name(xml_match.group(1))
+            if name is None:
+                return None
+            body = xml_match.group(2)
+            parameters = re.findall(
+                r"<parameter=([A-Za-z_][A-Za-z0-9_-]*)>"
+                r"(.*?)</parameter>",
+                body,
+                flags=re.DOTALL,
+            )
+            residual = re.sub(
+                r"<parameter=[A-Za-z_][A-Za-z0-9_-]*>.*?</parameter>",
+                "",
+                body,
+                flags=re.DOTALL,
+            )
+            if residual.strip() or not parameters:
+                return None
+            arguments = {}
+            for key, raw_value in parameters:
+                value = raw_value.strip()
+                try:
+                    arguments[key] = json.loads(value)
+                except json.JSONDecodeError:
+                    arguments[key] = value
+            return {
+                "id": "recovered_tool_call",
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "arguments": json.dumps(arguments, ensure_ascii=False),
+                },
+            }
+
         match = re.fullmatch(
             r"<\|tool_call>call:([A-Za-z0-9_.:-]+)(\{.*\})<tool_call\|>",
             text,
@@ -3005,22 +3063,10 @@ class ModelProviderService:
         )
         if not match:
             return None
-        allowed_names = {
-            str(item.get("function", {}).get("name") or "")
-            for item in tools
-            if isinstance(item, dict)
-        }
         name, raw_arguments = match.groups()
-        if name not in allowed_names:
-            stable_name = re.sub(r"__[0-9a-f]{8}$", "", name)
-            matching_names = [
-                allowed_name
-                for allowed_name in allowed_names
-                if re.sub(r"__[0-9a-f]{8}$", "", allowed_name) == stable_name
-            ]
-            if len(matching_names) != 1:
-                return None
-            name = matching_names[0]
+        name = allowed_name(name)
+        if name is None:
+            return None
         quote_marker = re.escape('<|"|>')
         normalized = re.sub(
             rf"{quote_marker}(.*?){quote_marker}",

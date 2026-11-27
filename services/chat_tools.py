@@ -7,6 +7,7 @@ from contextlib import nullcontext
 from dataclasses import dataclass
 
 from models.mcp_settings import DEFAULT_TOOL_GLOBAL_SETTINGS, MCP_SETTINGS
+from services.chat_previews import ChatPreviewStore
 from services.mcp_services import McpServiceRegistry
 
 
@@ -15,11 +16,46 @@ MAX_TOOL_CALLS = DEFAULT_TOOL_GLOBAL_SETTINGS["max_total_calls"]
 MAX_TOOL_RESULT_CHARS = DEFAULT_TOOL_GLOBAL_SETTINGS["max_result_chars"]
 TOOL_COMPLETION_TIMEOUT_SECONDS = 300
 LOCAL_TOOL_COMPLETION_TIMEOUT_SECONDS = 900
+DEPENDENCY_DISPLAY_NAMES = {
+    "comfyui": "ComfyUI",
+    "searxng": "SearXNG",
+}
 CONNECTION_SETTING_KEYS = {
     "endpoint",
     "password",
     "timeout_ms",
     "user",
+}
+TOOL_PREVIEW_PATTERN = re.compile(
+    r"!\[[^\]]*\]\((/chat/preview/[A-Za-z0-9._-]+)\)"
+)
+PROMPT_ID_PATTERN = re.compile(
+    r"[\"']?prompt_id[\"']?\s*[:=]\s*[\"']?([A-Za-z0-9-]{1,64})",
+    re.IGNORECASE,
+)
+COMFYUI_PROMPT_UUID_PATTERN = re.compile(
+    r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
+    re.IGNORECASE,
+)
+COMFYUI_TOOL_DESCRIPTIONS = {
+    "generate_image": (
+        "Generate media with ComfyUI. For text-to-image use action='image' and "
+        "prompt; checkpoint, negative_prompt, width, height, steps, cfg, sampler, "
+        "scheduler, seed and batch_size are optional. Returns a prompt_id. CairnMark "
+        "waits for the image and attaches it automatically."
+    ),
+    "get_image": (
+        "Retrieve ComfyUI output. Use action='get' with filename, action='view' "
+        "with asset_id, or action='list_assets' to list recent registered images."
+    ),
+    "list_local_models": (
+        "Inspect installed ComfyUI models. Use action='list' and optionally set "
+        "model_type such as 'checkpoints'; other actions manage model search paths."
+    ),
+    "queue": (
+        "Inspect or manage the ComfyUI queue. Use action='status' with prompt_id "
+        "for one job or action='list' for running and pending jobs."
+    ),
 }
 
 
@@ -38,10 +74,17 @@ class ChatToolBinding:
 class ChatToolService:
     """Coordinate model tool calls across Custom and provider-managed MCP."""
 
-    def __init__(self, provider_service, settings=None, registry=None):
+    def __init__(
+        self,
+        provider_service,
+        settings=None,
+        registry=None,
+        preview_store=None,
+    ):
         self.provider_service = provider_service
         self.settings = settings or MCP_SETTINGS
         self.registry = registry or McpServiceRegistry()
+        self.previews = preview_store or ChatPreviewStore()
 
     @staticmethod
     def _alias(source, service, tool):
@@ -51,9 +94,37 @@ class ChatToolService:
         return f"{normalized[:54]}__{digest}"
 
     @staticmethod
-    def _function_definition(alias, description, parameters):
+    def _compact_schema_descriptions(value):
+        if isinstance(value, dict):
+            compacted = {}
+            for key, child in value.items():
+                if key == "description" and isinstance(child, str):
+                    compacted[key] = (
+                        child if len(child) <= 300 else child[:297].rstrip() + "..."
+                    )
+                else:
+                    compacted[key] = ChatToolService._compact_schema_descriptions(
+                        child
+                    )
+            return compacted
+        if isinstance(value, list):
+            return [
+                ChatToolService._compact_schema_descriptions(child)
+                for child in value
+            ]
+        return value
+
+    @staticmethod
+    def _function_definition(
+        alias,
+        description,
+        parameters,
+        compact_descriptions=False,
+    ):
         if not isinstance(parameters, dict):
             parameters = {"type": "object", "properties": {}}
+        if compact_descriptions:
+            parameters = ChatToolService._compact_schema_descriptions(parameters)
         return {
             "type": "function",
             "function": {
@@ -161,8 +232,14 @@ class ChatToolService:
                     tool=tool_name,
                     definition=self._function_definition(
                         alias,
-                        definition.get("description"),
+                        COMFYUI_TOOL_DESCRIPTIONS.get(
+                            tool_name,
+                            definition.get("description"),
+                        ) if service.casefold() == "comfyui" else definition.get(
+                            "description"
+                        ),
                         parameters,
+                        compact_descriptions=service.casefold() == "comfyui",
                     ),
                     settings=dict(main.get("settings") or {}),
                 )
@@ -368,6 +445,14 @@ class ChatToolService:
         }
         normalized_arguments = dict(arguments)
         if (
+            str(binding.service).casefold() == "comfyui"
+            and binding.tool == "get_image"
+            and normalized_arguments.get("action") == "view"
+            and normalized_arguments.get("filename")
+            and not normalized_arguments.get("asset_id")
+        ):
+            normalized_arguments["action"] = "get"
+        if (
             "path" in properties
             and "file_path" not in properties
             and "path" not in normalized_arguments
@@ -379,8 +464,8 @@ class ChatToolService:
         merged.update(normalized_arguments)
         return merged
 
-    @staticmethod
-    def _result_text(result, max_chars=MAX_TOOL_RESULT_CHARS):
+    def _result_text(self, result, max_chars=MAX_TOOL_RESULT_CHARS):
+        preview_markdown = []
         if not isinstance(result, dict):
             text = str(result)
         elif result.get("error"):
@@ -399,6 +484,15 @@ class ChatToolService:
                     continue
                 if item.get("type") == "text":
                     parts.append(str(item.get("text") or ""))
+                elif item.get("type") == "image" and item.get("data"):
+                    filename = self.previews.save_inline_image(
+                        item.get("data"),
+                        item.get("mimeType") or item.get("mime_type"),
+                    )
+                    if filename:
+                        preview_markdown.append(
+                            f"![Generated image](/chat/preview/{filename})"
+                        )
             structured = result.get("structuredContent")
             if structured is None:
                 structured = result.get("structured_content")
@@ -413,10 +507,33 @@ class ChatToolService:
             if not text:
                 text = json.dumps(result, ensure_ascii=False)
         if len(text) > max_chars:
-            return text[:max_chars] + "\n[Tool result truncated]"
+            text = text[:max_chars] + "\n[Tool result truncated]"
+        if preview_markdown:
+            text = "\n\n".join(
+                part for part in (text, *preview_markdown) if part
+            )
         return text
 
-    def _execute(self, binding, arguments, max_result_chars=MAX_TOOL_RESULT_CHARS):
+    @staticmethod
+    def _with_tool_previews(response, transcript):
+        """Append MCP images when the model omits them from its final answer."""
+        text = str(response or "")
+        existing = set(TOOL_PREVIEW_PATTERN.findall(text))
+        previews = []
+        for message in transcript or []:
+            if not isinstance(message, dict) or message.get("role") != "tool":
+                continue
+            for preview_url in TOOL_PREVIEW_PATTERN.findall(
+                str(message.get("content") or "")
+            ):
+                if preview_url in existing:
+                    continue
+                existing.add(preview_url)
+                previews.append(f"![Generated image]({preview_url})")
+        return "\n\n".join(part for part in (text, *previews) if part)
+
+    def _ensure_dependency(self, binding):
+        """Start and validate an API required by one selected binding."""
         ensure_dependency = getattr(self.registry, "ensure_dependency", None)
         if callable(ensure_dependency):
             dependency = ensure_dependency(binding.service, binding.settings)
@@ -429,6 +546,36 @@ class ChatToolService:
                 raise RuntimeError(
                     f"Required API for {binding.service} is not available."
                 )
+
+    def _dependency_start_status(self, binding):
+        """Return a visible status when a managed API needs lazy startup."""
+        dependency_managed = getattr(self.registry, "dependency_managed", None)
+        dependency_status = getattr(self.registry, "dependency_status", None)
+        if (
+            not callable(dependency_managed)
+            or not dependency_managed(binding.settings)
+            or not callable(dependency_status)
+        ):
+            return None
+        status = dependency_status(binding.service, binding.settings)
+        if not status.get("required") or status.get("online"):
+            return None
+        service_name = str(binding.service or "").strip()
+        display_name = DEPENDENCY_DISPLAY_NAMES.get(
+            service_name.casefold(),
+            service_name,
+        )
+        return f"Starting {display_name}..."
+
+    def _execute(
+        self,
+        binding,
+        arguments,
+        max_result_chars=MAX_TOOL_RESULT_CHARS,
+        dependency_ready=False,
+    ):
+        if not dependency_ready:
+            self._ensure_dependency(binding)
         arguments = self._arguments_with_defaults(binding, arguments)
         if binding.source == "llama":
             timeout = binding.settings.get("timeout_ms", 30_000)
@@ -448,7 +595,33 @@ class ChatToolService:
                 arguments,
                 binding.settings,
             )
-        return self._result_text(result, max_result_chars)
+        result_text = self._result_text(result, max_result_chars)
+        if (
+            str(binding.service).casefold() == "comfyui"
+            and binding.tool == "generate_image"
+        ):
+            match = PROMPT_ID_PATTERN.search(result_text)
+            if match is None:
+                match = COMFYUI_PROMPT_UUID_PATTERN.search(result_text)
+            wait_for_image = getattr(
+                self.registry,
+                "wait_for_comfyui_image",
+                None,
+            )
+            if match and callable(wait_for_image):
+                completed = wait_for_image(
+                    match.group(1),
+                    binding.settings,
+                )
+                if completed:
+                    completed_text = self._result_text(
+                        completed,
+                        max_result_chars,
+                    )
+                    result_text = "\n\n".join(
+                        part for part in (result_text, completed_text) if part
+                    )
+        return result_text
 
     @staticmethod
     def _is_degraded_search_result(result_text):
@@ -553,7 +726,10 @@ class ChatToolService:
             if not tool_calls:
                 yield {
                     "type": "complete",
-                    "response": assistant.get("content", ""),
+                    "response": self._with_tool_previews(
+                        assistant.get("content", ""),
+                        transcript,
+                    ),
                     "usage": usage,
                     "transcript": transcript,
                 }
@@ -579,23 +755,28 @@ class ChatToolService:
                 tool_call_count += 1
                 provider_name = binding.source if binding else "unknown"
                 tool_name = binding.tool if binding else alias
-                yield {
-                    "type": "status",
-                    "text": (
-                        f"{provider_name}::{tool_name} call... "
-                        f"[{tool_call_count}]"
-                    ),
-                }
+                call_status = (
+                    f"{provider_name}::{tool_name} call... "
+                    f"[{tool_call_count}]"
+                )
                 try:
                     arguments = json.loads(function.get("arguments") or "{}")
                     if not isinstance(arguments, dict):
                         raise ValueError("Tool arguments must be a JSON object.")
                     if binding is None:
                         raise ValueError("The requested tool is not enabled.")
+                    start_status = self._dependency_start_status(binding)
+                    dependency_ready = False
+                    if start_status:
+                        yield {"type": "status", "text": start_status}
+                        self._ensure_dependency(binding)
+                        dependency_ready = True
+                    yield {"type": "status", "text": call_status}
                     result_text = self._execute(
                         binding,
                         arguments,
                         max_result_chars,
+                        dependency_ready=dependency_ready,
                     )
                     consecutive_failures = 0
                     if (
@@ -656,7 +837,7 @@ class ChatToolService:
                 usage[key] += int(final_usage.get(key, 0) or 0)
             yield {
                 "type": "complete",
-                "response": final_text,
+                "response": self._with_tool_previews(final_text, transcript),
                 "usage": usage,
                 "transcript": transcript,
             }

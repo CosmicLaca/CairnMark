@@ -919,7 +919,20 @@
     };
 
     const downloadExternalImage = async (url, button, suggestedName = "") => {
-        const endpoint = `${externalImageDownloadUrl}?url=${encodeURIComponent(url)}`;
+        let parsedUrl = null;
+        try {
+            parsedUrl = new URL(url, window.location.origin);
+        } catch (error) {
+            parsedUrl = null;
+        }
+        const isLocalPreview = Boolean(
+            parsedUrl
+            && parsedUrl.origin === window.location.origin
+            && parsedUrl.pathname.startsWith("/chat/preview/")
+        );
+        const endpoint = isLocalPreview
+            ? `${parsedUrl.pathname}?download=1`
+            : `${externalImageDownloadUrl}?url=${encodeURIComponent(url)}`;
         const filename = suggestedName || externalImageFilename(url);
         button.disabled = true;
         try {

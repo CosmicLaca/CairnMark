@@ -11,6 +11,9 @@ from models.media_storage import MEDIA, normalize_external_locator
 
 
 URL_PATTERN = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
+LOCAL_PREVIEW_PATTERN = re.compile(
+    r"/chat/preview/([A-Za-z0-9][A-Za-z0-9._-]*)"
+)
 RAW_FILE_PATTERN = re.compile(
     r"(?:file_name|file_path|filename):<\|\"\|>([^<>]+)<\|\"\|>",
     re.IGNORECASE,
@@ -80,6 +83,23 @@ class ChatMediaService:
                 "name": url,
                 "category": "external",
             })
+        return records
+
+    @staticmethod
+    def local_preview_records(content):
+        """Extract same-origin preview images embedded in assistant Markdown."""
+        records = []
+        seen = set()
+        for filename in LOCAL_PREVIEW_PATTERN.findall(str(content or "")):
+            if filename in seen:
+                continue
+            seen.add(filename)
+            record = ChatMediaService.preview_record(
+                filename,
+                media_type="image",
+            )
+            if record:
+                records.append(record)
         return records
 
     @staticmethod
@@ -196,6 +216,7 @@ class ChatMediaService:
             if message.get("role") != "assistant":
                 continue
             records.extend(self.external_records(message.get("content")))
+            records.extend(self.local_preview_records(message.get("content")))
             try:
                 request_body = json.loads(message.get("request_body") or "{}")
                 transcript = request_body.get("messages") or []

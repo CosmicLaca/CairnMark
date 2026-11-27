@@ -27,6 +27,8 @@ from services.mcp_dependencies import MCP_DEPENDENCIES, START_COMMAND_KEY
 DEFAULT_MCP_TIMEOUT_MS = 10000
 DEPENDENCY_HEALTH_TIMEOUT_MS = 3000
 DEPENDENCY_START_TIMEOUT_SECONDS = 60
+COMFYUI_GENERATION_TIMEOUT_SECONDS = 300
+COMFYUI_IMAGE_MAX_BYTES = 100 * 1024 * 1024
 MCP_CONFIG_PATH = PROJECT_ROOT / "services" / "mcp.json"
 OPENCODE_CONFIG_PATH = Path.home() / ".config" / "opencode" / "opencode.json"
 MCP_DEFAULT_ENDPOINTS = {
@@ -181,10 +183,13 @@ class McpServiceRegistry:
         except ValueError:
             timeout_ms = DEPENDENCY_HEALTH_TIMEOUT_MS
 
-        if normalized_name == "searxng":
-            endpoint = settings.get("endpoint") or MCP_DEFAULT_ENDPOINTS["searxng"]
+        if normalized_name in {"searxng", "comfyui"}:
+            endpoint = (
+                settings.get("endpoint")
+                or MCP_DEFAULT_ENDPOINTS[normalized_name]
+            )
             online, status_code = self._check_http_endpoint(
-                "searxng",
+                normalized_name,
                 endpoint,
                 timeout_ms,
             )
@@ -259,6 +264,111 @@ class McpServiceRegistry:
     def stop_dependency(self, name, settings=None):
         """Stop a dependency previously launched by this CairnMark process."""
         return self.dependency_manager.stop(name, settings or {})
+
+    def wait_for_comfyui_image(
+        self,
+        prompt_id,
+        settings=None,
+        timeout_seconds=COMFYUI_GENERATION_TIMEOUT_SECONDS,
+    ):
+        """Wait for one ComfyUI prompt and return its first image unchanged."""
+        prompt_id = str(prompt_id or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9-]{1,64}", prompt_id):
+            return None
+        settings = settings if isinstance(settings, dict) else {}
+        endpoint = str(
+            settings.get("endpoint") or MCP_DEFAULT_ENDPOINTS["comfyui"]
+        ).strip().rstrip("/")
+        parsed = urllib.parse.urlsplit(endpoint)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return None
+        try:
+            timeout_seconds = max(1, min(float(timeout_seconds), 900))
+        except (TypeError, ValueError):
+            timeout_seconds = COMFYUI_GENERATION_TIMEOUT_SECONDS
+        deadline = time.monotonic() + timeout_seconds
+        history_url = f"{endpoint}/history/{urllib.parse.quote(prompt_id)}"
+
+        while time.monotonic() < deadline:
+            try:
+                with self.opener(history_url, timeout=3) as response:
+                    history = json.load(response)
+            except (
+                OSError,
+                TimeoutError,
+                ValueError,
+                urllib.error.URLError,
+            ):
+                time.sleep(0.25)
+                continue
+            record = history.get(prompt_id) if isinstance(history, dict) else None
+            if not isinstance(record, dict):
+                time.sleep(0.25)
+                continue
+            outputs = record.get("outputs")
+            if isinstance(outputs, dict):
+                for output in outputs.values():
+                    images = output.get("images") if isinstance(output, dict) else None
+                    for image in images if isinstance(images, list) else []:
+                        if not isinstance(image, dict) or not image.get("filename"):
+                            continue
+                        query = urllib.parse.urlencode({
+                            "filename": str(image["filename"]),
+                            "subfolder": str(image.get("subfolder") or ""),
+                            "type": str(image.get("type") or "output"),
+                        })
+                        try:
+                            with self.opener(
+                                f"{endpoint}/view?{query}",
+                                timeout=10,
+                            ) as response:
+                                content = response.read(
+                                    COMFYUI_IMAGE_MAX_BYTES + 1
+                                )
+                                content_type = str(
+                                    response.headers.get("Content-Type", "")
+                                ).split(";", 1)[0].strip().lower()
+                        except (
+                            OSError,
+                            TimeoutError,
+                            urllib.error.URLError,
+                        ):
+                            return None
+                        if (
+                            not content
+                            or len(content) > COMFYUI_IMAGE_MAX_BYTES
+                            or content_type not in {
+                                "image/gif",
+                                "image/jpeg",
+                                "image/png",
+                                "image/webp",
+                            }
+                        ):
+                            return None
+                        filename = str(image["filename"])
+                        return {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": (
+                                        "ComfyUI generation completed. "
+                                        f"Output: {filename}. The image is attached; "
+                                        "do not submit the same generation again."
+                                    ),
+                                },
+                                {
+                                    "type": "image",
+                                    "data": base64.b64encode(content).decode("ascii"),
+                                    "mimeType": content_type,
+                                },
+                            ],
+                            "isError": False,
+                        }
+            status = record.get("status")
+            if isinstance(status, dict) and status.get("completed"):
+                return None
+            time.sleep(0.25)
+        return None
 
     def configured(self):
         """Return whether the CairnMark MCP configuration already exists."""
