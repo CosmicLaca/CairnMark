@@ -1116,6 +1116,7 @@
     overflow-wrap: anywhere;
     white-space: normal;
     word-break: break-word;
+    vertical-align: top;
 }
 
 .chat-content.markdown-content th,
