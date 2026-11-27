@@ -359,19 +359,43 @@
                 hidden
               ></div>
             </div>
-            <button
-              type="button"
-              class="chat-save-original-switch chat-stream-switch"
-              data-chat-stream-responses
-              role="switch"
-              aria-checked="{{ 'true' if chat_attachment_settings.stream_responses else 'false' }}"
-              aria-label="Stream responses"
-            >
-              <span class="chat-save-original-track" aria-hidden="true">
-                <span class="chat-save-original-knob"></span>
-              </span>
-              <span class="chat-save-original-tooltip" role="tooltip">Stream responses</span>
-            </button>
+            <div class="chat-response-controls">
+              <div class="chat-reasoning-control" data-chat-reasoning-control hidden>
+                <button
+                  type="button"
+                  class="chat-save-original-switch"
+                  data-chat-reasoning
+                  role="switch"
+                  aria-checked="false"
+                  aria-label="Reasoning"
+                >
+                  <span class="chat-save-original-track" aria-hidden="true">
+                    <span class="chat-save-original-knob"></span>
+                  </span>
+                  <span class="chat-save-original-tooltip" role="tooltip">Reasoning</span>
+                </button>
+                <select
+                  class="chat-reasoning-effort"
+                  data-chat-reasoning-effort
+                  aria-label="Reasoning effort"
+                  title="Reasoning effort"
+                  hidden
+                ></select>
+              </div>
+              <button
+                type="button"
+                class="chat-save-original-switch chat-stream-switch"
+                data-chat-stream-responses
+                role="switch"
+                aria-checked="{{ 'true' if chat_attachment_settings.stream_responses else 'false' }}"
+                aria-label="Stream responses"
+              >
+                <span class="chat-save-original-track" aria-hidden="true">
+                  <span class="chat-save-original-knob"></span>
+                </span>
+                <span class="chat-save-original-tooltip" role="tooltip">Stream responses</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

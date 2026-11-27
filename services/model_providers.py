@@ -263,6 +263,7 @@ LOCAL_MODEL_PARAMETER_KEYS = frozenset(
         "presence_penalty",
         "repeat_last_n",
         "repeat_penalty",
+        "reasoning_effort",
         "stop",
         "top_n_sigma",
         "typical_p",
@@ -2055,7 +2056,12 @@ class ModelProviderService:
         if "modalities" in capability_data:
             full["modalities"] = capability_data["modalities"] or {}
         if "chat_template_caps" in capability_data:
-            full["chat_template_caps"] = capability_data["chat_template_caps"] or {}
+            saved_caps = full.get("chat_template_caps")
+            saved_caps = dict(saved_caps) if isinstance(saved_caps, dict) else {}
+            incoming_caps = capability_data["chat_template_caps"]
+            if isinstance(incoming_caps, dict):
+                saved_caps.update(incoming_caps)
+            full["chat_template_caps"] = saved_caps
         if "tier" in capability_data:
             full["tier"] = capability_data["tier"] or "Free"
         self.parameters.value(parameter_key, full)
@@ -2381,11 +2387,19 @@ class ModelProviderService:
             return {}
         spec = PROVIDER_SPECS[provider]
         mapping = dict(spec.extra_body_parameters)
-        return {
+        result = {
             mapping.get(key, key): value
             for key, value in extra_parameters.items()
             if key in LOCAL_MODEL_PARAMETER_KEYS and value is not None
         }
+        if (
+            provider == "llama.cpp"
+            and isinstance(extra_parameters.get("enable_thinking"), bool)
+        ):
+            result["chat_template_kwargs"] = {
+                "enable_thinking": extra_parameters["enable_thinking"]
+            }
+        return result
 
     def chat_completion_with_params(
         self, provider, model, messages, temperature, top_p, top_k, max_tokens=None,

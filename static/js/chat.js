@@ -150,6 +150,9 @@
     const saveOriginalSwitch = document.querySelector("[data-chat-save-original]");
     const attachAudioSwitch = document.querySelector("[data-chat-attach-audio]");
     const streamResponsesSwitch = document.querySelector("[data-chat-stream-responses]");
+    const reasoningControl = document.querySelector("[data-chat-reasoning-control]");
+    const reasoningSwitch = document.querySelector("[data-chat-reasoning]");
+    const reasoningEffort = document.querySelector("[data-chat-reasoning-effort]");
     const fpsControl = document.querySelector("[data-chat-video-fps-control]");
     const fpsSlider = document.querySelector("[data-chat-video-fps]");
     const fpsValue = document.querySelector("[data-chat-video-fps-value]");
@@ -2133,6 +2136,7 @@
         }
 
         const modelParams = collectMoreParams();
+        Object.assign(modelParams, selectedReasoningParameters());
         if (Object.keys(modelParams).length > 0) {
             requestBody.model_params = modelParams;
         }
@@ -3036,6 +3040,50 @@
         updateToolCapabilityStatus();
         toolCapabilityEl.hidden = false;
         if (toolCapabilityControl) toolCapabilityControl.hidden = false;
+    };
+
+    const renderReasoningCapability = (capabilities, provider) => {
+        if (!reasoningControl || !reasoningSwitch || !reasoningEffort) return;
+        reasoningControl.hidden = true;
+        reasoningSwitch.setAttribute("aria-checked", "false");
+        reasoningEffort.hidden = true;
+        reasoningEffort.replaceChildren();
+
+        if (provider !== "llama.cpp"
+            || !capabilities
+            || capabilities.supports_reasoning_effort !== true) {
+            return;
+        }
+
+        const levels = Array.isArray(capabilities.reasoning_effort_levels)
+            ? [...new Set(capabilities.reasoning_effort_levels
+                .map((level) => String(level || "").trim())
+                .filter((level) => level && level.toLowerCase() !== "none"))]
+            : [];
+        levels.forEach((level) => {
+            const option = document.createElement("option");
+            option.value = level;
+            option.textContent = level;
+            reasoningEffort.appendChild(option);
+        });
+        reasoningControl.hidden = false;
+    };
+
+    const selectedReasoningParameters = () => {
+        if (!reasoningControl || reasoningControl.hidden || !reasoningSwitch) {
+            return {};
+        }
+        const enabled = reasoningSwitch.getAttribute("aria-checked") === "true";
+        if (!enabled) {
+            return {reasoning_effort: "none", enable_thinking: false};
+        }
+        const selectedEffort = reasoningEffort && !reasoningEffort.hidden
+            ? String(reasoningEffort.value || "").trim()
+            : "";
+        return {
+            ...(selectedEffort ? {reasoning_effort: selectedEffort} : {}),
+            enable_thinking: true,
+        };
     };
 
     const subserviceDisplayName = (serviceName, subserviceName) => {
@@ -5383,6 +5431,7 @@
         const requestSeq = ++mediaUploadsSeq;
         renderMediaUploads(null);
         renderToolCapability(null);
+        renderReasoningCapability(null, provider);
         chatContext.setMaxTokens(null);
         sessionCtxMode = null;
         contextStatus = provider === "llama.cpp" ? "checking" : "unavailable";
@@ -5402,6 +5451,10 @@
             if (requestSeq !== mediaUploadsSeq) return;
             renderMediaUploads(payload && payload.modalities);
             renderToolCapability(payload && payload.chat_template_caps);
+            renderReasoningCapability(
+                payload && payload.chat_template_caps,
+                provider
+            );
             const resolvedMode = (payload && payload.ctx_mode) || null;
             chatContext.setMaxTokens(payload && payload.n_ctx);
             sessionCtxMode = resolvedMode;
@@ -5423,6 +5476,7 @@
             if (requestSeq !== mediaUploadsSeq) return;
             renderMediaUploads(null);
             renderToolCapability(null);
+            renderReasoningCapability(null, provider);
             chatContext.setMaxTokens(null);
             contextStatus = "unavailable";
             updateParameterCacheState(provider === "llama.cpp" ? "missing_params" : null);
@@ -6493,6 +6547,13 @@
     streamResponsesSwitch?.addEventListener("click", () => {
         const next = streamResponsesSwitch.getAttribute("aria-checked") !== "true";
         streamResponsesSwitch.setAttribute("aria-checked", next ? "true" : "false");
+    });
+    reasoningSwitch?.addEventListener("click", () => {
+        const next = reasoningSwitch.getAttribute("aria-checked") !== "true";
+        reasoningSwitch.setAttribute("aria-checked", next ? "true" : "false");
+        if (reasoningEffort) {
+            reasoningEffort.hidden = !next || reasoningEffort.options.length === 0;
+        }
     });
     updateTokenUsage();
     sendBtn?.addEventListener("click", handleSend);
