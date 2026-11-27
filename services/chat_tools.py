@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import logging
 import re
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -9,6 +10,9 @@ from dataclasses import dataclass
 from models.mcp_settings import DEFAULT_TOOL_GLOBAL_SETTINGS, MCP_SETTINGS
 from services.chat_previews import ChatPreviewStore
 from services.mcp_services import McpServiceRegistry
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 MAX_TOOL_ROUNDS = DEFAULT_TOOL_GLOBAL_SETTINGS["max_rounds"]
@@ -534,6 +538,12 @@ class ChatToolService:
 
     def _ensure_dependency(self, binding):
         """Start and validate an API required by one selected binding."""
+        dependency_owned = getattr(self.registry, "dependency_owned", None)
+        owned_before = (
+            bool(dependency_owned(binding.service))
+            if callable(dependency_owned)
+            else False
+        )
         ensure_dependency = getattr(self.registry, "ensure_dependency", None)
         if callable(ensure_dependency):
             dependency = ensure_dependency(binding.service, binding.settings)
@@ -545,6 +555,28 @@ class ChatToolService:
             if not online:
                 raise RuntimeError(
                     f"Required API for {binding.service} is not available."
+                )
+            owned_after = (
+                bool(dependency_owned(binding.service))
+                if callable(dependency_owned)
+                else False
+            )
+            return not owned_before and owned_after
+        return False
+
+    def _stop_started_dependencies(self, dependencies):
+        """Stop only APIs first launched for the completed chat request."""
+        stop_dependency = getattr(self.registry, "stop_dependency", None)
+        if not callable(stop_dependency):
+            return
+        for service, settings in reversed(list(dependencies.items())):
+            try:
+                stop_dependency(service, settings)
+            except Exception:  # noqa: BLE001
+                LOGGER.warning(
+                    "Could not stop request-owned MCP dependency %s",
+                    service,
+                    exc_info=True,
                 )
 
     def _dependency_start_status(self, binding):
@@ -668,17 +700,22 @@ class ChatToolService:
             None,
         )
         context = session_scope() if callable(session_scope) else nullcontext()
-        with context:
-            yield from self._iter_complete(
-                provider,
-                model,
-                messages,
-                bindings,
-                request_parameters,
-                extra_parameters,
-                attachments,
-                documents,
-            )
+        started_dependencies = {}
+        try:
+            with context:
+                yield from self._iter_complete(
+                    provider,
+                    model,
+                    messages,
+                    bindings,
+                    request_parameters,
+                    extra_parameters,
+                    attachments,
+                    documents,
+                    started_dependencies,
+                )
+        finally:
+            self._stop_started_dependencies(started_dependencies)
 
     def _iter_complete(
         self,
@@ -690,8 +727,12 @@ class ChatToolService:
         extra_parameters,
         attachments=None,
         documents=None,
+        started_dependencies=None,
     ):
         """Yield live tool statuses and one bounded final completion."""
+        started_dependencies = (
+            started_dependencies if started_dependencies is not None else {}
+        )
         by_alias = {binding.alias: binding for binding in bindings}
         tools = [binding.definition for binding in bindings]
         transcript = [dict(message) for message in messages]
@@ -766,17 +807,19 @@ class ChatToolService:
                     if binding is None:
                         raise ValueError("The requested tool is not enabled.")
                     start_status = self._dependency_start_status(binding)
-                    dependency_ready = False
                     if start_status:
                         yield {"type": "status", "text": start_status}
-                        self._ensure_dependency(binding)
-                        dependency_ready = True
+                    if self._ensure_dependency(binding):
+                        started_dependencies.setdefault(
+                            binding.service,
+                            dict(binding.settings),
+                        )
                     yield {"type": "status", "text": call_status}
                     result_text = self._execute(
                         binding,
                         arguments,
                         max_result_chars,
-                        dependency_ready=dependency_ready,
+                        dependency_ready=True,
                     )
                     consecutive_failures = 0
                     if (
@@ -798,6 +841,7 @@ class ChatToolService:
                             relaxed_binding,
                             relaxed_arguments,
                             max_result_chars,
+                            dependency_ready=True,
                         )
                         consecutive_failures = 0
                 except Exception as error:  # noqa: BLE001

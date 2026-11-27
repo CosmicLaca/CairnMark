@@ -11,6 +11,7 @@ from pathlib import Path
 START_COMMAND_KEY = "dependency_start_command"
 STOP_COMMAND_KEY = "dependency_stop_command"
 STOP_TIMEOUT_SECONDS = 30
+INTERRUPT_TIMEOUT_SECONDS = 10
 
 
 class McpDependencyManager:
@@ -87,6 +88,11 @@ class McpDependencyManager:
             }
         return True
 
+    def owns(self, service_name):
+        """Return whether CairnMark launched this dependency process."""
+        with self._lock:
+            return service_name in self._managed
+
     def stop(self, service_name, settings=None):
         """Stop one dependency only when CairnMark previously launched it."""
         with self._lock:
@@ -95,16 +101,37 @@ class McpDependencyManager:
             return False
         saved_settings = dict(managed["settings"])
         saved_settings.update(settings or {})
-        try:
-            stop_path = self._command_path(saved_settings, STOP_COMMAND_KEY)
-            if stop_path is not None:
+        stop_path = self._command_path(saved_settings, STOP_COMMAND_KEY)
+        if stop_path is not None:
+            try:
                 self._runner(
                     self._command(stop_path),
                     **self._run_options(stop_path),
                 )
-        finally:
-            self._terminate_process_tree(managed["process"])
+            finally:
+                self._terminate_process_tree(managed["process"])
+        else:
+            self._interrupt_process_tree(managed["process"])
         return True
+
+    def _interrupt_process_tree(self, process):
+        """Send a Ctrl+C-style interrupt before using forced termination."""
+        if process is None or process.poll() is not None:
+            return
+        try:
+            if os.name == "nt":
+                process.send_signal(signal.CTRL_BREAK_EVENT)
+            else:
+                os.killpg(process.pid, signal.SIGINT)
+            process.wait(timeout=INTERRUPT_TIMEOUT_SECONDS)
+            return
+        except (
+            AttributeError,
+            OSError,
+            ProcessLookupError,
+            subprocess.TimeoutExpired,
+        ):
+            self._terminate_process_tree(process)
 
     def _terminate_process_tree(self, process):
         if process is None or process.poll() is not None:
@@ -124,6 +151,13 @@ class McpDependencyManager:
             os.killpg(process.pid, signal.SIGTERM)
         except ProcessLookupError:
             return
+        try:
+            process.wait(timeout=INTERRUPT_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                return
 
     def shutdown(self):
         """Stop every dependency launched during this application process."""

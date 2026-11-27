@@ -261,6 +261,10 @@ class McpServiceRegistry:
         self.dependency_manager.stop(name, settings or {})
         return status
 
+    def dependency_owned(self, name):
+        """Return whether this process launched the service dependency."""
+        return self.dependency_manager.owns(name)
+
     def stop_dependency(self, name, settings=None):
         """Stop a dependency previously launched by this CairnMark process."""
         return self.dependency_manager.stop(name, settings or {})

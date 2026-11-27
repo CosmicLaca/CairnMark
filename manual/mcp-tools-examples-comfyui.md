@@ -54,11 +54,14 @@ enabled ComfyUI tool is actually called:
    starts it without opening another terminal window and displays
    **Starting ComfyUI...** in the assistant activity label.
 3. CairnMark waits for `/system_stats` before making the MCP tool call.
-4. Only a process launched by the current CairnMark process is eligible for
-   automatic shutdown.
-5. If an API stop command is saved, CairnMark runs it before terminating its
-   owned process tree. If the stop field is empty, it terminates only the
-   process tree it launched.
+4. A dependency started for the request remains available across all tool-call
+   rounds in that request, then stops after the assistant response or after an
+   error.
+5. Only a process launched by CairnMark for that request is eligible for this
+   automatic shutdown. A service that was already online remains untouched.
+6. If an API stop command is saved, CairnMark runs it before terminating its
+   owned process tree. If the stop field is empty, it sends a Ctrl+C-style
+   interrupt to the process group and uses forced termination only as fallback.
 
 In the automatic-tool-scope quick menu, an offline service with a configured
 start command remains selectable and uses the auto-start visual state. An
@@ -105,8 +108,9 @@ SD 1.x test with an exact checkpoint:
 > Generate one 512×512 image using ComfyUI. Use checkpoint
 > `BestAll\photoart_V30.safetensors`, 15 steps, CFG 6, Euler sampler, normal
 > scheduler, and seed 12345. Prompt: “a small stone lighthouse on a moonlit
-> coast, cinematic photograph.” Wait for completion and display the resulting
-> image.
+> coast, cinematic photograph.” Wait for completion and display the resulting image.
+> 
+> <img src="tool-comfy-01.jpg" width="90%" alt="CairnMark chat workspace">
 
 Different-seed test:
 
@@ -115,14 +119,18 @@ Different-seed test:
 > scheduler, and seed 54321. Prompt: “a small stone lighthouse on a stormy
 > coast at sunset, cinematic photograph.” Wait for completion and display the
 > resulting image.
+> 
+> <img src="tool-comfy-02.jpg" width="90%" alt="CairnMark chat workspace">
 
 SDXL test, replacing the placeholder with an exact installed filename:
 
-> Generate one 1024×1024 image using ComfyUI. Use checkpoint
+> Generate one 1024×1024 image using ComfyUI. Use SDXL checkpoint
 > `[EXACT_SDXL_CHECKPOINT]`, 20 steps, CFG 6, Euler sampler, normal scheduler,
-> and seed 24680. Prompt: “an observatory above a sea of clouds at sunrise,
+> and random seed. Prompt: “an observatory above a sea of clouds at sunrise,
 > cinematic architectural photograph.” Wait for completion and display the
 > resulting image.
+> 
+> <img src="tool-comfy-03.jpg" width="90%" alt="CairnMark chat workspace">
 
 An explicit seed makes a generation reproducible. Submitting the same graph,
 prompt, checkpoint, and seed again allows ComfyUI to reuse its cached nodes. A
@@ -139,12 +147,15 @@ SDXL candidates:
 > that appear to be SDXL models. Return at most 10 exact checkpoint filenames,
 > sorted alphabetically. Do not list LoRAs, VAEs, embeddings, or other model
 > types. Do not generate an image.
+> 
+> <img src="tool-comfy-04.jpg" width="90%" alt="CairnMark chat workspace">
 
 SD 1.x candidates:
 
-> List at most 10 installed ComfyUI checkpoints that appear to use the SD 1.x
-> architecture. Return exact checkpoint filenames only. Do not generate
-> anything.
+> List at most 5 installed ComfyUI checkpoints that appear to use the Stable Diffusion 1.5 architecture from the Photo folder. 
+> Small ~2 GB files only. Return exact checkpoint filenames only. Do not generate anything.
+> 
+> <img src="tool-comfy-05.jpg" width="90%" alt="CairnMark chat workspace">
 
 Grouped candidates:
 
@@ -152,6 +163,8 @@ Grouped candidates:
 > SD 2.x, SDXL, Pony/Illustrious, Flux, and Unknown. Return at most 5 exact
 > filenames per group. Do not include LoRAs or other model types and do not
 > generate anything.
+> 
+> <img src="tool-comfy-06.jpg" width="90%" alt="CairnMark chat workspace">
 
 `list_local_models` primarily returns filenames and model categories. An
 architecture inferred from a filename is only a likely classification. For a
@@ -162,10 +175,16 @@ to verify no more than five exact filenames.
 
 Temporarily enable `get_defaults` to save a frequently used checkpoint:
 
-> Set the persistent ComfyUI generation defaults to checkpoint
-> `BestAll\photoart_V30.safetensors`, width 512, height 512, 15 steps, CFG 6,
-> Euler sampler, and normal scheduler. Show the saved values and do not generate
-> an image.
+> Set the persistent ComfyUI generation defaults to checkpoint BestAll\photoart_V30.safetensors, 
+> width 768, height 512, 25 steps, CFG 6, Euler sampler, and normal scheduler. 
+> Show the saved values and do not generate an image.
+> 
+> <img src="tool-comfy-07.jpg" width="90%" alt="CairnMark chat workspace">
+>
+> ---
+> 
+> <img src="tool-comfy-08.jpg" width="90%" alt="CairnMark chat workspace">
+
 
 Explicit values in a later `generate_image` call override saved defaults.
 
