@@ -1523,6 +1523,22 @@
         return button;
     };
 
+    const requestReasoningEffort = (requestBody) => {
+        if (!requestBody) return "";
+        let body = requestBody;
+        if (typeof body === "string") {
+            try {
+                body = JSON.parse(body);
+            } catch (_error) {
+                return "";
+            }
+        }
+        if (!body || typeof body !== "object") return "";
+        const effort = String(body.reasoning_effort || "").trim();
+        const enabled = body.chat_template_kwargs?.enable_thinking === true;
+        return enabled && effort && effort.toLowerCase() !== "none" ? effort : "";
+    };
+
     const appendMessage = (role, content, meta) => {
         if (!historyEl) return;
         const div = document.createElement("div");
@@ -1625,6 +1641,34 @@
                 bodySvg.appendChild(bodyPath);
                 bodyIcon.appendChild(bodySvg);
                 metaRow.appendChild(bodyIcon);
+            }
+            const reasoningEffort = requestReasoningEffort(meta.request_body);
+            if (reasoningEffort) {
+                const reasoningIcon = document.createElement("span");
+                reasoningIcon.className = "chat-reasoning-used-icon";
+                reasoningIcon.title = reasoningEffort;
+                reasoningIcon.setAttribute(
+                    "aria-label",
+                    `Reasoning effort: ${reasoningEffort}`,
+                );
+                const reasoningSvg = document.createElementNS(
+                    "http://www.w3.org/2000/svg",
+                    "svg",
+                );
+                reasoningSvg.setAttribute("viewBox", "0 0 24 24");
+                reasoningSvg.setAttribute("aria-hidden", "true");
+                reasoningSvg.setAttribute("focusable", "false");
+                const reasoningPath = document.createElementNS(
+                    "http://www.w3.org/2000/svg",
+                    "path",
+                );
+                reasoningPath.setAttribute(
+                    "d",
+                    "M12 5.5A3.5 3.5 0 0 0 5.5 7.3a3.5 3.5 0 0 0-.7 6.4A3.5 3.5 0 0 0 9 18.9a3 3 0 0 0 3-3V5.5Zm0 0a3.5 3.5 0 0 1 6.5 1.8 3.5 3.5 0 0 1 .7 6.4 3.5 3.5 0 0 1-4.2 5.2 3 3 0 0 1-3-3M8 8.5h1.5A2.5 2.5 0 0 1 12 11m4-2.5h-1.5A2.5 2.5 0 0 0 12 11m-4 4h1a3 3 0 0 0 3-3m4 3h-1a3 3 0 0 1-3-3",
+                );
+                reasoningSvg.appendChild(reasoningPath);
+                reasoningIcon.appendChild(reasoningSvg);
+                metaRow.appendChild(reasoningIcon);
             }
             const usedTools = Array.isArray(meta.used_tools)
                 ? [...new Set(meta.used_tools.map(String).filter(Boolean))]
@@ -1765,6 +1809,12 @@
             }
         }
 
+        if (role === "user") {
+            const separator = document.createElement("hr");
+            separator.className = "chat-turn-separator";
+            separator.setAttribute("aria-hidden", "true");
+            historyEl.appendChild(separator);
+        }
         historyEl.appendChild(div);
         addChatLocalFiles(meta?.local_attachments || []);
         syncEmptyState();

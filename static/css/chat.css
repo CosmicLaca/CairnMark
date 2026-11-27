@@ -390,6 +390,14 @@
     box-shadow: 0 5px 14px rgba(34, 42, 39, 0.035);
 }
 
+.chat-turn-separator {
+    width: 100%;
+    height: 1px;
+    margin: 4px 0 -4px;
+    border: 0;
+    background: rgba(37, 107, 96, 0.14);
+}
+
 .chat-message--user {
     border-color: rgba(37, 107, 96, 0.28);
     background: rgba(111, 214, 195, 0.1);
@@ -670,6 +678,24 @@
     margin: 0.75rem 0 0.55rem;
     border: 0;
     border-top: 1px solid var(--line);
+}
+
+.chat-reasoning-used-icon {
+    display: inline-flex;
+    align-items: center;
+    color: #91a8b5;
+    line-height: 1;
+    cursor: help;
+}
+
+.chat-reasoning-used-icon svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: #256b60;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
 .chat-meta,

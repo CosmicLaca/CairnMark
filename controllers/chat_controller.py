@@ -190,7 +190,15 @@ class ChatController:
     def context(self):
         settings = CHAT_SETTINGS.form()
         self.media.ensure_backfilled(self.history)
-        messages = self.history.messages()
+        messages = [
+            {
+                **message,
+                "reasoning_effort_used": self._reasoning_effort_used(
+                    message.get("request_body")
+                ),
+            }
+            for message in self.history.messages()
+        ]
         attachment_settings = CHAT_SETTINGS.group("attachments")
         return {
             "chat_settings": settings,
@@ -212,6 +220,29 @@ class ChatController:
             "saved_chats": self.history.saved("list", "chat"),
             "saved_system_prompts": self.history.saved("list", "system_prompt"),
         }
+
+    @staticmethod
+    def _reasoning_effort_used(request_body):
+        """Return the reasoning level only when thinking was sent as enabled."""
+        if not request_body:
+            return ""
+        try:
+            body = (
+                json.loads(request_body)
+                if isinstance(request_body, str)
+                else request_body
+            )
+        except (TypeError, ValueError):
+            return ""
+        if not isinstance(body, dict):
+            return ""
+        template_kwargs = body.get("chat_template_kwargs")
+        if not isinstance(template_kwargs, dict):
+            return ""
+        effort = str(body.get("reasoning_effort") or "").strip()
+        if template_kwargs.get("enable_thinking") is not True:
+            return ""
+        return effort if effort and effort.lower() != "none" else ""
 
     def _parse_request(self):
         return self.requests.parse(request.get_json(silent=True) or {})

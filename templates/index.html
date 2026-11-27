@@ -130,6 +130,9 @@
         <p>Choose an active model in the setup panel, then write the first message below.</p>
       </div>
       {% for message in chat_messages %}
+        {% if message.role == 'user' %}
+        <hr class="chat-turn-separator" aria-hidden="true">
+        {% endif %}
         <div class="chat-message chat-message--{{ message.role }}{% if message.compacted %} chat-message--compacted{% endif %}{% if message.is_error %} chat-message--error{% endif %}{% if message.role == 'user' and message.has_audio %} chat-message--has-audio{% endif %}"{% if message.role == 'assistant' %} data-message-id="{{ message.id }}" data-webpage-previews='{{ message.webpage_previews|tojson|forceescape }}' data-capture-webpage-previews="{% if not message.is_error and not message.webpage_previews and not message.webpage_preview_checked %}true{% else %}false{% endif %}"{% endif %}>
           <div class="chat-message-header">
             <span class="chat-role-group">
@@ -189,6 +192,13 @@
                 <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
                   <circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
                   <path fill="currentColor" d="M6 9l3 3 3-3"/>
+                </svg>
+              </span>
+              {% endif %}
+              {% if message.reasoning_effort_used %}
+              <span class="chat-reasoning-used-icon" title="{{ message.reasoning_effort_used }}" aria-label="Reasoning effort: {{ message.reasoning_effort_used }}">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M12 5.5A3.5 3.5 0 0 0 5.5 7.3a3.5 3.5 0 0 0-.7 6.4A3.5 3.5 0 0 0 9 18.9a3 3 0 0 0 3-3V5.5Zm0 0a3.5 3.5 0 0 1 6.5 1.8 3.5 3.5 0 0 1 .7 6.4 3.5 3.5 0 0 1-4.2 5.2 3 3 0 0 1-3-3M8 8.5h1.5A2.5 2.5 0 0 1 12 11m4-2.5h-1.5A2.5 2.5 0 0 0 12 11m-4 4h1a3 3 0 0 0 3-3m4 3h-1a3 3 0 0 1-3-3"/>
                 </svg>
               </span>
               {% endif %}
@@ -482,7 +492,7 @@
             {% for model in active_models %}
               <option value="{{ model.provider }}::{{ model.model }}"
                 {% if chat_settings.model_name|trim == (model.provider ~ "::" ~ model.model)|trim %}selected{% endif %}>
-                {{ model.label }}{% if model.modalities and model.modalities.vision %} 📷{% endif %}{% if model.modalities and model.modalities.video %} 🎥{% endif %}{% if model.modalities and model.modalities.audio %} 🎤{% endif %}{% if model.chat_template_caps and (model.chat_template_caps.supports_tools or model.chat_template_caps.supports_tool_calls) %} 🔧{% endif %}
+                {{ model.label }}{% if model.modalities and model.modalities.vision %} 📷{% endif %}{% if model.modalities and model.modalities.video %} 🎥{% endif %}{% if model.modalities and model.modalities.audio %} 🎤{% endif %}{% if model.chat_template_caps and (model.chat_template_caps.supports_tools or model.chat_template_caps.supports_tool_calls) %} 🔧{% endif %}{% if model.chat_template_caps and model.chat_template_caps.supports_reasoning_effort %} 🧠︎{% endif %}
               </option>
             {% endfor %}
           </select>

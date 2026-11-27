@@ -379,6 +379,8 @@ class ChatToolService:
                 },
                 key=str.casefold,
             )
+        if not names:
+            return system_prompt
         tool_list = "\n".join(f"- {name}" for name in names)
         template = settings["guidance_template"].strip()
         guidance = template.replace("{tools}", tool_list)
