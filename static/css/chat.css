@@ -1287,18 +1287,41 @@
 
 .chat-media-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-    align-items: center;
+    grid-template-columns: max-content minmax(53px, 1fr) max-content;
+    align-items: end;
     gap: 8px;
+    margin-bottom: 8px;
+}
+
+.chat-control-stack {
+    display: inline-flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 3px;
+}
+
+.chat-control-stack:has(> [hidden]) {
+    display: none;
+}
+
+.chat-control-label {
+    color: #58605f;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 0.58rem;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
 }
 
 .chat-response-controls {
     grid-column: 3;
     justify-self: end;
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     justify-content: flex-end;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 8px;
 }
 
@@ -1330,10 +1353,10 @@
 .chat-media-controls {
     grid-column: 1;
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     gap: 8px;
     min-width: 0;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
 }
 
 .chat-audio-player {
@@ -1599,9 +1622,10 @@
 
 .chat-media-uploads {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 6px;
-    margin: 8px 0 10px;
+    margin: 0;
+    align-items: flex-end;
 }
 
 .chat-media-icon {
@@ -1677,6 +1701,29 @@
     display: inline-flex;
     min-width: 0;
     align-items: center;
+    justify-self: center;
+}
+
+.chat-tool-control-label,
+.chat-quick-tool-label {
+    position: absolute;
+    bottom: 37px;
+    z-index: 1;
+}
+
+.chat-tool-control-label {
+    left: 17px;
+    transform: translateX(-50%);
+}
+
+.chat-quick-tool-label {
+    left: calc(50% + 24.5px);
+    display: none;
+    transform: translateX(-50%);
+}
+
+.chat-tool-capability-control.is-expanded .chat-quick-tool-label {
+    display: block;
 }
 
 .chat-tool-capability-control[hidden] {
@@ -1952,7 +1999,7 @@
 }
 
 .chat-media-row:has(.chat-tool-capability-control.is-expanded) {
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: max-content minmax(53px, 1fr) max-content;
 }
 
 .chat-tool-capability-control.is-expanded {
@@ -3638,14 +3685,13 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    margin-left: 4px;
-    width: 40%;
+    width: 100%;
+    height: 34px;
 }
 
-.chat-fps-label {
-    font-size: 0.75rem;
-    font-weight: 700;
-    color: #256b60;
+.chat-fps-stack {
+    width: 40%;
+    margin-left: 4px;
 }
 
 .chat-fps-slider {

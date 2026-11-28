@@ -298,51 +298,61 @@
             <div class="chat-media-controls">
               <div class="chat-media-uploads" data-chat-media-uploads hidden aria-label="Media uploads"></div>
               <div class="chat-audio-attachments" data-chat-audio-attachments hidden aria-label="Attached audio"></div>
-              <button
-                type="button"
-                class="chat-save-original-switch"
-                data-chat-save-original
-                role="switch"
-                aria-checked="{{ 'true' if chat_attachment_settings.save_original_media else 'false' }}"
-                aria-label="Save the original attachment for future preview."
-                hidden
-              >
-                <span class="chat-save-original-track" aria-hidden="true">
-                  <span class="chat-save-original-knob"></span>
-                </span>
-                <span class="chat-save-original-tooltip" role="tooltip">Save the original attachment for future preview.</span>
-              </button>
-              <button
-                type="button"
-                class="chat-save-original-switch"
-                data-chat-attach-audio
-                role="switch"
-                aria-checked="{{ 'true' if chat_attachment_settings.attach_audio else 'false' }}"
-                aria-label="Attach audio"
-                hidden
-              >
-                <span class="chat-save-original-track" aria-hidden="true">
-                  <span class="chat-save-original-knob"></span>
-                </span>
-                <span class="chat-save-original-tooltip" role="tooltip">Attach audio</span>
-              </button>
-              <div class="chat-fps-control" data-chat-video-fps-control hidden>
-                <span class="chat-fps-label">FPS:</span>
-                <input
-                  type="range"
-                  class="chat-fps-slider"
-                  data-chat-video-fps
-                  min="0"
-                  max="7"
-                  step="1"
-                  value="{{ chat_video_fps_index }}"
-                  title="Set FPS"
-                  aria-label="Set FPS"
+              <span class="chat-control-stack">
+                <span class="chat-control-label" aria-hidden="true">Save</span>
+                <button
+                  type="button"
+                  class="chat-save-original-switch"
+                  data-chat-save-original
+                  role="switch"
+                  aria-checked="{{ 'true' if chat_attachment_settings.save_original_media else 'false' }}"
+                  aria-label="Save the original attachment for future preview."
+                  hidden
                 >
-                <span class="chat-fps-value" data-chat-video-fps-value>{{ '%g'|format(chat_attachment_settings.video_fps) }}</span>
-              </div>
+                  <span class="chat-save-original-track" aria-hidden="true">
+                    <span class="chat-save-original-knob"></span>
+                  </span>
+                  <span class="chat-save-original-tooltip" role="tooltip">Save the original attachment for future preview.</span>
+                </button>
+              </span>
+              <span class="chat-control-stack">
+                <span class="chat-control-label" aria-hidden="true">Audio</span>
+                <button
+                  type="button"
+                  class="chat-save-original-switch"
+                  data-chat-attach-audio
+                  role="switch"
+                  aria-checked="{{ 'true' if chat_attachment_settings.attach_audio else 'false' }}"
+                  aria-label="Attach audio"
+                  hidden
+                >
+                  <span class="chat-save-original-track" aria-hidden="true">
+                    <span class="chat-save-original-knob"></span>
+                  </span>
+                  <span class="chat-save-original-tooltip" role="tooltip">Attach audio</span>
+                </button>
+              </span>
+              <span class="chat-control-stack chat-fps-stack">
+                <span class="chat-control-label" aria-hidden="true">Convert to FPS</span>
+                <span class="chat-fps-control" data-chat-video-fps-control hidden>
+                  <input
+                    type="range"
+                    class="chat-fps-slider"
+                    data-chat-video-fps
+                    min="0"
+                    max="7"
+                    step="1"
+                    value="{{ chat_video_fps_index }}"
+                    title="Set FPS"
+                    aria-label="Set FPS"
+                  >
+                  <span class="chat-fps-value" data-chat-video-fps-value>{{ '%g'|format(chat_attachment_settings.video_fps) }}</span>
+                </span>
+              </span>
             </div>
             <div class="chat-tool-capability-control" data-chat-tool-capability-control hidden>
+              <span class="chat-control-label chat-tool-control-label" aria-hidden="true">Tools</span>
+              <span class="chat-control-label chat-quick-tool-label" aria-hidden="true">Quick tool setting</span>
               <button type="button" class="chat-tool-capability" data-chat-tool-capability>
                 <span aria-hidden="true">🛠</span>
                 <span class="chat-media-tooltip" data-chat-tool-tooltip role="tooltip"></span>
@@ -392,32 +402,38 @@
                   hidden
                 ></select>
               </div>
-              <button
-                type="button"
-                class="chat-save-original-switch chat-stream-switch"
-                data-chat-stream-responses
-                role="switch"
-                aria-checked="{{ 'true' if chat_attachment_settings.stream_responses else 'false' }}"
-                aria-label="Stream responses"
-              >
-                <span class="chat-save-original-track" aria-hidden="true">
-                  <span class="chat-save-original-knob"></span>
-                </span>
-                <span class="chat-save-original-tooltip" role="tooltip">Stream responses</span>
-              </button>
-              <button
-                type="button"
-                class="chat-save-original-switch chat-prompt-cache-switch"
-                data-chat-prompt-caching
-                role="switch"
-                aria-checked="{{ 'true' if chat_attachment_settings.cache_prompt else 'false' }}"
-                aria-label="Prompt caching"
-              >
-                <span class="chat-save-original-track" aria-hidden="true">
-                  <span class="chat-save-original-knob"></span>
-                </span>
-                <span class="chat-save-original-tooltip" role="tooltip">Prompt caching</span>
-              </button>
+              <span class="chat-control-stack">
+                <span class="chat-control-label" aria-hidden="true">Stream</span>
+                <button
+                  type="button"
+                  class="chat-save-original-switch chat-stream-switch"
+                  data-chat-stream-responses
+                  role="switch"
+                  aria-checked="{{ 'true' if chat_attachment_settings.stream_responses else 'false' }}"
+                  aria-label="Stream responses"
+                >
+                  <span class="chat-save-original-track" aria-hidden="true">
+                    <span class="chat-save-original-knob"></span>
+                  </span>
+                  <span class="chat-save-original-tooltip" role="tooltip">Stream responses</span>
+                </button>
+              </span>
+              <span class="chat-control-stack">
+                <span class="chat-control-label" aria-hidden="true">Cache</span>
+                <button
+                  type="button"
+                  class="chat-save-original-switch chat-prompt-cache-switch"
+                  data-chat-prompt-caching
+                  role="switch"
+                  aria-checked="{{ 'true' if chat_attachment_settings.cache_prompt else 'false' }}"
+                  aria-label="Prompt caching"
+                >
+                  <span class="chat-save-original-track" aria-hidden="true">
+                    <span class="chat-save-original-knob"></span>
+                  </span>
+                  <span class="chat-save-original-tooltip" role="tooltip">Prompt caching</span>
+                </button>
+              </span>
             </div>
           </div>
         </div>
@@ -505,7 +521,7 @@
             {% for model in active_models %}
               <option value="{{ model.provider }}::{{ model.model }}"
                 {% if chat_settings.model_name|trim == (model.provider ~ "::" ~ model.model)|trim %}selected{% endif %}>
-                {{ model.label }}{% if model.modalities and model.modalities.vision %} 📷{% endif %}{% if model.modalities and model.modalities.video %} 🎥{% endif %}{% if model.modalities and model.modalities.audio %} 🎤{% endif %}{% if model.chat_template_caps and (model.chat_template_caps.supports_tools or model.chat_template_caps.supports_tool_calls) %} 🔧{% endif %}{% if model.chat_template_caps and model.chat_template_caps.supports_reasoning_effort %} 🧠︎{% endif %}
+                {{ model.label }}{% if model.modalities and model.modalities.vision %} 📷{% endif %}{% if model.modalities and model.modalities.video %} 🎥{% endif %}{% if model.modalities and model.modalities.audio %} 🎤{% endif %}{% if model.chat_template_caps and model.chat_template_caps.supports_tool_calls %} 🔧{% endif %}{% if model.chat_template_caps and model.chat_template_caps.supports_reasoning_effort %} 🧠︎{% endif %}
               </option>
             {% endfor %}
           </select>

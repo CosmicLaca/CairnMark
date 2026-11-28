@@ -317,11 +317,10 @@
                     });
                 }
 
-                // Show a tool icon when the model supports tools.
+                // A usable tool loop requires structured assistant tool calls.
                 const caps = model.chat_template_caps;
                 if (caps && typeof caps === 'object'
-                    && (caps.supports_tools === true
-                        || caps.supports_tool_calls === true)) {
+                    && caps.supports_tool_calls === true) {
                     const toolIcon = document.createElement('span');
                     toolIcon.className = 'model-modality-icon';
                     toolIcon.textContent = '🔧';

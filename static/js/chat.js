@@ -3015,16 +3015,23 @@
         key: "document",
         glyph: "📄",
         label: "Upload document",
+        shortLabel: "File",
         accept: ".txt,.md,.doc,.rtf,.docx",
         attachmentType: "document",
     };
     const MEDIA_UPLOAD_ICONS = [
-        { key: "vision", glyph: "📷", label: "Upload image", accept: "image/*", attachmentType: "image" },
-        { key: "video", glyph: "🎥", label: "Upload video", accept: ".mp4,video/mp4", attachmentType: "video" },
-        { key: "audio", glyph: "🎤", label: "Upload audio", accept: ".mp3,.wav,audio/mpeg,audio/wav", attachmentType: "audio" },
+        { key: "vision", glyph: "📷", label: "Upload image", shortLabel: "Image", accept: "image/*", attachmentType: "image" },
+        { key: "video", glyph: "🎥", label: "Upload video", shortLabel: "Video", accept: ".mp4,video/mp4", attachmentType: "video" },
+        { key: "audio", glyph: "🎤", label: "Upload audio", shortLabel: "Audio", accept: ".mp3,.wav,audio/mpeg,audio/wav", attachmentType: "audio" },
     ];
 
     const createMediaUploadButton = (item) => {
+        const control = document.createElement("span");
+        control.className = "chat-control-stack";
+        const shortLabel = document.createElement("span");
+        shortLabel.className = "chat-control-label";
+        shortLabel.setAttribute("aria-hidden", "true");
+        shortLabel.textContent = item.shortLabel;
         const button = document.createElement("button");
         button.type = "button";
         button.className = "chat-media-icon";
@@ -3054,7 +3061,8 @@
                 openMineruSettings();
             });
         }
-        return button;
+        control.append(shortLabel, button);
+        return control;
     };
 
     const renderMediaUploads = (modalities) => {
