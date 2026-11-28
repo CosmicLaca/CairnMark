@@ -52,7 +52,7 @@
 
     button.addEventListener("click", async () => {
         const confirmed = window.confirm(
-            "Update CairnMark now? The local server will restart automatically."
+            "Update CairnMark now? The local server will restart in a visible terminal."
         );
         if (!confirmed) return;
 

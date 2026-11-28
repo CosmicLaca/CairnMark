@@ -130,7 +130,6 @@ class ApplicationUpdateService:
         ]
         if dev_mode:
             command.append("--dev")
-
         popen_options = {
             "cwd": self.project_root,
             "stdin": subprocess.DEVNULL,

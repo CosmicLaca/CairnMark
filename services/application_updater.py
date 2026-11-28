@@ -55,6 +55,18 @@ def stop_parent(pid):
         except OSError:
             return
         time.sleep(0.1)
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(pid), "/F"],
+            check=False,
+            capture_output=True,
+            **hidden_process_options(),
+        )
+    else:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
 
 
 def git_pull(project_root, output):
@@ -125,7 +137,7 @@ def record_result(database, *, commit="", error=""):
 
 
 def restart(project_root, dev_mode, output):
-    """Start CairnMark again through its platform startup script."""
+    """Restart CairnMark with a visible Windows server terminal."""
     if os.name == "nt":
         start_script = project_root / "run.bat"
         command = [
@@ -143,15 +155,22 @@ def restart(project_root, dev_mode, output):
         command.append("--dev")
     options = {
         "cwd": project_root,
-        "stdin": subprocess.DEVNULL,
-        "stdout": output,
-        "stderr": subprocess.STDOUT,
         "close_fds": True,
     }
     if os.name == "nt":
-        options.update(hidden_process_options(new_process_group=True))
+        options["creationflags"] = (
+            subprocess.CREATE_NEW_CONSOLE
+            | subprocess.CREATE_NEW_PROCESS_GROUP
+        )
     else:
-        options["start_new_session"] = True
+        options.update(
+            {
+                "stdin": subprocess.DEVNULL,
+                "stdout": output,
+                "stderr": subprocess.STDOUT,
+                "start_new_session": True,
+            }
+        )
     return subprocess.Popen(command, **options)
 
 
@@ -178,12 +197,10 @@ def main():
         except sqlite3.Error as exc:
             output.write(f"Could not save update status: {exc}\n")
         output.flush()
+        if error:
+            return 1
         try:
-            server_process = restart(
-                project_root,
-                arguments.dev,
-                output,
-            )
+            server_process = restart(project_root, arguments.dev, output)
         except OSError as exc:
             restart_error = f"Could not restart CairnMark: {exc}"
             output.write(f"{restart_error}\n")
@@ -207,6 +224,8 @@ def main():
                 output.write(f"Could not save restart failure: {database_error}\n")
             output.flush()
             return 1
+        output.write("Update completed. CairnMark restarted.\n")
+        output.flush()
     return 0
 
 
