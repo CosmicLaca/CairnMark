@@ -3,11 +3,11 @@
     <name>CairnMark</name>
     <author>Primere development</author>
     <repository>https://github.com/CosmicLaca/CairnMark</repository>
-    <last-update>2026-11-28 11:26:27</last-update>
+    <last-update>2026-11-28 12:06:00</last-update>
     <version>
         <major>0</major>
         <minor>0</minor>
-        <patch>136</patch>
+        <patch>138</patch>
     </version>
     <release>Alpha</release>
 </application>

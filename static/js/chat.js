@@ -1530,6 +1530,63 @@
         return button;
     };
 
+    const responseMeterTone = (percent) => {
+        if (percent <= 50) return "green";
+        if (percent <= 75) return "blue";
+        if (percent <= 90) return "orange";
+        return "red";
+    };
+
+    const createResponseMeter = (percent, tone, tooltip) => {
+        const wrapper = document.createElement("span");
+        wrapper.className = "chat-response-meter-wrap";
+        wrapper.dataset.tooltip = tooltip;
+        const meter = document.createElement("progress");
+        meter.className = `chat-response-meter chat-response-meter--${tone}`;
+        meter.max = 100;
+        meter.value = Math.min(100, Math.max(0, Number(percent) || 0));
+        meter.setAttribute("aria-label", tooltip);
+        wrapper.appendChild(meter);
+        return wrapper;
+    };
+
+    const createResponseMeters = (meta) => {
+        const meters = document.createElement("span");
+        meters.className = "chat-response-meters";
+        meters.setAttribute("aria-label", "Response metrics");
+        const inputTokens = Math.max(0, Number(meta?.input_tokens) || 0);
+        const outputTokens = Math.max(0, Number(meta?.output_tokens) || 0);
+        const usedTokens = inputTokens + outputTokens;
+        const contextWindow = Math.max(
+            0,
+            Number(meta?.model_context_window) || 0
+        );
+        if (contextWindow > 0) {
+            const contextPercent = Number(
+                ((usedTokens / contextWindow) * 100).toFixed(2)
+            );
+            meters.appendChild(createResponseMeter(
+                contextPercent,
+                responseMeterTone(contextPercent),
+                `Context used: ${contextPercent}% (${usedTokens} / ${contextWindow} tokens)`
+            ));
+        } else {
+            meters.appendChild(createResponseMeter(
+                0,
+                "unknown",
+                "No model related n_ctx value saved yet... Use Set more parameters button to read."
+            ));
+        }
+        const responseTime = Math.max(0, Number(meta?.time) || 0);
+        const timePercent = Number(((responseTime / 300) * 100).toFixed(2));
+        meters.appendChild(createResponseMeter(
+            timePercent,
+            responseMeterTone(timePercent),
+            `Response time: ${timePercent}% (${responseTime} sec / 300 sec)`
+        ));
+        return meters;
+    };
+
     const requestReasoningEffort = (requestBody) => {
         if (!requestBody) return "";
         let body = requestBody;
@@ -1585,6 +1642,9 @@
             roleGroup.appendChild(createUseModelButton(meta.provider, meta.model));
         }
         header.appendChild(roleGroup);
+        if (role === "assistant" && meta?.provider && meta?.model && !meta.compacted) {
+            header.appendChild(createResponseMeters(meta));
+        }
         appendMessageTimestamp(header, meta && meta.created_at);
         div.appendChild(header);
         if (role === "assistant" && meta) {
@@ -1841,6 +1901,7 @@
                 time: m.response_time,
                 input_tokens: m.input_tokens,
                 output_tokens: m.output_tokens,
+                model_context_window: m.model_context_window,
                 saved_system_prompt_name: m.saved_system_prompt_name,
                 system_prompt: m.system_prompt,
                 preview_images: m.preview_images || [],
@@ -1881,6 +1942,7 @@
             time: payload.time,
             input_tokens: payload.input_tokens,
             output_tokens: payload.output_tokens,
+            model_context_window: payload.model_context_window,
             saved_system_prompt_name: payload.saved_system_prompt_name,
             system_prompt: payload.system_prompt,
             request_body: payload.request_body,

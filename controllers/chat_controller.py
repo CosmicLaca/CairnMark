@@ -160,6 +160,7 @@ class ChatController:
         error_message = str(error).strip() or "The model request failed."
         response_text = f"Request failed: {error_message}"
         usage = {"prompt_tokens": 0, "completion_tokens": 0}
+        model_context_window = self._model_context_window(provider, model)
         self.history.add(
             "assistant",
             response_text,
@@ -168,6 +169,7 @@ class ChatController:
             response_time=elapsed,
             input_tokens=0,
             output_tokens=0,
+            model_context_window=model_context_window,
             system_prompt=chat_request.system_prompt,
             saved_system_prompt_name=chat_request.saved_prompt_name,
             request_body=json.dumps(request_body),
@@ -185,6 +187,7 @@ class ChatController:
         )
         payload["error"] = error_message
         payload["is_error"] = True
+        payload["model_context_window"] = model_context_window
         return payload
 
     def context(self):
@@ -197,7 +200,9 @@ class ChatController:
                     message.get("request_body")
                 ),
             }
-            for message in self.history.messages()
+            for message in self._messages_with_context_windows(
+                self.history.messages()
+            )
         ]
         attachment_settings = CHAT_SETTINGS.group("attachments")
         return {
@@ -243,6 +248,57 @@ class ChatController:
         if template_kwargs.get("enable_thinking") is not True:
             return ""
         return effort if effort and effort.lower() != "none" else ""
+
+    def _model_context_window(self, provider, model):
+        """Return the currently saved context limit without fetching props."""
+        status_reader = getattr(self.service, "model_params_status", None)
+        if not callable(status_reader):
+            return 0
+        try:
+            value = status_reader(provider, model).get("n_ctx")
+            return max(0, int(value or 0))
+        except (AttributeError, TypeError, ValueError):
+            current_app.logger.warning(
+                "Could not read saved n_ctx for provider=%s model=%s",
+                provider,
+                model,
+            )
+            return 0
+
+    def _messages_with_context_windows(self, messages):
+        """Resolve missing historical n_ctx values from saved model modes."""
+        resolved_windows = {}
+        enriched = []
+        for message in messages:
+            try:
+                current_window = max(
+                    0,
+                    int(message.get("model_context_window") or 0),
+                )
+            except (TypeError, ValueError):
+                current_window = 0
+            provider = str(message.get("provider") or "").strip()
+            model = str(message.get("model_name") or "").strip()
+            if (
+                not current_window
+                and message.get("role") == "assistant"
+                and provider
+                and model
+            ):
+                key = (provider, model)
+                if key not in resolved_windows:
+                    resolved_windows[key] = self._model_context_window(
+                        provider,
+                        model,
+                    )
+                current_window = resolved_windows[key]
+            enriched.append(
+                {
+                    **message,
+                    "model_context_window": current_window,
+                }
+            )
+        return enriched
 
     def _parse_request(self):
         return self.requests.parse(request.get_json(silent=True) or {})
@@ -298,6 +354,7 @@ class ChatController:
             return jsonify({"error": str(error)}), 400
         except ProviderOfflineError as error:
             return jsonify({"error": str(error)}), 503
+        model_context_window = self._model_context_window(provider, model)
 
         save_original_media = bool(chat_request.raw.get("save_original_media"))
         try:
@@ -514,6 +571,7 @@ class ChatController:
                 response_time=elapsed,
                 input_tokens=usage.get("prompt_tokens", 0),
                 output_tokens=usage.get("completion_tokens", 0),
+                model_context_window=model_context_window,
                 system_prompt=chat_request.system_prompt,
                 saved_system_prompt_name=chat_request.saved_prompt_name,
                 request_body=json.dumps(request_body),
@@ -530,6 +588,7 @@ class ChatController:
                 chat_request,
                 request_body,
             )
+            payload["model_context_window"] = model_context_window
             payload["used_tools"] = used_tools
             payload["generated_documents"] = generated_documents
             self.media.add_active(
@@ -647,6 +706,7 @@ class ChatController:
                     response_time=elapsed,
                     input_tokens=usage.get("prompt_tokens", 0),
                     output_tokens=usage.get("completion_tokens", 0),
+                    model_context_window=model_context_window,
                     system_prompt=chat_request.system_prompt,
                     saved_system_prompt_name=chat_request.saved_prompt_name,
                     request_body=json.dumps(request_body),
@@ -664,6 +724,7 @@ class ChatController:
                     request_body,
                     event_type="result",
                 )
+                payload["model_context_window"] = model_context_window
                 payload["used_tools"] = used_tools
                 payload["generated_documents"] = generated_documents
                 self.media.add_active(
@@ -704,6 +765,7 @@ class ChatController:
             return jsonify({"error": str(error)}), 400
         except ProviderOfflineError as error:
             return jsonify({"error": str(error)}), 503
+        model_context_window = self._model_context_window(provider, model)
 
         settings = CHAT_SETTINGS.form()
         request_parameters = {
@@ -788,6 +850,7 @@ class ChatController:
                 response_time=elapsed,
                 input_tokens=usage.get("prompt_tokens", 0),
                 output_tokens=usage.get("completion_tokens", 0),
+                model_context_window=model_context_window,
                 system_prompt=system_prompt,
                 request_body=request_body,
                 compacted=True,
@@ -797,6 +860,7 @@ class ChatController:
                 "time": elapsed,
                 "input_tokens": usage.get("prompt_tokens", 0),
                 "output_tokens": usage.get("completion_tokens", 0),
+                "model_context_window": model_context_window,
                 "provider": provider,
                 "model": model,
                 "system_prompt": system_prompt,
@@ -833,6 +897,7 @@ class ChatController:
                     response_time=elapsed,
                     input_tokens=usage.get("prompt_tokens", 0),
                     output_tokens=usage.get("completion_tokens", 0),
+                    model_context_window=model_context_window,
                     system_prompt=system_prompt,
                     request_body=request_body,
                     compacted=True,
@@ -842,6 +907,7 @@ class ChatController:
                     "time": elapsed,
                     "input_tokens": usage.get("prompt_tokens", 0),
                     "output_tokens": usage.get("completion_tokens", 0),
+                    "model_context_window": model_context_window,
                     "provider": provider,
                     "model": model,
                     "system_prompt": system_prompt,
@@ -1161,7 +1227,7 @@ class ChatController:
         self.media.replace_active_from_messages(restored)
         return jsonify({
             "message": "Chat imported.",
-            "messages": restored,
+            "messages": self._messages_with_context_windows(restored),
             "attachments": self.media.list(),
         })
 
@@ -2104,7 +2170,9 @@ class ChatController:
             if not self.history.load(name):
                 return jsonify({"error": "Saved chat not found."}), 404
             self.media.copy_saved_to_active(name)
-            messages = self.history.messages()
+            messages = self._messages_with_context_windows(
+                self.history.messages()
+            )
             return jsonify(
                 {
                     "message": "Chat loaded.",

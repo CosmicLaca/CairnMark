@@ -159,6 +159,44 @@
                 </button>
               {% endif %}
             </span>
+            {% if message.role == 'assistant' and message.provider and message.model_name and not message.compacted %}
+              {% set used_tokens = (message.input_tokens|default(0, true)|int) + (message.output_tokens|default(0, true)|int) %}
+              {% set context_window = message.model_context_window|default(0, true)|int %}
+              {% set response_seconds = message.response_time|default(0, true)|float %}
+              {% set time_percent = ((response_seconds / 300) * 100)|round(2) %}
+              {% set time_tone = 'green' if time_percent <= 50 else ('blue' if time_percent <= 75 else ('orange' if time_percent <= 90 else 'red')) %}
+              <span class="chat-response-meters" aria-label="Response metrics">
+                {% if context_window > 0 %}
+                  {% set context_percent = ((used_tokens / context_window) * 100)|round(2) %}
+                  {% set context_tone = 'green' if context_percent <= 50 else ('blue' if context_percent <= 75 else ('orange' if context_percent <= 90 else 'red')) %}
+                <span class="chat-response-meter-wrap" data-tooltip="Context used: {{ '%g'|format(context_percent) }}% ({{ used_tokens }} / {{ context_window }} tokens)">
+                <progress
+                  class="chat-response-meter chat-response-meter--{{ context_tone }}"
+                  max="100"
+                  value="{{ [context_percent, 100]|min }}"
+                  aria-label="Context used: {{ '%g'|format(context_percent) }}% ({{ used_tokens }} / {{ context_window }} tokens)"
+                ></progress>
+                </span>
+                {% else %}
+                <span class="chat-response-meter-wrap" data-tooltip="No model related n_ctx value saved yet... Use Set more parameters button to read.">
+                <progress
+                  class="chat-response-meter chat-response-meter--unknown"
+                  max="100"
+                  value="0"
+                  aria-label="No model related n_ctx value saved yet... Use Set more parameters button to read."
+                ></progress>
+                </span>
+                {% endif %}
+                <span class="chat-response-meter-wrap" data-tooltip="Response time: {{ '%g'|format(time_percent) }}% ({{ '%g'|format(response_seconds) }} sec / 300 sec)">
+                <progress
+                  class="chat-response-meter chat-response-meter--{{ time_tone }}"
+                  max="100"
+                  value="{{ [time_percent, 100]|min }}"
+                  aria-label="Response time: {{ '%g'|format(time_percent) }}% ({{ '%g'|format(response_seconds) }} sec / 300 sec)"
+                ></progress>
+                </span>
+              </span>
+            {% endif %}
             <time class="chat-message-timestamp" datetime="{{ message.created_at|replace(' ', 'T') }}Z">{{ message.created_at }}</time>
           </div>
           {% if message.role == 'user' and message.preview_media %}
