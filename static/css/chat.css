@@ -1491,6 +1491,13 @@
     color: #b04a39;
 }
 
+.chat-settings-separator {
+    width: 100%;
+    margin: 8px 0 12px;
+    border: 0;
+    border-top: 1px solid rgba(49, 93, 84, 0.22);
+}
+
 .chat-actions,
 .chat-setup-actions,
 .chat-sp-actions {
