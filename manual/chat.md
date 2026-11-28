@@ -39,6 +39,8 @@ speed category. Selecting no speedometers—or all five—turns off speed
 filtering. Provider, capability, speed, and model-name search filters work
 together, and an empty result is allowed.
 
+<img src="model-filter-01.jpg" width="50%" alt="Chat dialog">
+
 ---
 
 ## Response metadata and failed requests
@@ -66,6 +68,8 @@ Two thin meter lines appear in the header of each completed assistant bubble:
 - The lower line compares the response time with a 300-second reference. A full
   line therefore represents five minutes.
 
+<img src="assistant-icons.jpg" width="85%" alt="Chat dialog">
+
 Both meters progress from green through blue and orange to red as their
 percentage increases. Hover over a line to see its exact percentage and source
 values. If CairnMark has no saved `n_ctx` value for the model's current local
@@ -78,6 +82,8 @@ After a model completes at least one successful response with reported output
 tokens, a small speedometer appears beside its name in assistant bubbles and in
 all model-selection dropdowns. Hover over it to see the model's cumulative
 average generation speed in tokens per second.
+
+<img src="speedomaters.jpg" width="50%" alt="Chat dialog">
 
 CairnMark calculates each model's speed as cumulative output tokens divided by
 cumulative response time. It then compares that value with the weighted global
@@ -112,6 +118,10 @@ The additional parameter modal is not part of this saved setup. Local model
 defaults are cached separately per model.
 
 ---
+
+# Controls
+
+<img src="chat-controls.jpg" width="80%" alt="Chat dialog">
 
 ## Streaming and cancellation
 
@@ -159,6 +169,8 @@ export important conversations before compacting them.
 ---
 
 ## Attachments
+
+<img src="chat-attachments-01.jpg" width="70%" alt="Attach image">
 
 CairnMark accepts supported images, documents, audio, and video from the chat
 composer. Attachment data is treated as untrusted input and validated before it
@@ -325,7 +337,7 @@ open `Exported-chat/Exported-Alpha_moonbase-2026-11-26_20-48-35.json`. The
 included Alpha moonbase conversation demonstrates the imported chat format and
 can be inspected without first creating a conversation.
 
-<img src="chat-controls-01.jpg" width="70%" alt="Chat control">
+<img src="chat-controls.jpg" width="70%" alt="Chat control">
 <img src="chat-controls-02.jpg" width="70%" alt="Chat control">
 
 Preview files are removed only when neither active history nor another saved

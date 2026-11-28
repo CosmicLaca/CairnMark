@@ -18,18 +18,14 @@ stay available on the local machine.
 
 > ### Why is it special?
 >
-> - Manual history settings for low context models
+> - Manual history settings for low context models (or auto send all), manual and auto context compaction, ctx measurement
 > - llama.cpp and CairnMark-managed MCP side by side, Optional MCP import and update from OpenCode
-> - Stateful stdio MCP sessions, automatic tool scope with quick settings
+> - Stateful stdio MCP sessions, automatic tool scope with quick settings, auto start-stop system for local MCP API endpoints
 > - Generated-document download cards, inline image, audio and video previews, webpage link screenshots
-> - Manual and auto context compaction, ctx measurement
-> - Per-model capability flags (media and tools)
+> - Per-model capability flags (media and tools), and filter model list by capabilities and average speed 
 > - Video upload FPS control and separated audio analysis for video uploads
 > - Local (or remote) MinerU document processing, MinerU MCP supports
-> - Auto start-stop system for local MCP API endpoints
 > - Chat attachments accordion with media index and links
-> - AI-generated benchmark JSON, benchmark runs keep expected answers local
-> - Localhost-only binding, local SQLite and JSON data
 
 ---
 
