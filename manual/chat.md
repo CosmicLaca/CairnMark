@@ -24,6 +24,21 @@ assistant bubble selects that response's model again if it is still available.
 
 <img src="dialog-01.jpg" width="82%" alt="Chat dialog">
 
+### Filter the model list
+
+The provider buttons above the model selector limit the list to one provider at
+a time. The icon row below the selector provides additional filters for image,
+video, audio, tool, and reasoning support, followed by the five relative-speed
+categories. An active icon has a green background; select it again to remove
+that filter.
+
+Capability filters use **AND** logic. For example, selecting image and
+reasoning support shows only models that support both. Speed filters use
+**OR** logic, so selecting the two fastest speedometers shows models in either
+speed category. Selecting no speedometers—or all five—turns off speed
+filtering. Provider, capability, speed, and model-name search filters work
+together, and an empty result is allowed.
+
 ---
 
 ## Response metadata and failed requests
