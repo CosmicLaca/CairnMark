@@ -15,6 +15,7 @@ from controllers.index_controller import (
 )
 from controllers.provider_controller import provider_controller
 from controllers.update_controller import update_controller
+from services.application_info import APPLICATION_INFO
 from services.application_updates import APPLICATION_UPDATES
 
 RUN_BENCHMARK_PAGE = next(page for page in PAGES if page["endpoint"] == "run_benchmark")
@@ -495,10 +496,13 @@ def init_routes(app):
         update_status = APPLICATION_UPDATES.daily_status(
             enabled=app.config.get("UPDATE_CHECK_ENABLED", True)
         )
+        application_info = APPLICATION_INFO.load(
+            app.config["APPLICATION_INFO_PATH"]
+        )
         return {
             "navigation": navigation_pages,
             "application_update": update_status,
-            "application_info": app.extensions["application_info"],
+            "application_info": application_info,
         }
 
     @app.errorhandler(404)

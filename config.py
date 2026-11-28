@@ -29,7 +29,6 @@ class Config:
     # Enabled by the --dev launcher flag; public launches hide unfinished pages.
     DEV_MODE = False
     UPDATE_CHECK_ENABLED = True
-    APPLICATION_VERSION_GIT_ENABLED = True
 
 
 class DevelopmentConfig(Config):
@@ -49,7 +48,6 @@ class TestingConfig(Config):
 
     TESTING = True
     UPDATE_CHECK_ENABLED = False
-    APPLICATION_VERSION_GIT_ENABLED = False
 
 
 CONFIGS = {
