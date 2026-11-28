@@ -265,13 +265,19 @@ class ChatController:
             )
             return 0
 
-    def _record_response_speed(self, provider, model, elapsed):
+    def _record_response_speed(
+        self,
+        provider,
+        model,
+        elapsed,
+        output_tokens,
+    ):
         """Record optional speed metrics without risking a valid response."""
         recorder = getattr(self.service, "record_response_speed", None)
         if not callable(recorder):
             return None
         try:
-            return recorder(provider, model, elapsed)
+            return recorder(provider, model, elapsed, output_tokens)
         except Exception:  # noqa: BLE001
             current_app.logger.exception(
                 "Could not record response speed for provider=%s model=%s",
@@ -637,7 +643,12 @@ class ChatController:
             payload["local_attachments"] = self.media.list()
             payload["message_id"] = assistant_id
             payload["messages"] = self.history.messages()
-            speed = self._record_response_speed(provider, model, elapsed)
+            speed = self._record_response_speed(
+                provider,
+                model,
+                elapsed,
+                usage.get("completion_tokens", 0),
+            )
             if speed:
                 payload.update(speed)
             return jsonify(payload)
@@ -775,7 +786,12 @@ class ChatController:
                 )
                 payload["local_attachments"] = self.media.list()
                 payload["message_id"] = assistant_id
-                speed = self._record_response_speed(provider, model, elapsed)
+                speed = self._record_response_speed(
+                    provider,
+                    model,
+                    elapsed,
+                    usage.get("completion_tokens", 0),
+                )
                 if speed:
                     payload.update(speed)
                 yield f"data: {json.dumps(payload)}\n\n"

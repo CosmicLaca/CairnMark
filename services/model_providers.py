@@ -1115,9 +1115,20 @@ class ModelProviderService:
         self.parameters = parameter_repository or MODEL_PARAMETERS
         self.average_speeds = average_speed_repository or AVERAGE_SPEEDS
 
-    def record_response_speed(self, provider, model_name, response_time):
+    def record_response_speed(
+        self,
+        provider,
+        model_name,
+        response_time,
+        output_tokens,
+    ):
         """Record one completed response for model-speed presentation."""
-        return self.average_speeds.record(provider, model_name, response_time)
+        return self.average_speeds.record(
+            provider,
+            model_name,
+            response_time,
+            output_tokens,
+        )
 
     def model_speed(self, provider, model_name):
         """Return optional average-speed metadata for one model."""

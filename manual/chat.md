@@ -40,6 +40,46 @@ to **Show API request body**. Hover over it to see the distinct tools in
 `provider::tool` form. The marker records tools that were called, not merely
 tools that were available, and is preserved with the conversation.
 
+### Per-response meters
+
+Two thin meter lines appear in the header of each completed assistant bubble:
+
+- The upper line compares that response's combined input and output tokens with
+  the model-specific maximum context size that was active for the request. It
+  measures only the displayed request-response result, not the accumulated
+  conversation-context estimate above the message composer.
+- The lower line compares the response time with a 300-second reference. A full
+  line therefore represents five minutes.
+
+Both meters progress from green through blue and orange to red as their
+percentage increases. Hover over a line to see its exact percentage and source
+values. If CairnMark has no saved `n_ctx` value for the model's current local
+start mode, the context line remains grey. Use **Set more parameters** to read
+and cache the model parameters when that information is available.
+
+### Relative model speedometer
+
+After a model completes at least one successful response with reported output
+tokens, a small speedometer appears beside its name in assistant bubbles and in
+all model-selection dropdowns. Hover over it to see the model's cumulative
+average generation speed in tokens per second.
+
+CairnMark calculates each model's speed as cumulative output tokens divided by
+cumulative response time. It then compares that value with the weighted global
+average across all measured models, where the global average equals 100%.
+Higher percentages indicate faster generation:
+
+- 300% or more: very fast;
+- 150% to below 300%: fast;
+- above 100% to below 150%: moderately fast;
+- one third of the global average through 100%: regular; and
+- below one third of the global average: very slow.
+
+Only completed responses with a positive reported output-token count contribute
+to the measurement. Failed requests and providers that do not report output
+usage are ignored. Early ratings can change noticeably because every new
+successful response updates both the model average and the global baseline.
+
 ---
 
 ## Saved setup

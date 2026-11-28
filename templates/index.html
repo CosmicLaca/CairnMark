@@ -31,7 +31,7 @@
   {% endif %}
 {%- endmacro %}
 
-{% macro model_speedometer(tier, average) -%}
+{% macro model_speedometer(tier, tokens_per_second) -%}
   {% set needle = {
     'very-fast': 'M10 13 L17 9',
     'fast': 'M10 13 L15 6',
@@ -39,7 +39,7 @@
     'regular': 'M10 13 L8 5',
     'very-slow': 'M10 13 L4 8'
   }.get(tier, 'M10 13 L10 5') %}
-  <span class="model-speedometer model-speedometer--{{ tier }}" data-tooltip="Average response time: {{ '%.2f'|format(average) }} sec" aria-label="Average response time: {{ '%.2f'|format(average) }} seconds">
+  <span class="model-speedometer model-speedometer--{{ tier }}" data-tooltip="Average speed: {{ '%.2f'|format(tokens_per_second) }} tokens/sec" aria-label="Average speed: {{ '%.2f'|format(tokens_per_second) }} tokens per second">
     <svg viewBox="0 0 20 16" aria-hidden="true" focusable="false">
       <path class="model-speedometer-dial" d="M2 13 A8 8 0 0 1 18 13"/>
       <path class="model-speedometer-ticks" d="M3.1 10.2l1.4.5M5.5 6.5l1.1 1M10 5v1.6M14.5 6.5l-1.1 1M16.9 10.2l-1.4.5"/>
@@ -163,8 +163,8 @@
                   {{ message.role }}
                 {% endif %}
               </span>
-              {% if message.role == 'assistant' and message.speed_tier and message.average_response_time is defined and not message.compacted %}
-                {{ model_speedometer(message.speed_tier, message.average_response_time) }}
+              {% if message.role == 'assistant' and message.speed_tier and message.average_tokens_per_second is defined and not message.compacted %}
+                {{ model_speedometer(message.speed_tier, message.average_tokens_per_second) }}
               {% endif %}
               {% if message.role == 'assistant' and message.provider and message.model_name and not message.compacted %}
                 <button
@@ -579,7 +579,7 @@
       <div class="select-shell">
         <select id="chat-model" name="model" data-chat-model data-saved-model="{{ chat_settings.model_name }}" data-model-filter>
             {% for model in active_models %}
-              <option value="{{ model.provider }}::{{ model.model }}"{% if model.speed_tier %} data-speed-tier="{{ model.speed_tier }}" data-average-response-time="{{ model.average_response_time }}"{% endif %}
+              <option value="{{ model.provider }}::{{ model.model }}"{% if model.speed_tier %} data-speed-tier="{{ model.speed_tier }}" data-average-tokens-per-second="{{ model.average_tokens_per_second }}"{% endif %}
                 {% if chat_settings.model_name|trim == (model.provider ~ "::" ~ model.model)|trim %}selected{% endif %}>
                 {{ model.label }}{% if model.modalities and model.modalities.vision %} 📷{% endif %}{% if model.modalities and model.modalities.video %} 🎥{% endif %}{% if model.modalities and model.modalities.audio %} 🎤{% endif %}{% if model.chat_template_caps and model.chat_template_caps.supports_tool_calls %} 🔧{% endif %}{% if model.chat_template_caps and model.chat_template_caps.supports_reasoning_effort %} 🧠︎{% endif %}
               </option>

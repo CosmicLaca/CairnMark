@@ -17,9 +17,9 @@
     const createSpeedometer = (option) => {
         const tier = String(option?.dataset.speedTier || "");
         const needle = speedometerNeedles[tier];
-        const average = Number(option?.dataset.averageResponseTime);
+        const average = Number(option?.dataset.averageTokensPerSecond);
         if (!needle || !Number.isFinite(average)) return null;
-        const tooltip = `Average response time: ${average.toFixed(2)} sec`;
+        const tooltip = `Average speed: ${average.toFixed(2)} tokens/sec`;
         const icon = document.createElement("span");
         icon.className = `model-speedometer model-speedometer--${tier}`;
         icon.dataset.tooltip = tooltip;

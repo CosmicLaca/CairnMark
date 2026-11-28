@@ -1603,7 +1603,7 @@
         return enabled && effort && effort.toLowerCase() !== "none" ? effort : "";
     };
 
-    const createModelSpeedometer = (tier, averageResponseTime) => {
+    const createModelSpeedometer = (tier, averageTokensPerSecond) => {
         const needles = {
             "very-fast": "M10 13 L17 9",
             fast: "M10 13 L15 6",
@@ -1612,9 +1612,9 @@
             "very-slow": "M10 13 L4 8",
         };
         const needle = needles[String(tier || "")];
-        const average = Number(averageResponseTime);
+        const average = Number(averageTokensPerSecond);
         if (!needle || !Number.isFinite(average)) return null;
-        const tooltip = `Average response time: ${average.toFixed(2)} sec`;
+        const tooltip = `Average speed: ${average.toFixed(2)} tokens/sec`;
         const icon = document.createElement("span");
         icon.className = `model-speedometer model-speedometer--${tier}`;
         icon.dataset.tooltip = tooltip;
@@ -1667,7 +1667,7 @@
         if (role === "assistant" && meta && meta.provider && meta.model && !meta.compacted) {
             const speedometer = createModelSpeedometer(
                 meta.speed_tier,
-                meta.average_response_time,
+                meta.average_tokens_per_second,
             );
             if (speedometer) roleGroup.appendChild(speedometer);
             roleGroup.appendChild(createUseModelButton(meta.provider, meta.model));
@@ -1950,7 +1950,7 @@
                 is_error: Boolean(m.is_error),
                 created_at: m.created_at,
                 speed_tier: m.speed_tier,
-                average_response_time: m.average_response_time,
+                average_tokens_per_second: m.average_tokens_per_second,
             });
         });
         syncEmptyState();
@@ -1988,7 +1988,7 @@
             is_error: Boolean(payload.is_error || payload.type === "error"),
             created_at: payload.created_at,
             speed_tier: payload.speed_tier,
-            average_response_time: payload.average_response_time,
+            average_tokens_per_second: payload.average_tokens_per_second,
         });
         return true;
     };
