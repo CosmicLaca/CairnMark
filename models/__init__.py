@@ -3,6 +3,7 @@
 
 def init_storage(app):
     """Normalize database paths and initialize every eager schema."""
+    from models.average_speed import STORE as average_speed_store
     from models.benchmark_metadata import STORE as benchmark_store
     from models.application_info import STORE as application_info_store
     from models.chat_settings import SETTINGS_STORE
@@ -15,6 +16,7 @@ def init_storage(app):
     from models.run_benchmark_settings import STORE as runner_settings_store
     from models.update_storage import STORE as update_store
 
+    average_speed_store.configure(app)
     benchmark_store.configure(app)
     application_info_store.configure(app)
     model_store.configure(app)

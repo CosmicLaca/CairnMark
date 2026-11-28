@@ -1603,6 +1603,32 @@
         return enabled && effort && effort.toLowerCase() !== "none" ? effort : "";
     };
 
+    const createModelSpeedometer = (tier, averageResponseTime) => {
+        const needles = {
+            "very-fast": "M10 13 L17 9",
+            fast: "M10 13 L15 6",
+            "medium-fast": "M10 13 L12 5",
+            regular: "M10 13 L8 5",
+            "very-slow": "M10 13 L4 8",
+        };
+        const needle = needles[String(tier || "")];
+        const average = Number(averageResponseTime);
+        if (!needle || !Number.isFinite(average)) return null;
+        const tooltip = `Average response time: ${average.toFixed(2)} sec`;
+        const icon = document.createElement("span");
+        icon.className = `model-speedometer model-speedometer--${tier}`;
+        icon.dataset.tooltip = tooltip;
+        icon.setAttribute("aria-label", tooltip);
+        icon.innerHTML = `
+            <svg viewBox="0 0 20 16" aria-hidden="true" focusable="false">
+                <path class="model-speedometer-dial" d="M2 13 A8 8 0 0 1 18 13"></path>
+                <path class="model-speedometer-ticks" d="M3.1 10.2l1.4.5M5.5 6.5l1.1 1M10 5v1.6M14.5 6.5l-1.1 1M16.9 10.2l-1.4.5"></path>
+                <path class="model-speedometer-needle" d="${needle}"></path>
+                <circle cx="10" cy="13" r="1.25" fill="currentColor"></circle>
+            </svg>`;
+        return icon;
+    };
+
     const appendMessage = (role, content, meta) => {
         if (!historyEl) return;
         const div = document.createElement("div");
@@ -1639,6 +1665,11 @@
         roleGroup.className = "chat-role-group";
         roleGroup.appendChild(roleSpan);
         if (role === "assistant" && meta && meta.provider && meta.model && !meta.compacted) {
+            const speedometer = createModelSpeedometer(
+                meta.speed_tier,
+                meta.average_response_time,
+            );
+            if (speedometer) roleGroup.appendChild(speedometer);
             roleGroup.appendChild(createUseModelButton(meta.provider, meta.model));
         }
         header.appendChild(roleGroup);
@@ -1918,6 +1949,8 @@
                 compacted: Boolean(m.compacted),
                 is_error: Boolean(m.is_error),
                 created_at: m.created_at,
+                speed_tier: m.speed_tier,
+                average_response_time: m.average_response_time,
             });
         });
         syncEmptyState();
@@ -1954,6 +1987,8 @@
             capture_webpage_previews: !payload.is_error && payload.type !== "error",
             is_error: Boolean(payload.is_error || payload.type === "error"),
             created_at: payload.created_at,
+            speed_tier: payload.speed_tier,
+            average_response_time: payload.average_response_time,
         });
         return true;
     };

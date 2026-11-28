@@ -28,6 +28,7 @@ from xai_sdk.chat import assistant as xai_assistant
 from xai_sdk.chat import system as xai_system
 from xai_sdk.chat import user as xai_user
 
+from models.average_speed import AVERAGE_SPEEDS
 from models.model_storage import MODEL_CONFIGURATIONS
 from models.parameter_storage import MODEL_PARAMETERS
 
@@ -1107,10 +1108,20 @@ class ModelProviderService:
         catalog_client=None,
         model_repository=None,
         parameter_repository=None,
+        average_speed_repository=None,
     ):
         self.catalog_client = catalog_client or ProviderCatalogClient()
         self.models = model_repository or MODEL_CONFIGURATIONS
         self.parameters = parameter_repository or MODEL_PARAMETERS
+        self.average_speeds = average_speed_repository or AVERAGE_SPEEDS
+
+    def record_response_speed(self, provider, model_name, response_time):
+        """Record one completed response for model-speed presentation."""
+        return self.average_speeds.record(provider, model_name, response_time)
+
+    def model_speed(self, provider, model_name):
+        """Return optional average-speed metadata for one model."""
+        return self.average_speeds.for_model(provider, model_name)
 
     def spec(self, provider):
         """Return a supported provider definition."""
@@ -1320,6 +1331,13 @@ class ModelProviderService:
                         live_model.get("size_gb"),
                     )
                 )
+        statistics = self.average_speeds.statistics()
+        for entry in models:
+            speed = statistics.get(
+                f"{entry['provider']}::{entry['model']}"
+            )
+            if speed:
+                entry.update(speed)
         return models
 
     def _live_single_model(self, provider):

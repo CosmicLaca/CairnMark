@@ -176,7 +176,7 @@
           <div class="select-shell">
             <select id="evaluate-benchmark-model" name="model" data-model-filter>
               {% for model in active_models %}
-                <option value="{{ model.provider }}::{{ model.model }}">{{ model.label }}{% if model.modalities and model.modalities.vision %} 📷{% endif %}{% if model.modalities and model.modalities.video %} 🎥{% endif %}{% if model.modalities and model.modalities.audio %} 🎤{% endif %}{% if model.chat_template_caps and model.chat_template_caps.supports_tool_calls %} 🔧{% endif %}{% if model.chat_template_caps and model.chat_template_caps.supports_reasoning_effort %} 🧠︎{% endif %}</option>
+                <option value="{{ model.provider }}::{{ model.model }}"{% if model.speed_tier %} data-speed-tier="{{ model.speed_tier }}" data-average-response-time="{{ model.average_response_time }}"{% endif %}>{{ model.label }}{% if model.modalities and model.modalities.vision %} 📷{% endif %}{% if model.modalities and model.modalities.video %} 🎥{% endif %}{% if model.modalities and model.modalities.audio %} 🎤{% endif %}{% if model.chat_template_caps and model.chat_template_caps.supports_tool_calls %} 🔧{% endif %}{% if model.chat_template_caps and model.chat_template_caps.supports_reasoning_effort %} 🧠︎{% endif %}</option>
               {% endfor %}
             </select>
           </div>

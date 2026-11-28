@@ -236,6 +236,9 @@
 }
 
 .searchable-select-toggle {
+    display: flex;
+    align-items: center;
+    gap: 7px;
     width: 100%;
     min-height: 48px;
     padding: 0 44px 0 14px;
@@ -299,6 +302,9 @@
 }
 
 .searchable-select-option {
+    display: flex;
+    align-items: center;
+    gap: 7px;
     width: 100%;
     padding: 8px 10px;
     color: var(--ink);
@@ -310,6 +316,80 @@
     text-align: left;
     cursor: pointer;
     white-space: nowrap;
+}
+
+.searchable-select-option-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.model-speedometer {
+    --speedometer-color: #66837b;
+    position: relative;
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 16px;
+    color: var(--speedometer-color);
+    vertical-align: middle;
+}
+
+.model-speedometer svg {
+    display: block;
+    width: 20px;
+    height: 16px;
+    overflow: visible;
+}
+
+.model-speedometer-dial,
+.model-speedometer-ticks,
+.model-speedometer-needle {
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.model-speedometer-dial { stroke-width: 1.55; }
+.model-speedometer-ticks { stroke-width: 1; opacity: 0.62; }
+.model-speedometer-needle { stroke-width: 1.55; }
+.model-speedometer--very-fast { --speedometer-color: #238464; }
+.model-speedometer--fast { --speedometer-color: #347fa2; }
+.model-speedometer--medium-fast { --speedometer-color: #ba8a26; }
+.model-speedometer--regular { --speedometer-color: #c66b2b; }
+.model-speedometer--very-slow { --speedometer-color: #b64c4c; }
+
+.model-speedometer::after {
+    position: absolute;
+    z-index: 100;
+    top: calc(100% + 7px);
+    left: 50%;
+    width: max-content;
+    max-width: 240px;
+    padding: 5px 8px;
+    color: #f8fbfa;
+    border-radius: 3px;
+    background: #243733;
+    box-shadow: 0 5px 14px rgba(17, 25, 23, 0.18);
+    content: attr(data-tooltip);
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: 1.25;
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, -3px);
+    transition: opacity 120ms ease, transform 120ms ease;
+    white-space: nowrap;
+}
+
+.model-speedometer:hover::after,
+.model-speedometer:focus-visible::after {
+    opacity: 1;
+    transform: translate(-50%, 0);
 }
 
 .searchable-select-option:hover,

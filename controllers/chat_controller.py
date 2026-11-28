@@ -265,9 +265,26 @@ class ChatController:
             )
             return 0
 
+    def _record_response_speed(self, provider, model, elapsed):
+        """Record optional speed metrics without risking a valid response."""
+        recorder = getattr(self.service, "record_response_speed", None)
+        if not callable(recorder):
+            return None
+        try:
+            return recorder(provider, model, elapsed)
+        except Exception:  # noqa: BLE001
+            current_app.logger.exception(
+                "Could not record response speed for provider=%s model=%s",
+                provider,
+                model,
+            )
+            return None
+
     def _messages_with_context_windows(self, messages):
         """Resolve missing historical n_ctx values from saved model modes."""
         resolved_windows = {}
+        resolved_speeds = {}
+        speed_reader = getattr(self.service, "model_speed", None)
         enriched = []
         for message in messages:
             try:
@@ -292,10 +309,31 @@ class ChatController:
                         model,
                     )
                 current_window = resolved_windows[key]
+            speed = None
+            if (
+                message.get("role") == "assistant"
+                and provider
+                and model
+                and callable(speed_reader)
+            ):
+                key = (provider, model)
+                if key not in resolved_speeds:
+                    try:
+                        resolved_speeds[key] = speed_reader(provider, model)
+                    except Exception:  # noqa: BLE001
+                        current_app.logger.exception(
+                            "Could not read response speed for provider=%s model=%s",
+                            provider,
+                            model,
+                        )
+                        resolved_speeds[key] = None
+                speed = resolved_speeds[key]
+            metadata = dict(speed or {})
             enriched.append(
                 {
                     **message,
                     "model_context_window": current_window,
+                    **metadata,
                 }
             )
         return enriched
@@ -599,6 +637,9 @@ class ChatController:
             payload["local_attachments"] = self.media.list()
             payload["message_id"] = assistant_id
             payload["messages"] = self.history.messages()
+            speed = self._record_response_speed(provider, model, elapsed)
+            if speed:
+                payload.update(speed)
             return jsonify(payload)
 
         def generate():
@@ -734,6 +775,9 @@ class ChatController:
                 )
                 payload["local_attachments"] = self.media.list()
                 payload["message_id"] = assistant_id
+                speed = self._record_response_speed(provider, model, elapsed)
+                if speed:
+                    payload.update(speed)
                 yield f"data: {json.dumps(payload)}\n\n"
             except Exception as error:  # noqa: BLE001
                 current_app.logger.exception(

@@ -6,6 +6,43 @@
         navigationListeners.abort();
     }, { once: true });
 
+    const speedometerNeedles = {
+        "very-fast": "M10 13 L17 9",
+        fast: "M10 13 L15 6",
+        "medium-fast": "M10 13 L12 5",
+        regular: "M10 13 L8 5",
+        "very-slow": "M10 13 L4 8",
+    };
+
+    const createSpeedometer = (option) => {
+        const tier = String(option?.dataset.speedTier || "");
+        const needle = speedometerNeedles[tier];
+        const average = Number(option?.dataset.averageResponseTime);
+        if (!needle || !Number.isFinite(average)) return null;
+        const tooltip = `Average response time: ${average.toFixed(2)} sec`;
+        const icon = document.createElement("span");
+        icon.className = `model-speedometer model-speedometer--${tier}`;
+        icon.dataset.tooltip = tooltip;
+        icon.setAttribute("aria-label", tooltip);
+        icon.innerHTML = `
+            <svg viewBox="0 0 20 16" aria-hidden="true" focusable="false">
+                <path class="model-speedometer-dial" d="M2 13 A8 8 0 0 1 18 13"></path>
+                <path class="model-speedometer-ticks" d="M3.1 10.2l1.4.5M5.5 6.5l1.1 1M10 5v1.6M14.5 6.5l-1.1 1M16.9 10.2l-1.4.5"></path>
+                <path class="model-speedometer-needle" d="${needle}"></path>
+                <circle cx="10" cy="13" r="1.25" fill="currentColor"></circle>
+            </svg>`;
+        return icon;
+    };
+
+    const setOptionContent = (target, option, fallback) => {
+        const label = document.createElement("span");
+        label.className = "searchable-select-option-label";
+        label.textContent = option ? option.textContent.trim() : fallback;
+        target.replaceChildren(label);
+        const speedometer = createSpeedometer(option);
+        if (speedometer) target.appendChild(speedometer);
+    };
+
     class SearchableModelSelect {
         static instances = [];
 
@@ -77,9 +114,7 @@
 
         sync() {
             const selected = this.select.selectedOptions?.[0];
-            this.toggle.textContent = selected
-                ? selected.textContent.trim()
-                : "Select a model";
+            setOptionContent(this.toggle, selected, "Select a model");
         }
 
         setProviderFilter(provider) {
@@ -105,7 +140,7 @@
                 const item = document.createElement("button");
                 item.type = "button";
                 item.className = "searchable-select-option";
-                item.textContent = text;
+                setOptionContent(item, option, text);
                 item.dataset.value = value;
                 item.classList.toggle("is-selected", value === this.select.value);
                 item.addEventListener("click", () => this.selectValue(value));
