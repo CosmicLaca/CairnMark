@@ -14,16 +14,17 @@
         "very-slow": "M10 13 L4 8",
     };
 
-    const createSpeedometer = (option) => {
-        const tier = String(option?.dataset.speedTier || "");
+    const createSpeedometerIcon = (tier, tooltip = "") => {
         const needle = speedometerNeedles[tier];
-        const average = Number(option?.dataset.averageTokensPerSecond);
-        if (!needle || !Number.isFinite(average)) return null;
-        const tooltip = `Average speed: ${average.toFixed(2)} tokens/sec`;
+        if (!needle) return null;
         const icon = document.createElement("span");
         icon.className = `model-speedometer model-speedometer--${tier}`;
-        icon.dataset.tooltip = tooltip;
-        icon.setAttribute("aria-label", tooltip);
+        if (tooltip) {
+            icon.dataset.tooltip = tooltip;
+            icon.setAttribute("aria-label", tooltip);
+        } else {
+            icon.setAttribute("aria-hidden", "true");
+        }
         icon.innerHTML = `
             <svg viewBox="0 0 20 16" aria-hidden="true" focusable="false">
                 <path class="model-speedometer-dial" d="M2 13 A8 8 0 0 1 18 13"></path>
@@ -32,6 +33,16 @@
                 <circle cx="10" cy="13" r="1.25" fill="currentColor"></circle>
             </svg>`;
         return icon;
+    };
+
+    const createSpeedometer = (option) => {
+        const tier = String(option?.dataset.speedTier || "");
+        const average = Number(option?.dataset.averageTokensPerSecond);
+        if (!speedometerNeedles[tier] || !Number.isFinite(average)) return null;
+        return createSpeedometerIcon(
+            tier,
+            `Average speed: ${average.toFixed(2)} tokens/sec`,
+        );
     };
 
     const setOptionContent = (target, option, fallback) => {
@@ -54,6 +65,8 @@
             this.search = document.createElement("input");
             this.list = document.createElement("div");
             this.providerFilter = "all";
+            this.featureFilters = new Set();
+            this.speedFilters = new Set();
             this.build();
             this.bind();
             this.sync();
@@ -122,6 +135,18 @@
             this.render(this.search.value);
         }
 
+        toggleFeatureFilter(feature) {
+            if (this.featureFilters.has(feature)) this.featureFilters.delete(feature);
+            else this.featureFilters.add(feature);
+            this.render(this.search.value);
+        }
+
+        toggleSpeedFilter(tier) {
+            if (this.speedFilters.has(tier)) this.speedFilters.delete(tier);
+            else this.speedFilters.add(tier);
+            this.render(this.search.value);
+        }
+
         render(query = "") {
             const needle = String(query).trim().toLocaleLowerCase();
             this.list.replaceChildren();
@@ -131,6 +156,15 @@
                 const value = option.value || "";
                 if (this.providerFilter && this.providerFilter !== "all"
                     && !value.startsWith(`${this.providerFilter}::`)) {
+                    return;
+                }
+                const hasAllFeatures = [...this.featureFilters].every(
+                    (feature) => option.getAttribute(`data-model-feature-${feature}`) === "true",
+                );
+                if (!hasAllFeatures) return;
+                const filtersBySpeed = this.speedFilters.size > 0
+                    && this.speedFilters.size < Object.keys(speedometerNeedles).length;
+                if (filtersBySpeed && !this.speedFilters.has(option.dataset.speedTier || "")) {
                     return;
                 }
                 const matches = text.toLocaleLowerCase().includes(needle)
@@ -178,7 +212,37 @@
                 if (event.key === "Escape") this.closeAll();
             }, { signal: navigationListeners.signal });
             window.CairnmarkModelSelects = this.instances;
+            this.initSubfilters();
             this.initProviderFilters();
+        }
+
+        static initSubfilters() {
+            document.querySelectorAll("[data-model-subfilters]").forEach((container) => {
+                const select = document.getElementById(container.dataset.modelSubfiltersFor || "");
+                const instance = this.instances.find((item) => item.select === select);
+                if (!instance) return;
+
+                container.querySelectorAll("[data-model-feature-filter]").forEach((button) => {
+                    button.addEventListener("click", () => {
+                        instance.toggleFeatureFilter(button.dataset.modelFeatureFilter);
+                        const active = instance.featureFilters.has(button.dataset.modelFeatureFilter);
+                        button.classList.toggle("is-active", active);
+                        button.setAttribute("aria-pressed", String(active));
+                    });
+                });
+
+                container.querySelectorAll("[data-model-speed-filter]").forEach((button) => {
+                    const tier = button.dataset.modelSpeedFilter;
+                    const icon = createSpeedometerIcon(tier);
+                    if (icon) button.appendChild(icon);
+                    button.addEventListener("click", () => {
+                        instance.toggleSpeedFilter(tier);
+                        const active = instance.speedFilters.has(tier);
+                        button.classList.toggle("is-active", active);
+                        button.setAttribute("aria-pressed", String(active));
+                    });
+                });
+            });
         }
 
         static async initProviderFilters() {

@@ -440,19 +440,22 @@
             </div>
             <div class="chat-response-controls">
               <div class="chat-reasoning-control" data-chat-reasoning-control hidden>
-                <button
-                  type="button"
-                  class="chat-save-original-switch"
-                  data-chat-reasoning
-                  role="switch"
-                  aria-checked="false"
-                  aria-label="Reasoning"
-                >
-                  <span class="chat-save-original-track" aria-hidden="true">
-                    <span class="chat-save-original-knob"></span>
-                  </span>
-                  <span class="chat-save-original-tooltip" role="tooltip">Reasoning</span>
-                </button>
+                <span class="chat-control-stack">
+                  <span class="chat-control-label" aria-hidden="true">Reason</span>
+                  <button
+                    type="button"
+                    class="chat-save-original-switch"
+                    data-chat-reasoning
+                    role="switch"
+                    aria-checked="false"
+                    aria-label="Reasoning"
+                  >
+                    <span class="chat-save-original-track" aria-hidden="true">
+                      <span class="chat-save-original-knob"></span>
+                    </span>
+                    <span class="chat-save-original-tooltip" role="tooltip">Reasoning</span>
+                  </button>
+                </span>
                 <select
                   class="chat-reasoning-effort"
                   data-chat-reasoning-effort
@@ -580,11 +583,32 @@
         <select id="chat-model" name="model" data-chat-model data-saved-model="{{ chat_settings.model_name }}" data-model-filter>
             {% for model in active_models %}
               <option value="{{ model.provider }}::{{ model.model }}"{% if model.speed_tier %} data-speed-tier="{{ model.speed_tier }}" data-average-tokens-per-second="{{ model.average_tokens_per_second }}"{% endif %}
+                data-model-feature-vision="{{ 'true' if model.modalities and model.modalities.vision else 'false' }}"
+                data-model-feature-video="{{ 'true' if model.modalities and model.modalities.video else 'false' }}"
+                data-model-feature-audio="{{ 'true' if model.modalities and model.modalities.audio else 'false' }}"
+                data-model-feature-tools="{{ 'true' if model.chat_template_caps and model.chat_template_caps.supports_tool_calls else 'false' }}"
+                data-model-feature-reasoning="{{ 'true' if model.chat_template_caps and model.chat_template_caps.supports_reasoning_effort else 'false' }}"
                 {% if chat_settings.model_name|trim == (model.provider ~ "::" ~ model.model)|trim %}selected{% endif %}>
                 {{ model.label }}{% if model.modalities and model.modalities.vision %} 📷{% endif %}{% if model.modalities and model.modalities.video %} 🎥{% endif %}{% if model.modalities and model.modalities.audio %} 🎤{% endif %}{% if model.chat_template_caps and model.chat_template_caps.supports_tool_calls %} 🔧{% endif %}{% if model.chat_template_caps and model.chat_template_caps.supports_reasoning_effort %} 🧠︎{% endif %}
               </option>
             {% endfor %}
           </select>
+        </div>
+        <div class="chat-model-subfilters" data-model-subfilters data-model-subfilters-for="chat-model" aria-label="Model sub-filters">
+          <div class="chat-model-subfilter-group" aria-label="Model capability filters">
+            <button type="button" class="chat-model-subfilter" data-model-feature-filter="vision" aria-label="Filter models with image support" aria-pressed="false" title="Image support"><span aria-hidden="true">📷</span></button>
+            <button type="button" class="chat-model-subfilter" data-model-feature-filter="video" aria-label="Filter models with video support" aria-pressed="false" title="Video support"><span aria-hidden="true">🎥</span></button>
+            <button type="button" class="chat-model-subfilter" data-model-feature-filter="audio" aria-label="Filter models with audio support" aria-pressed="false" title="Audio support"><span aria-hidden="true">🎤</span></button>
+            <button type="button" class="chat-model-subfilter" data-model-feature-filter="tools" aria-label="Filter models with tool support" aria-pressed="false" title="Tool support"><span aria-hidden="true">🔧</span></button>
+            <button type="button" class="chat-model-subfilter" data-model-feature-filter="reasoning" aria-label="Filter models with reasoning support" aria-pressed="false" title="Reasoning support"><span aria-hidden="true">🧠︎</span></button>
+          </div>
+          <div class="chat-model-subfilter-group" aria-label="Model speed filters">
+            <button type="button" class="chat-model-subfilter" data-model-speed-filter="very-fast" aria-label="Filter very fast models" aria-pressed="false" title="Very fast models"></button>
+            <button type="button" class="chat-model-subfilter" data-model-speed-filter="fast" aria-label="Filter fast models" aria-pressed="false" title="Fast models"></button>
+            <button type="button" class="chat-model-subfilter" data-model-speed-filter="medium-fast" aria-label="Filter medium-fast models" aria-pressed="false" title="Medium-fast models"></button>
+            <button type="button" class="chat-model-subfilter" data-model-speed-filter="regular" aria-label="Filter regular-speed models" aria-pressed="false" title="Regular-speed models"></button>
+            <button type="button" class="chat-model-subfilter" data-model-speed-filter="very-slow" aria-label="Filter very slow models" aria-pressed="false" title="Very slow models"></button>
+          </div>
         </div>
       {% else %}
         <div class="model-selector-empty">
